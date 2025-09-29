@@ -64,7 +64,11 @@ function selectBackup(?string $selection = null): array
     if ($selection !== null) {
         if (strtolower($selection) === 'latest') {
             $choiceIndex = 0;
-            writeln("📋 Using latest backup: " . basename($lines[0]));
+            if (isset($lines[0])) {
+                $parts = preg_split('/\s+/', $lines[0]);
+                $filename = basename($parts[8]);
+                writeln("📋 Using latest backup: {$filename}");
+            }
         } elseif (is_numeric($selection)) {
             $choiceIndex = (int) $selection - 1;
             writeln("📋 Using backup #{$selection}: " . basename($lines[$choiceIndex]));
