@@ -5,6 +5,8 @@ namespace Shaf\LaravelDeployer;
 use Illuminate\Support\ServiceProvider;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseRestoreCommand;
+use Shaf\LaravelDeployer\Commands\DatabaseBackupCommand;
+use Shaf\LaravelDeployer\Commands\DatabaseDownloadCommand;
 
 class LaravelDeployerServiceProvider extends ServiceProvider
 {
@@ -19,6 +21,8 @@ class LaravelDeployerServiceProvider extends ServiceProvider
             $this->commands([
                 InstallCommand::class,
                 DatabaseRestoreCommand::class,
+                DatabaseBackupCommand::class,
+                DatabaseDownloadCommand::class,
             ]);
         }
     }
