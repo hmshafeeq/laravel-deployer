@@ -3,6 +3,7 @@
 namespace Deployer;
 
 use Deployer\Exception\Exception;
+use Symfony\Component\Console\Output\OutputInterface;
 
 // Database backup task
 task('database:backup', function () {
@@ -112,18 +113,189 @@ task('database:download', function () {
     // Create local backups directory if it doesn't exist
     runLocally('mkdir -p ./backups');
 
-    // Download the backup using rsync (more reliable than scp for large files)
+    // Download the backup using rsync with enhanced progress reporting
     $deployVars = [
         'DEPLOY_HOST' => get('hostname'),
         'DEPLOY_USER' => get('remote_user'),
     ];
 
-    $downloadCmd = "rsync -avz --progress {$deployVars['DEPLOY_USER']}@{$deployVars['DEPLOY_HOST']}:{$selectedBackup} ./backups/";
+    // First, get the actual file size from the remote server for accurate progress
+    $remoteSizeBytes = (int) trim(run("stat -c%s {$selectedBackup}"));
+    $remoteSizeHuman = trim(run("ls -lh {$selectedBackup} | awk '{print \$5}'"));
 
-    writeln("📥 Downloading {$backupName} ({$backupSize})...");
-    runLocally($downloadCmd, timeout: 1800); // 30 minutes timeout for large files
+    // Verify remote file exists and is readable
+    $remoteFileCheck = run("test -r {$selectedBackup} && echo 'OK' || echo 'FAIL'");
+    if (trim($remoteFileCheck) !== 'OK') {
+        throw new Exception("Cannot access backup file on remote server: {$selectedBackup}");
+    }
 
-    writeln("✅ Database backup downloaded to: ./backups/{$backupName} ({$backupSize})");
+    writeln("📥 Downloading {$backupName} ({$remoteSizeHuman})...");
+
+    // Ask user for download method preference
+    writeln("💡 Speed optimization tips:");
+    writeln("   • Option 1 (rsync): Best for reliability, resume capability");
+    writeln("   • Option 2 (scp): Often faster for large files, no resume");
+    writeln("");
+    $downloadMethod = ask('Choose download method: (1) Optimized rsync [default] (2) Direct SCP', '1');
+
+    writeln("");
+
+    try {
+        $startTime = microtime(true);
+        $localFile = "./backups/{$backupName}";
+
+        // Set download command based on user choice
+        switch ($downloadMethod) {
+            case '2':
+                writeln("🚀 Using SCP for maximum speed...");
+                // SCP with optimizations:
+                // -o Compression=no: Disable compression for gzipped files
+                // -o TCPKeepAlive=yes: Keep connection alive
+                // -o ServerAliveInterval=60: Send keepalive packets
+                $downloadCmd = "scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 {$deployVars['DEPLOY_USER']}@{$deployVars['DEPLOY_HOST']}:{$selectedBackup} ./backups/";
+                break;
+
+            default:
+                $downloadMethod = '1';
+                break;
+        }
+
+        if ($downloadMethod === '1') {
+            writeln("⚡ Using optimized rsync (no compression, no bandwidth limit)...");
+            // Optimized rsync with maximum compatibility:
+            // -a: Archive mode (preserves permissions, times, etc.)
+            // -v: Verbose output
+            // --partial: Keep partially transferred files for resume capability
+            // --inplace: Update destination files in-place (reduces disk I/O)
+            // Note: Removed -z flag to disable compression since file is already gzipped
+            $downloadCmd = "rsync -av --partial --inplace {$deployVars['DEPLOY_USER']}@{$deployVars['DEPLOY_HOST']}:{$selectedBackup} ./backups/";
+        }
+
+        writeln("💡 This may take a while for large files. Monitoring progress every 30 seconds...");
+
+        // Start the download process in background
+        $pid = (int) runLocally("({$downloadCmd} > /tmp/rsync_output_" . getmypid() . ".log 2>&1 & echo \$!) | tail -1");
+
+        if ($pid <= 0) {
+            throw new Exception("Failed to start rsync process");
+        }
+
+        writeln("📥 Download started (PID: {$pid})");
+
+        // Monitor progress by checking file size
+        $lastSize = 0;
+        $stagnantCount = 0;
+        $maxStagnantChecks = 10; // Allow 300 seconds (5 minutes) of no progress before considering it stagnant
+
+        while (true) {
+            // Check if process is still running
+            $processCheck = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
+
+            if ($processCheck !== 0) {
+                // Process finished, it may have completed successfully
+                $exitStatus = 0; // We'll check the actual result by verifying the file
+                break;
+            }
+
+            // Check current file size
+            $fileExists = (int) runLocally("test -f '{$localFile}' && echo 1 || echo 0");
+            if ($fileExists) {
+                $currentSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
+
+                if ($currentSize > 0 && $remoteSizeBytes > 0) {
+                    $currentMB = round((float)($currentSize / 1024 / 1024), 1);
+                    $totalMB = round((float)($remoteSizeBytes / 1024 / 1024), 1);
+                    $percent = round((float)(($currentSize / $remoteSizeBytes) * 100), 1);
+
+                    $progressMsg = "📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB)";
+
+                    // Check for progress
+                    if ($currentSize > $lastSize) {
+                        $bytesTransferred = $currentSize - $lastSize;
+                        $speedMBps = $bytesTransferred > 0 ? round((float)($bytesTransferred / 1024 / 1024 / 30), 2) : 0; // MB per second over 30 second interval
+                        $progressMsg .= " | Speed: {$speedMBps} MB/s";
+                        $stagnantCount = 0;
+                    } else {
+                        $stagnantCount++;
+                        if ($stagnantCount >= $maxStagnantChecks) {
+                            throw new Exception("Download appears to be stagnant (no progress for " . ($stagnantCount * 30) . " seconds)");
+                        }
+                    }
+
+                    writeln($progressMsg);
+                    $lastSize = $currentSize;
+                }
+            }
+
+            sleep(30); // Check every 30 seconds
+        }
+
+        // Check if download was successful by verifying file exists and checking log
+        $logContent = runLocally("cat /tmp/rsync_output_" . getmypid() . ".log 2>/dev/null || echo 'No log available'");
+
+        // Check if the log indicates success (rsync completed)
+        $hasError = strpos($logContent, 'rsync error:') !== false ||
+                   strpos($logContent, 'failed') !== false ||
+                   strpos($logContent, 'No such file') !== false;
+
+        if ($hasError) {
+            runLocally("rm -f /tmp/rsync_output_" . getmypid() . ".log");
+            throw new Exception("rsync failed. Log: {$logContent}");
+        }
+
+        // Clean up log file
+        runLocally("rm -f /tmp/rsync_output_" . getmypid() . ".log");
+
+        $endTime = microtime(true);
+        $downloadTime = round((float)($endTime - $startTime), 2);
+
+        // Verify the downloaded file
+        $localFile = "./backups/{$backupName}";
+        $fileExists = runLocally("test -f '{$localFile}' && echo 1 || echo 0");
+
+        if ((int)$fileExists !== 1) {
+            throw new Exception("Download failed: Local file not found");
+        }
+
+        $localSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
+
+        // Allow for small size differences (rsync may report slightly different sizes)
+        $sizeDiff = abs($localSize - $remoteSizeBytes);
+        $tolerance = max(1024, $remoteSizeBytes * 0.001); // 1KB or 0.1% tolerance
+
+        if ($sizeDiff > $tolerance) {
+            throw new Exception("Download failed: File size mismatch (local: {$localSize} bytes, remote: {$remoteSizeBytes} bytes, difference: {$sizeDiff} bytes)");
+        }
+
+        // Calculate download speed
+        $downloadSpeedMBps = $downloadTime > 0 ? ($localSize / 1024 / 1024) / $downloadTime : 0;
+        $downloadSpeedFormatted = round((float)$downloadSpeedMBps, 2);
+
+        writeln("");
+        writeln("✅ Database backup downloaded successfully!");
+        writeln("📁 Location: ./backups/{$backupName}");
+        writeln("📊 Size: {$remoteSizeHuman}");
+        writeln("⏱️  Time: {$downloadTime}s");
+        writeln("🚀 Speed: {$downloadSpeedFormatted} MB/s");
+    } catch (Exception $e) {
+        // Only clean up if it's actually a partial/failed download
+        $localFile = "./backups/{$backupName}";
+        $fileExists = runLocally("test -f '{$localFile}' && echo 1 || echo 0");
+
+        if ((int)$fileExists === 1) {
+            $localSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
+
+            // Only delete if file is significantly smaller than expected (indicating partial download)
+            if ($localSize < ($remoteSizeBytes * 0.95)) {
+                runLocally("rm -f '{$localFile}'");
+                writeln("🧹 Cleaned up partial download");
+            } else {
+                writeln("📁 File appears complete, keeping download");
+            }
+        }
+
+        throw new Exception("Download failed: " . $e->getMessage());
+    }
     writeln('');
     writeln('💡 To restore locally: zcat ./backups/' . $backupName . ' | mysql -u[user] -p[password] [database]');
 })->desc('Download database backup from server to local machine');
