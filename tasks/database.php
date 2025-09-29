@@ -50,30 +50,41 @@ function getDatabaseConfigWithFile(): array
 /**
  * List available backups and let user select one
  */
-function selectBackup(): array
+function selectBackup(?string $selection = null): array
 {
     $backupList = run('ls -lt {{deploy_path}}/shared/backups/db_backup_*.sql.gz 2>/dev/null || echo ""');
     if (empty($backupList)) {
         throw new Exception('No database backups found on server');
     }
 
-    writeln('📋 Available database backups:');
-    writeln('');
-
     $backups = run('ls -lht {{deploy_path}}/shared/backups/db_backup_*.sql.gz | head -10');
     $lines = array_filter(array_map('trim', explode("\n", trim($backups))));
 
-    foreach ($lines as $index => $line) {
-        $parts = preg_split('/\s+/', $line);
-        $size = $parts[4];
-        $filename = basename($parts[8]);
-        writeln("   " . ($index + 1) . ". {$filename} ({$size})");
+    // If selection argument provided, don't show interactive list
+    if ($selection !== null) {
+        if (strtolower($selection) === 'latest') {
+            $choiceIndex = 0;
+            writeln("📋 Using latest backup: " . basename($lines[0]));
+        } elseif (is_numeric($selection)) {
+            $choiceIndex = (int) $selection - 1;
+            writeln("📋 Using backup #{$selection}: " . basename($lines[$choiceIndex]));
+        } else {
+            throw new Exception("Invalid backup selection: {$selection}");
+        }
+    } else {
+        // Interactive selection
+        writeln('📋 Available database backups:');
+        writeln('');
+        foreach ($lines as $index => $line) {
+            $parts = preg_split('/\s+/', $line);
+            $size = $parts[4];
+            $filename = basename($parts[8]);
+            writeln("   " . ($index + 1) . ". {$filename} ({$size})");
+        }
+        writeln('');
+        $choice = (int) ask('Enter backup number to download (1-' . count($lines) . ') or press Enter for latest:', '1');
+        $choiceIndex = $choice - 1;
     }
-
-    writeln('');
-    $choice = (int) ask('Enter backup number to download (1-' . count($lines) . ') or press Enter for latest:', '1');
-
-    $choiceIndex = $choice - 1;
     if ($choiceIndex < 0 || $choiceIndex >= count($lines)) {
         throw new Exception('Invalid backup selection');
     }
@@ -106,17 +117,30 @@ function getRemoteFileInfo(string $filePath): array
 /**
  * Download file with progress monitoring
  */
-function downloadWithProgress(string $remoteFile, string $localFile, int $remoteSizeBytes): void
+function downloadWithProgress(string $remoteFile, string $localFile, int $remoteSizeBytes, ?string $method = null): void
 {
     $deployUser = get('remote_user');
     $deployHost = get('hostname');
 
-    writeln("💡 Speed optimization tips:");
-    writeln("   • Option 1 (rsync): Best for reliability, resume capability");
-    writeln("   • Option 2 (scp): Often faster for large files, no resume");
-    writeln("");
-    $method = ask('Choose download method: (1) Optimized rsync [default] (2) Direct SCP', '1');
-    writeln("");
+    if ($method === null) {
+        writeln("💡 Speed optimization tips:");
+        writeln("   • Option 1 (rsync): Best for reliability, resume capability");
+        writeln("   • Option 2 (scp): Often faster for large files, no resume");
+        writeln("");
+        $method = ask('Choose download method: (1) Optimized rsync [default] (2) Direct SCP', '1');
+        writeln("");
+    } else {
+        $methodName = (strtolower($method) === 'scp' || $method === '2') ? 'SCP' : 'rsync';
+        writeln("⚡ Using {$methodName} download method");
+    }
+    
+    if (strtolower($method) === 'rsync' || $method === '1') {
+        $method = '1';
+    } elseif (strtolower($method) === 'scp' || $method === '2') {
+        $method = '2';
+    } else {
+        $method = '1';
+    }
 
     $startTime = microtime(true);
 
@@ -248,7 +272,11 @@ task('database:backup', function () {
 })->desc('Create database backup before deployment (structure + data)');
 
 task('database:download', function () {
-    $backup = selectBackup();
+    // Get arguments from environment variables
+    $backupSelection = getenv('DEPLOYER_BACKUP_SELECTION') ?: null;
+    $downloadMethod = getenv('DEPLOYER_DOWNLOAD_METHOD') ?: null;
+    
+    $backup = selectBackup($backupSelection);
     $remoteInfo = getRemoteFileInfo($backup['path']);
 
     runLocally('mkdir -p ./backups');
@@ -256,9 +284,9 @@ task('database:download', function () {
     writeln("📥 Downloading {$backup['name']} ({$remoteInfo['human']})...");
 
     try {
-        downloadWithProgress($backup['path'], "./backups/{$backup['name']}", $remoteInfo['bytes']);
+        downloadWithProgress($backup['path'], "./backups/{$backup['name']}", $remoteInfo['bytes'], $downloadMethod);
         writeln('');
-        writeln('💡 To restore locally: zcat ./backups/' . $backup['name'] . ' | mysql -u[user] -p[password] [database]');
+        writeln('💡 To restore locally: php artisan database:restore ' . $backup['name']);
     } catch (Exception $e) {
         $localFile = "./backups/{$backup['name']}";
         if ((int) runLocally("test -f '{$localFile}' && echo 1 || echo 0") === 1) {
