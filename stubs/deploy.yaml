@@ -1,0 +1,97 @@
+import:
+    - vendor/shaf/laravel-deployer/recipe/deploy.php
+
+config:
+    application: 'Your Application Name'
+    ssh_multiplexing: true
+    keep_releases: 3
+    default_timeout: 900
+    default_selector: staging
+    log_files: [
+        'storage/logs/*.log'
+    ]
+    rsync:
+        exclude:
+            - deploy.php
+            - deploy.yaml
+            - .git/
+            - .github/
+            - node_modules/
+            - vendor/
+            - storage/
+            - bootstrap/cache/
+            - tests/
+            - phpunit.xml
+            - .phpunit.result.cache
+            - .env
+            - .env.*
+            - .deploy.json
+            - .deploy.example.json
+            - README.md
+            - .editorconfig
+            - .gitignore
+            - .styleci.yml
+            - docker-compose.yml
+            - Dockerfile
+            - package.json
+            - package-lock.json
+            - yarn.lock
+            - webpack.mix.js
+            - vite.config.js
+            - '*.log'
+            - .DS_Store
+            - Thumbs.db
+            - backups/
+            - sql/
+            - .idea/
+            - .vscode/
+            - .ai
+            - .claude
+            - .gemini
+            - .junie
+            - .zed
+            - .idea
+            - .mcp*
+            - .deploy
+            - public/hot
+        exclude-file: false
+        include:
+            - composer.json
+            - composer.lock
+        include-file: false
+        filter: [ ]
+        filter-file: false
+        filter-perdir: false
+        flags: 'rzc'
+        options:
+            - delete
+            - delete-after
+            - compress
+        timeout: 900
+
+tasks:
+    #  You can create or override tasks here if needed for example:
+    #  'build:assets':
+    'build:assets':
+        -   run_locally: 'npm run build'
+hosts:
+    staging:
+        labels:
+            env: staging
+        hostname: 'your-staging-server.com'
+        remote_user: ubuntu
+        deploy_path: '/var/www/your-app-staging'
+        branch: dev
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader'
+
+    production:
+        labels:
+            env: production
+        hostname: 'your-production-server.com'
+        remote_user: ubuntu
+        deploy_path: '/var/www/your-app-production'
+        branch: master
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --no-dev --optimize-autoloader'
+
+after:
+    'deploy:failed': [ deploy:unlock, notify:failure ]

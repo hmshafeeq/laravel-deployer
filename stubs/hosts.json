@@ -1,0 +1,16 @@
+{
+    "staging": {
+        "hostname": "your-staging-server.com",
+        "remote_user": "deployer",
+        "deploy_path": "/var/www/your-app-staging",
+        "branch": "develop",
+        "composer_options": "--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader"
+    },
+    "production": {
+        "hostname": "your-production-server.com",
+        "remote_user": "deployer",
+        "deploy_path": "/var/www/your-app-production",
+        "branch": "main",
+        "composer_options": "--verbose --prefer-dist --no-interaction --no-scripts --no-dev --optimize-autoloader"
+    }
+}

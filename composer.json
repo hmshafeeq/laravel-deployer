@@ -1,0 +1,40 @@
+{
+    "name": "shaf/laravel-deployer",
+    "description": "Laravel package for deployment automation with Deployer",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Muhammad Shafeeq",
+            "email": "hmshafeeq@users.noreply.github.com"
+        }
+    ],
+    "homepage": "https://github.com/hmshafeeq/laravel-deployer",
+    "keywords": [
+        "laravel",
+        "deployment",
+        "deployer",
+        "automation"
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0",
+        "deployer/deployer": "^7.0",
+        "vlucas/phpdotenv": "^5.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Shaf\\LaravelDeployer\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Shaf\\LaravelDeployer\\LaravelDeployerServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
