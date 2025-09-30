@@ -40,29 +40,71 @@ set('release_name', function () {
     return "{$yearMonth}.{$count}";
 });
 
-// Auto-run deploy:env before tasks that need server access
-$tasksRequiringEnv = [
-    'deploy:info',
-    'deploy:setup',
-    'deploy:lock',
-    'deploy:unlock',
-    'health:check-resources',
-    'health:check-endpoints',
-    'database:backup',
-    'database:download',
-    'logs:check',
-    'logs:view',
-    'logs:search',
-    'logs:download',
-    'rollback:full',
-];
-
 // Ensure deploy:env only runs once per deployment
 set('deploy_env_loaded', false);
 
-foreach ($tasksRequiringEnv as $task) {
-    before($task, 'deploy:env');
-}
+desc('Load deployment configuration from .deploy/ directory');
+task('deploy:env', function () {
+
+    // Skip if already loaded in this deployment
+    if (get('deploy_env_loaded', false)) {
+        return;
+    }
+
+    // Get project root directory (3 levels up from __DIR__)
+    $projectRoot = dirname(dirname(dirname(__DIR__)));
+
+    // Get current environment from host labels
+    $environment = currentHost()->getAlias();
+
+    // Load environment-specific .env file from .deploy directory
+    $deployEnvFile = $projectRoot . "/.deploy/.env.$environment";
+    if (file_exists($deployEnvFile)) {
+        $dotenv = Dotenv::createImmutable($projectRoot . '/.deploy', ".env.$environment");
+        $dotenv->load();
+
+        writeln("<info>✅ Loaded environment variables from .deploy/.env.$environment</info>");
+
+        // Override host configuration with environment variables
+        $envPrefix = 'DEPLOY_' . strtoupper($environment) . '_';
+
+        if ($host = $_ENV[$envPrefix . 'HOST'] ?? getenv($envPrefix . 'HOST')) {
+            set('hostname', $host);
+            currentHost()->set('hostname', $host);
+        }
+
+        if ($user = $_ENV[$envPrefix . 'USER'] ?? getenv($envPrefix . 'USER')) {
+            set('remote_user', $user);
+            currentHost()->set('remote_user', $user);
+        }
+
+        if ($path = $_ENV[$envPrefix . 'PATH'] ?? getenv($envPrefix . 'PATH')) {
+            set('deploy_path', $path);
+            currentHost()->set('deploy_path', $path);
+        }
+
+        if ($branch = $_ENV[$envPrefix . 'BRANCH'] ?? getenv($envPrefix . 'BRANCH')) {
+            set('branch', $branch);
+            currentHost()->set('branch', $branch);
+        }
+    } else {
+        writeln("<comment>⚠️  No .deploy/.env.$environment file found. Create one if you need environment variables.</comment>");
+    }
+
+    // Display loaded configuration
+    $hostname = get('hostname');
+    $user = get('remote_user');
+    $path = get('deploy_path');
+
+    writeln("<info>✅ Configuration loaded for environment: $environment</info>");
+//    writeln("<info>   Host: {$hostname}</info>");
+//    writeln("<info>   User: {$user}</info>");
+//    writeln("<info>   Path: {$path}</info>");
+
+    // Mark as loaded to prevent duplicate runs
+    set('deploy_env_loaded', true);
+
+});
 
 desc('Verify deployment target before proceeding');
 task('deploy:confirm-target', function () {
@@ -104,70 +146,6 @@ task('deploy:confirm-target', function () {
     writeln('<info>✓ Deployment confirmed, proceeding...</info>');
     writeln('');
 })->desc('Confirm deployment target to prevent accidental deployments');
-
-desc('Load deployment configuration from .deploy/ directory');
-task('deploy:env', function () {
-
-    // Skip if already loaded in this deployment
-    if (get('deploy_env_loaded', false)) {
-        return;
-    }
-
-    // Get project root directory (3 levels up from __DIR__)
-    $projectRoot = dirname(dirname(dirname(__DIR__)));
-
-    // Get current environment from host labels
-    $environment = currentHost()->getAlias();
-
-    // Load environment-specific .env file from .deploy directory
-    $deployEnvFile = $projectRoot . "/.deploy/.env.$environment";
-    if (file_exists($deployEnvFile)) {
-        $dotenv = Dotenv::createImmutable($projectRoot . '/.deploy', ".env.$environment");
-        $dotenv->load();
-
-        writeln("<info>✅ Loaded environment variables from .deploy/.env.$environment</info>");
-    } else {
-        writeln("<comment>⚠️  No .deploy/.env.$environment file found. Create one if you need environment variables.</comment>");
-    }
-
-
-    // Load hosts.json configuration
-    $hostsJsonPath = $projectRoot . '/.deploy/hosts.json';
-    if (file_exists($hostsJsonPath)) {
-
-        $deployConfig = json_decode(file_get_contents($hostsJsonPath), true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('Invalid JSON in .deploy/hosts.json: ' . json_last_error_msg());
-        }
-
-        if (! isset($deployConfig[$environment])) {
-            throw new \Exception("Environment '{$environment}' not found in .deploy/hosts.json");
-        }
-
-
-        $envConfig = $deployConfig[$environment];
-
-        // Set deployer variables from JSON config
-        set('hostname', $envConfig['hostname']);
-        set('remote_user', $envConfig['remote_user']);
-        set('deploy_path', $envConfig['deploy_path']);
-
-        if (isset($envConfig['composer_options'])) {
-            set('composer_options', $envConfig['composer_options']);
-        }
-
-        writeln("<info>✅ Configuration loaded for environment: $environment</info>");
-        writeln("<info>   Host: {$envConfig['hostname']}</info>");
-        writeln("<info>   User: {$envConfig['remote_user']}</info>");
-        writeln("<info>   Path: {$envConfig['deploy_path']}</info>");
-    }
-
-    // Mark as loaded to prevent duplicate runs
-    set('deploy_env_loaded', true);
-
-});
-
 
 // Simple command tasks
 task('build:assets', function () {
@@ -261,6 +239,28 @@ task('deploy', [
     'deploy:link-dep',
     'notify:success',
 ]);
+
+// Auto-run deploy:env before tasks that need server access
+$tasksRequiringEnv = [
+    'deploy:confirm-target',
+    'deploy:info',
+    'deploy:setup',
+    'deploy:lock',
+    'deploy:unlock',
+    'health:check-resources',
+    'health:check-endpoints',
+    'database:backup',
+    'database:download',
+    'logs:check',
+    'logs:view',
+    'logs:search',
+    'logs:download',
+    'rollback:full',
+];
+
+foreach ($tasksRequiringEnv as $task) {
+    before($task, 'deploy:env');
+}
 
 // Event handlers
 after('deploy:failed', 'deploy:unlock');
