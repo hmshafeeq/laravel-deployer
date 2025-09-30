@@ -96,10 +96,11 @@ task('deploy:env', function () {
     $user = get('remote_user');
     $path = get('deploy_path');
 
-    writeln("<info>✅ Configuration loaded for environment: $environment</info>");
 //    writeln("<info>   Host: {$hostname}</info>");
 //    writeln("<info>   User: {$user}</info>");
 //    writeln("<info>   Path: {$path}</info>");
+
+    writeln("<info>✅ Configuration loaded for environment: $environment</info>");
 
     // Mark as loaded to prevent duplicate runs
     set('deploy_env_loaded', true);
@@ -183,6 +184,7 @@ task('deploy:link-dep', function () {
 // Define deployment workflows
 desc('Quick deployment (without database backup)');
 task('deploy:quick', [
+    'deploy:env',
     'deploy:confirm-target',
     'deploy:info',
     'health:check-resources',
@@ -212,6 +214,7 @@ task('deploy:quick', [
 
 desc('Full deployment (with database backup)');
 task('deploy', [
+    'deploy:env',
     'deploy:confirm-target',
     'deploy:info',
     'health:check-resources',
@@ -240,27 +243,23 @@ task('deploy', [
     'notify:success',
 ]);
 
-// Auto-run deploy:env before tasks that need server access
-$tasksRequiringEnv = [
-    'deploy:confirm-target',
-    'deploy:info',
-    'deploy:setup',
-    'deploy:lock',
-    'deploy:unlock',
-    'health:check-resources',
-    'health:check-endpoints',
-    'database:backup',
+// Auto-run deploy:env only for standalone tasks (not part of deploy workflow)
+// Note: Tasks that are part of deploy:quick or deploy workflows should NOT be here
+$standaloneTasksRequiringEnv = [
+    'database:backup',  // Only when run standalone (not during deploy)
     'database:download',
     'logs:check',
     'logs:view',
     'logs:search',
     'logs:download',
+    'rollback:quick',
     'rollback:full',
 ];
 
-foreach ($tasksRequiringEnv as $task) {
+foreach ($standaloneTasksRequiringEnv as $task) {
     before($task, 'deploy:env');
 }
+
 
 // Event handlers
 after('deploy:failed', 'deploy:unlock');
