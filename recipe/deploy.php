@@ -155,10 +155,24 @@ task('build:assets', function () {
 })->desc('Build frontend assets');
 
 task('php-fpm:restart', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('<comment>⏭️  Skipping PHP-FPM restart for local environment</comment>');
+        return;
+    }
+
     run('sudo service php8.3-fpm restart');
 })->desc('Restart PHP-FPM service');
 
 task('supervisor:reload', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('<comment>⏭️  Skipping Supervisor reload for local environment</comment>');
+        return;
+    }
+
     run('sudo supervisorctl reload');
 })->desc('Reload Supervisor configuration');
 
@@ -181,6 +195,41 @@ task('deploy:link-dep', function () {
     run('ln -sf {{deploy_path}}/.dep {{deploy_path}}/shared/storage/app/deployment');
 })->desc('Create symlink to deployment directory');
 
+task('deploy:env-local', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment !== 'local') {
+        return;
+    }
+
+    writeln('📝 Setting up .env file for local deployment...');
+
+    $envPath = '{{deploy_path}}/shared/.env';
+    $envExists = test("[ -f {$envPath} ]");
+
+    if (!$envExists) {
+        writeln('Creating .env file from .env.example...');
+        run('cp {{deploy_path}}/releases/{{release_path}}/.env.example {{deploy_path}}/shared/.env || echo "APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_DEBUG=true\nAPP_URL=http://localhost\n\nDB_CONNECTION=sqlite\nDB_DATABASE={{deploy_path}}/shared/database.sqlite\n\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\nSESSION_DRIVER=file" > {{deploy_path}}/shared/.env');
+        run('touch {{deploy_path}}/shared/database.sqlite');
+        run('cd {{release_path}} && php artisan key:generate');
+        writeln('✅ .env file created');
+    } else {
+        writeln('✅ .env file already exists');
+    }
+})->desc('Set up .env file for local deployment');
+
+// Override artisan:queue:restart to skip for local
+task('artisan:queue:restart', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('<comment>⏭️  Skipping queue restart for local environment</comment>');
+        return;
+    }
+
+    run('{{bin/php}} {{release_or_current_path}}/artisan queue:restart');
+})->desc('Restart queue workers');
+
 
 // Define deployment workflows
 desc('Quick deployment (without database backup)');
@@ -195,6 +244,7 @@ task('deploy', [
     'build:assets',
     'rsync',
     'deploy:shared',
+    'deploy:env-local',
     'deploy:writable',
     'deploy:vendors',
     'artisan:storage:link',
@@ -225,6 +275,7 @@ task('deploy:full', [
     'build:assets',
     'rsync',
     'deploy:shared',
+    'deploy:env-local',
     'deploy:writable',
     'deploy:vendors',
     'artisan:storage:link',

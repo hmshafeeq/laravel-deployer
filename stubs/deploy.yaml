@@ -75,22 +75,33 @@ tasks:
     'build:assets':
         -   run_locally: 'npm run build'
 hosts:
+    local:
+        labels:
+            env: local
+        local: true  # Use local execution instead of SSH
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.local
+        deploy_path: '/tmp/app'  # Overridden by DEPLOY_PATH in .deploy/.env.local
+        branch: 'dev'  # Overridden by DEPLOY_BRANCH in .deploy/.env.local
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader'
+        bin/php: 'php'  # Use system PHP to avoid path issues
+        bin/composer: 'composer'  # Use system Composer to avoid path issues
+
     staging:
         labels:
             env: staging
-        hostname: 'your-staging-server.com'
-        remote_user: ubuntu
-        deploy_path: '/var/www/your-app-staging'
-        branch: dev
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.staging
+        remote_user: 'deploy'  # Overridden by DEPLOY_USER in .deploy/.env.staging
+        deploy_path: '/var/www/app'  # Overridden by DEPLOY_PATH in .deploy/.env.staging
+        branch: 'dev'  # Overridden by DEPLOY_BRANCH in .deploy/.env.staging
         composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader'
 
     production:
         labels:
             env: production
-        hostname: 'your-production-server.com'
-        remote_user: ubuntu
-        deploy_path: '/var/www/your-app-production'
-        branch: master
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.production
+        remote_user: 'deploy'  # Overridden by DEPLOY_USER in .deploy/.env.production
+        deploy_path: '/var/www/app'  # Overridden by DEPLOY_PATH in .deploy/.env.production
+        branch: 'main'  # Overridden by DEPLOY_BRANCH in .deploy/.env.production
         composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --no-dev --optimize-autoloader'
 
 after:

@@ -6,24 +6,43 @@ use Deployer\Exception\Exception;
 
 // Resource monitoring task
 task('health:check-resources', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('🔍 Checking server resources...');
+        writeln('<comment>⏭️  Skipping detailed resource checks for local environment</comment>');
+        writeln('✅ Local environment checks passed');
+        writeln('');
+        return;
+    }
+
     writeln('🔍 Checking server resources...');
 
     // Check disk space
     $diskUsage = run('df -h {{deploy_path}} | tail -1');
     $diskInfo = preg_split('/\s+/', trim($diskUsage));
-    $usedPercent = rtrim($diskInfo[4], '%');
-    $available = $diskInfo[3];
 
-    writeln("💾 Disk Usage: {$diskInfo[4]} used, {$available} available");
+    // Handle different df output formats (Linux vs macOS)
+    $usedPercentIndex = count($diskInfo) === 6 ? 4 : 3;
+    $availableIndex = count($diskInfo) === 6 ? 3 : 2;
 
-    if ((int) $usedPercent > 90) {
-        throw new Exception("❌ Disk space critical! {$usedPercent}% used. Please free up space before deployment.");
-    }
-
-    if ((int) $usedPercent > 80) {
-        writeln("⚠️  Warning: Disk usage is high ({$usedPercent}%). Consider cleaning up old releases.");
+    if (!isset($diskInfo[$usedPercentIndex])) {
+        writeln('<comment>⚠️  Could not parse disk usage information</comment>');
     } else {
-        writeln('✅ Disk space OK');
+        $usedPercent = rtrim($diskInfo[$usedPercentIndex], '%');
+        $available = $diskInfo[$availableIndex] ?? 'unknown';
+
+        writeln("💾 Disk Usage: {$diskInfo[$usedPercentIndex]} used, {$available} available");
+
+        if ((int) $usedPercent > 90) {
+            throw new Exception("❌ Disk space critical! {$usedPercent}% used. Please free up space before deployment.");
+        }
+
+        if ((int) $usedPercent > 80) {
+            writeln("⚠️  Warning: Disk usage is high ({$usedPercent}%). Consider cleaning up old releases.");
+        } else {
+            writeln('✅ Disk space OK');
+        }
     }
 
     // Check memory usage
