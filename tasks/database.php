@@ -35,7 +35,7 @@ function getDatabaseConfigWithFile(): array
         throw new Exception('Database password cannot be empty');
     }
 
-    $configFile = '/tmp/mysql_backup_' . uniqid() . '.cnf';
+    $configFile = '/tmp/mysql_backup_'.uniqid().'.cnf';
     run("echo '[client]' > {$configFile}");
     run("echo 'host={$config['host']}' >> {$configFile}");
     run("echo 'user={$config['username']}' >> {$configFile}");
@@ -45,7 +45,6 @@ function getDatabaseConfigWithFile(): array
 
     return $config;
 }
-
 
 /**
  * List available backups and let user select one
@@ -71,7 +70,7 @@ function selectBackup(?string $selection = null): array
             }
         } elseif (is_numeric($selection)) {
             $choiceIndex = (int) $selection - 1;
-            writeln("📋 Using backup #{$selection}: " . basename($lines[$choiceIndex]));
+            writeln("📋 Using backup #{$selection}: ".basename($lines[$choiceIndex]));
         } else {
             throw new Exception("Invalid backup selection: {$selection}");
         }
@@ -83,10 +82,10 @@ function selectBackup(?string $selection = null): array
             $parts = preg_split('/\s+/', $line);
             $size = $parts[4];
             $filename = basename($parts[8]);
-            writeln("   " . ($index + 1) . ". {$filename} ({$size})");
+            writeln('   '.($index + 1).". {$filename} ({$size})");
         }
         writeln('');
-        $choice = (int) ask('Enter backup number to download (1-' . count($lines) . ') or press Enter for latest:', '1');
+        $choice = (int) ask('Enter backup number to download (1-'.count($lines).') or press Enter for latest:', '1');
         $choiceIndex = $choice - 1;
     }
     if ($choiceIndex < 0 || $choiceIndex >= count($lines)) {
@@ -127,17 +126,17 @@ function downloadWithProgress(string $remoteFile, string $localFile, int $remote
     $deployHost = get('hostname');
 
     if ($method === null) {
-        writeln("💡 Speed optimization tips:");
-        writeln("   • Option 1 (rsync): Best for reliability, resume capability");
-        writeln("   • Option 2 (scp): Often faster for large files, no resume");
-        writeln("");
+        writeln('💡 Speed optimization tips:');
+        writeln('   • Option 1 (rsync): Best for reliability, resume capability');
+        writeln('   • Option 2 (scp): Often faster for large files, no resume');
+        writeln('');
         $method = ask('Choose download method: (1) Optimized rsync [default] (2) Direct SCP', '1');
-        writeln("");
+        writeln('');
     } else {
         $methodName = (strtolower($method) === 'scp' || $method === '2') ? 'SCP' : 'rsync';
         writeln("⚡ Using {$methodName} download method");
     }
-    
+
     if (strtolower($method) === 'rsync' || $method === '1') {
         $method = '1';
     } elseif (strtolower($method) === 'scp' || $method === '2') {
@@ -149,20 +148,20 @@ function downloadWithProgress(string $remoteFile, string $localFile, int $remote
     $startTime = microtime(true);
 
     if ($method === '2') {
-        writeln("🚀 Using SCP for maximum speed...");
-        $cmd = "scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 {$deployUser}@{$deployHost}:{$remoteFile} " . dirname($localFile) . "/";
+        writeln('🚀 Using SCP for maximum speed...');
+        $cmd = "scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 {$deployUser}@{$deployHost}:{$remoteFile} ".dirname($localFile).'/';
     } else {
-        writeln("⚡ Using optimized rsync (no compression, no bandwidth limit)...");
-        $cmd = "rsync -av --partial --inplace {$deployUser}@{$deployHost}:{$remoteFile} " . dirname($localFile) . "/";
+        writeln('⚡ Using optimized rsync (no compression, no bandwidth limit)...');
+        $cmd = "rsync -av --partial --inplace {$deployUser}@{$deployHost}:{$remoteFile} ".dirname($localFile).'/';
     }
 
-    writeln("💡 This may take a while for large files. Monitoring progress every 30 seconds...");
+    writeln('💡 This may take a while for large files. Monitoring progress every 30 seconds...');
 
-    $logFile = '/tmp/rsync_output_' . getmypid() . '.log';
+    $logFile = '/tmp/rsync_output_'.getmypid().'.log';
     $pid = (int) runLocally("({$cmd} > {$logFile} 2>&1 & echo \$!) | tail -1");
 
     if ($pid <= 0) {
-        throw new Exception("Failed to start download process");
+        throw new Exception('Failed to start download process');
     }
 
     writeln("📥 Download started (PID: {$pid})");
@@ -214,7 +213,7 @@ function monitorDownloadProgress(int $pid, string $localFile, int $remoteSizeByt
                 } else {
                     $stagnantCount++;
                     if ($stagnantCount >= $maxStagnantChecks) {
-                        throw new Exception("Download stagnant (no progress for " . ($stagnantCount * 30) . " seconds)");
+                        throw new Exception('Download stagnant (no progress for '.($stagnantCount * 30).' seconds)');
                     }
                 }
 
@@ -233,7 +232,7 @@ function monitorDownloadProgress(int $pid, string $localFile, int $remoteSizeByt
 function verifyDownload(string $localFile, int $remoteSizeBytes, float $downloadTime): void
 {
     if ((int) runLocally("test -f '{$localFile}' && echo 1 || echo 0") !== 1) {
-        throw new Exception("Download failed: Local file not found");
+        throw new Exception('Download failed: Local file not found');
     }
 
     $localSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
@@ -247,8 +246,8 @@ function verifyDownload(string $localFile, int $remoteSizeBytes, float $download
     $localSizeHuman = runLocally("ls -lh '{$localFile}' | awk '{print \$5}'");
     $speedMBps = round(($localSize / 1024 / 1024) / $downloadTime, 2);
 
-    writeln("");
-    writeln("✅ Database backup downloaded successfully!");
+    writeln('');
+    writeln('✅ Database backup downloaded successfully!');
     writeln("📁 Location: {$localFile}");
     writeln("📊 Size: {$localSizeHuman}");
     writeln("⏱️  Time: {$downloadTime}s");
@@ -265,21 +264,76 @@ task('database:backup', function () {
 
     run('mkdir -p {{deploy_path}}/shared/backups');
 
+    writeln('🔍 Getting database configuration...');
     $config = getDatabaseConfigWithFile();
 
-    run("mysqldump --defaults-file={$config['config_file']} --single-transaction --routines --triggers {$config['database']} | gzip -8 > {$backupFile}");
-    run("rm -f {$config['config_file']}");
-    run('cd {{deploy_path}}/shared/backups && ls -t db_backup_*.sql.gz | tail -n +4 | xargs -r rm');
+    try {
+        writeln('💾 Starting database backup...');
+        writeln("📊 Database: {$config['database']}");
+        writeln("🏠 Host: {$config['host']}");
+        writeln('');
+        writeln('⏳ This may take a while for large databases...');
 
-    $fileSize = trim(run("ls -lh {$backupFile} | awk '{print \$5}'"));
-    writeln("💾 Database backed up to: {$backupFile} ({$fileSize})");
+        // Run mysqldump with timeout and proper error handling
+        $dumpCommand = "timeout 1800 mysqldump --defaults-file={$config['config_file']} --single-transaction --routines --triggers {$config['database']} 2>&1";
+        $compressCommand = "gzip -8 > {$backupFile}";
+
+        $result = run("{$dumpCommand} | {$compressCommand}; echo \$?");
+        $exitCode = (int) trim($result);
+
+        if ($exitCode !== 0) {
+            throw new Exception("mysqldump failed with exit code: {$exitCode}");
+        }
+
+        // Verify backup file was created and has content
+        $fileExists = trim(run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
+        if ($fileExists !== 'OK') {
+            throw new Exception("Backup file was not created: {$backupFile}");
+        }
+
+        $fileSize = (int) trim(run("stat -c%s {$backupFile} 2>/dev/null || stat -f%z {$backupFile} 2>/dev/null || echo 0"));
+        if ($fileSize < 100) {
+            throw new Exception("Backup file is too small ({$fileSize} bytes), backup likely failed");
+        }
+
+        writeln('');
+        writeln('✅ Database backup completed successfully!');
+
+        $fileSizeHuman = trim(run("ls -lh {$backupFile} | awk '{print \$5}'"));
+        writeln("📁 Location: {$backupFile}");
+        writeln("📊 Size: {$fileSizeHuman}");
+
+        // Clean up old backups (keep only 3 most recent)
+        writeln('');
+        writeln('🧹 Cleaning up old backups (keeping 3 most recent)...');
+        run('cd {{deploy_path}}/shared/backups && ls -t db_backup_*.sql.gz | tail -n +4 | xargs -r rm -f');
+
+        $backupCount = (int) trim(run('cd {{deploy_path}}/shared/backups && ls -1 db_backup_*.sql.gz 2>/dev/null | wc -l'));
+        writeln("✅ Total backups on server: {$backupCount}");
+
+    } catch (Exception $e) {
+        writeln('');
+        writeln('❌ Backup failed: '.$e->getMessage());
+
+        // Clean up failed backup file if it exists
+        $fileExists = trim(run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
+        if ($fileExists === 'OK') {
+            run("rm -f {$backupFile}");
+            writeln('🧹 Cleaned up failed backup file');
+        }
+
+        throw $e;
+    } finally {
+        // Always clean up config file
+        run("rm -f {$config['config_file']} 2>/dev/null || true");
+    }
 })->desc('Create database backup before deployment (structure + data)');
 
 task('database:download', function () {
     // Get arguments from environment variables
     $backupSelection = getenv('DEPLOYER_BACKUP_SELECTION') ?: null;
     $downloadMethod = getenv('DEPLOYER_DOWNLOAD_METHOD') ?: null;
-    
+
     $backup = selectBackup($backupSelection);
     $remoteInfo = getRemoteFileInfo($backup['path']);
 
@@ -290,18 +344,18 @@ task('database:download', function () {
     try {
         downloadWithProgress($backup['path'], "./backups/{$backup['name']}", $remoteInfo['bytes'], $downloadMethod);
         writeln('');
-        writeln('💡 To restore locally: php artisan database:restore ' . $backup['name']);
+        writeln('💡 To restore locally: php artisan database:restore '.$backup['name']);
     } catch (Exception $e) {
         $localFile = "./backups/{$backup['name']}";
         if ((int) runLocally("test -f '{$localFile}' && echo 1 || echo 0") === 1) {
             $localSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
             if ($localSize < ($remoteInfo['bytes'] * 0.95)) {
                 runLocally("rm -f '{$localFile}'");
-                writeln("🧹 Cleaned up partial download");
+                writeln('🧹 Cleaned up partial download');
             } else {
-                writeln("📁 File appears complete, keeping download");
+                writeln('📁 File appears complete, keeping download');
             }
         }
-        throw new Exception("Download failed: " . $e->getMessage());
+        throw new Exception('Download failed: '.$e->getMessage());
     }
 })->desc('Download database backup from server to local machine');
