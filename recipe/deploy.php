@@ -64,6 +64,47 @@ foreach ($tasksRequiringEnv as $task) {
     before($task, 'deploy:env');
 }
 
+desc('Verify deployment target before proceeding');
+task('deploy:confirm-target', function () {
+    $environment = currentHost()->getAlias();
+    $hostname = get('hostname');
+    $deployPath = get('deploy_path');
+    $user = get('remote_user');
+
+    writeln('');
+    writeln('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+    writeln('<fg=yellow>                 DEPLOYMENT CONFIRMATION</>');
+    writeln('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+    writeln('');
+    writeln("  <info>Environment:</info>  <fg=cyan>{$environment}</>");
+    writeln("  <info>Server:</info>       <fg=cyan>{$hostname}</>");
+    writeln("  <info>User:</info>         <fg=cyan>{$user}</>");
+    writeln("  <info>Deploy Path:</info>  <fg=cyan>{$deployPath}</>");
+    writeln('');
+
+    // Extra warning for production
+    if (strtolower($environment) === 'production' || strtolower($environment) === 'prod') {
+        writeln('<fg=red>⚠️  WARNING: You are deploying to PRODUCTION!</>');
+        writeln('');
+    }
+
+    writeln('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+    writeln('');
+
+    $confirmed = askConfirmation('  Do you want to continue with this deployment?', false);
+
+    if (!$confirmed) {
+        writeln('');
+        writeln('<comment>🛑 Deployment cancelled by user</comment>');
+        writeln('');
+        throw new \Exception('Deployment cancelled');
+    }
+
+    writeln('');
+    writeln('<info>✓ Deployment confirmed, proceeding...</info>');
+    writeln('');
+})->desc('Confirm deployment target to prevent accidental deployments');
+
 desc('Load deployment configuration from .deploy/ directory');
 task('deploy:env', function () {
 
@@ -164,6 +205,7 @@ task('deploy:link-dep', function () {
 // Define deployment workflows
 desc('Quick deployment (without database backup)');
 task('deploy:quick', [
+    'deploy:confirm-target',
     'deploy:info',
     'health:check-resources',
     'deploy:setup',
@@ -192,6 +234,7 @@ task('deploy:quick', [
 
 desc('Full deployment (with database backup)');
 task('deploy', [
+    'deploy:confirm-target',
     'deploy:info',
     'health:check-resources',
     'deploy:setup',
