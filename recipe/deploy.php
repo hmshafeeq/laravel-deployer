@@ -66,7 +66,8 @@ task('deploy:env', function () {
         writeln("<info>✅ Loaded environment variables from .deploy/.env.$environment</info>");
 
         // Override host configuration with environment variables
-        $envPrefix = 'DEPLOY_' . strtoupper($environment) . '_';
+        // $envPrefix = 'DEPLOY_' . strtoupper($environment) . '_';
+        $envPrefix = 'DEPLOY_';
 
         if ($host = $_ENV[$envPrefix . 'HOST'] ?? getenv($envPrefix . 'HOST')) {
             set('hostname', $host);
@@ -136,7 +137,7 @@ task('deploy:confirm-target', function () {
 
     $confirmed = askConfirmation('  Do you want to continue with this deployment?', false);
 
-    if (!$confirmed) {
+    if (! $confirmed) {
         writeln('');
         writeln('<comment>🛑 Deployment cancelled by user</comment>');
         writeln('');
@@ -183,7 +184,7 @@ task('deploy:link-dep', function () {
 
 // Define deployment workflows
 desc('Quick deployment (without database backup)');
-task('deploy:quick', [
+task('deploy', [
     'deploy:env',
     'deploy:confirm-target',
     'deploy:info',
@@ -213,7 +214,7 @@ task('deploy:quick', [
 ]);
 
 desc('Full deployment (with database backup)');
-task('deploy', [
+task('deploy:full', [
     'deploy:env',
     'deploy:confirm-target',
     'deploy:info',
