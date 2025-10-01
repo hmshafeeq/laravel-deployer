@@ -6,7 +6,7 @@ use Dotenv\Dotenv;
 
 // Ensure Composer autoloader is loaded
 $projectRoot = dirname(dirname(dirname(__DIR__)));
-require_once $projectRoot . '/vendor/autoload.php';
+require_once $projectRoot.'/vendor/autoload.php';
 
 // Import required recipes
 require_once 'recipe/laravel.php';
@@ -15,16 +15,16 @@ require_once 'contrib/rsync.php';
 set('rsync_src', getcwd());
 
 // Load task files
-require_once __DIR__ . '/../tasks/database.php';
-require_once __DIR__ . '/../tasks/health.php';
-require_once __DIR__ . '/../tasks/logs.php';
-require_once __DIR__ . '/../tasks/notifications.php';
-require_once __DIR__ . '/../tasks/rollback.php';
+require_once __DIR__.'/../tasks/database.php';
+require_once __DIR__.'/../tasks/health.php';
+require_once __DIR__.'/../tasks/logs.php';
+require_once __DIR__.'/../tasks/notifications.php';
+require_once __DIR__.'/../tasks/rollback.php';
 
 // Use timestamp for release name
 set('release_name', function () {
     $yearMonth = date('Ym');
-    $counterDir = "{{deploy_path}}/.dep/release_counter";
+    $counterDir = '{{deploy_path}}/.dep/release_counter';
     $counterFile = "$counterDir/{$yearMonth}.txt";
 
     // Ensure the folder exists
@@ -58,9 +58,9 @@ task('deploy:env', function () {
     $environment = currentHost()->getAlias();
 
     // Load environment-specific .env file from .deploy directory
-    $deployEnvFile = $projectRoot . "/.deploy/.env.$environment";
+    $deployEnvFile = $projectRoot."/.deploy/.env.$environment";
     if (file_exists($deployEnvFile)) {
-        $dotenv = Dotenv::createImmutable($projectRoot . '/.deploy', ".env.$environment");
+        $dotenv = Dotenv::createImmutable($projectRoot.'/.deploy', ".env.$environment");
         $dotenv->load();
 
         writeln("<info>✅ Loaded environment variables from .deploy/.env.$environment</info>");
@@ -69,22 +69,22 @@ task('deploy:env', function () {
         // $envPrefix = 'DEPLOY_' . strtoupper($environment) . '_';
         $envPrefix = 'DEPLOY_';
 
-        if ($host = $_ENV[$envPrefix . 'HOST'] ?? getenv($envPrefix . 'HOST')) {
+        if ($host = $_ENV[$envPrefix.'HOST'] ?? getenv($envPrefix.'HOST')) {
             set('hostname', $host);
             currentHost()->set('hostname', $host);
         }
 
-        if ($user = $_ENV[$envPrefix . 'USER'] ?? getenv($envPrefix . 'USER')) {
+        if ($user = $_ENV[$envPrefix.'USER'] ?? getenv($envPrefix.'USER')) {
             set('remote_user', $user);
             currentHost()->set('remote_user', $user);
         }
 
-        if ($path = $_ENV[$envPrefix . 'PATH'] ?? getenv($envPrefix . 'PATH')) {
+        if ($path = $_ENV[$envPrefix.'PATH'] ?? getenv($envPrefix.'PATH')) {
             set('deploy_path', $path);
             currentHost()->set('deploy_path', $path);
         }
 
-        if ($branch = $_ENV[$envPrefix . 'BRANCH'] ?? getenv($envPrefix . 'BRANCH')) {
+        if ($branch = $_ENV[$envPrefix.'BRANCH'] ?? getenv($envPrefix.'BRANCH')) {
             set('branch', $branch);
             currentHost()->set('branch', $branch);
         }
@@ -97,9 +97,9 @@ task('deploy:env', function () {
     $user = get('remote_user');
     $path = get('deploy_path');
 
-//    writeln("<info>   Host: {$hostname}</info>");
-//    writeln("<info>   User: {$user}</info>");
-//    writeln("<info>   Path: {$path}</info>");
+    //    writeln("<info>   Host: {$hostname}</info>");
+    //    writeln("<info>   User: {$user}</info>");
+    //    writeln("<info>   Path: {$path}</info>");
 
     writeln("<info>✅ Configuration loaded for environment: $environment</info>");
 
@@ -159,6 +159,7 @@ task('php-fpm:restart', function () {
 
     if ($environment === 'local') {
         writeln('<comment>⏭️  Skipping PHP-FPM restart for local environment</comment>');
+
         return;
     }
 
@@ -170,6 +171,7 @@ task('supervisor:reload', function () {
 
     if ($environment === 'local') {
         writeln('<comment>⏭️  Skipping Supervisor reload for local environment</comment>');
+
         return;
     }
 
@@ -195,6 +197,25 @@ task('deploy:link-dep', function () {
     run('ln -sf {{deploy_path}}/.dep {{deploy_path}}/shared/storage/app/deployment');
 })->desc('Create symlink to deployment directory');
 
+task('deploy:fix-module-permissions', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('<comment>⏭️  Skipping permission fix for local environment</comment>');
+
+        return;
+    }
+
+    writeln('🔒 Fixing permissions for modular structure...');
+
+    // Fix permissions for app-modules directory
+    run('chmod -R 755 {{release_path}}/app-modules || true');
+    run('find {{release_path}}/app-modules -type f -exec chmod 644 {} \; || true');
+    run('find {{release_path}}/app-modules -type d -exec chmod 755 {} \; || true');
+
+    writeln('✅ Module permissions fixed');
+})->desc('Fix permissions for modular structure symlinks');
+
 task('deploy:env-local', function () {
     $environment = currentHost()->getAlias();
 
@@ -204,15 +225,28 @@ task('deploy:env-local', function () {
 
     writeln('📝 Setting up .env file for local deployment...');
 
-    $envPath = '{{deploy_path}}/shared/.env';
-    $envExists = test("[ -f {$envPath} ]");
+    $projectRoot = runLocally('pwd');
+    writeln($projectRoot);
 
-    if (!$envExists) {
-        writeln('Creating .env file from .env.example...');
-        run('cp {{deploy_path}}/releases/{{release_path}}/.env.example {{deploy_path}}/shared/.env || echo "APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_DEBUG=true\nAPP_URL=http://localhost\n\nDB_CONNECTION=sqlite\nDB_DATABASE={{deploy_path}}/shared/database.sqlite\n\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\nSESSION_DRIVER=file" > {{deploy_path}}/shared/.env');
-        run('touch {{deploy_path}}/shared/database.sqlite');
-        run('cd {{release_path}} && php artisan key:generate');
-        writeln('✅ .env file created');
+    $projectEnvPath = trim($projectRoot).'/.env';
+    $sharedEnvPath = '{{deploy_path}}/shared/.env';
+
+    $envExists = test("[ -f {$sharedEnvPath} ]");
+
+    if (! $envExists) {
+        writeln('Copying .env file from project root...');
+
+        // Check if project .env exists
+        if (file_exists($projectEnvPath)) {
+            run("cat > {$sharedEnvPath} << 'ENVEOF'\n".file_get_contents($projectEnvPath)."\nENVEOF");
+            writeln('✅ .env file copied from project root');
+        } else {
+            writeln('⚠️  Project .env not found, creating basic .env...');
+            run('echo "APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_DEBUG=true\nAPP_URL=http://localhost\n\nDB_CONNECTION=sqlite\nDB_DATABASE={{deploy_path}}/shared/database.sqlite\n\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\nSESSION_DRIVER=file" > {{deploy_path}}/shared/.env');
+            run('touch {{deploy_path}}/shared/database.sqlite');
+            run('cd {{release_path}} && php artisan key:generate');
+            writeln('✅ Basic .env file created');
+        }
     } else {
         writeln('✅ .env file already exists');
     }
@@ -224,12 +258,12 @@ task('artisan:queue:restart', function () {
 
     if ($environment === 'local') {
         writeln('<comment>⏭️  Skipping queue restart for local environment</comment>');
+
         return;
     }
 
     run('{{bin/php}} {{release_or_current_path}}/artisan queue:restart');
 })->desc('Restart queue workers');
-
 
 // Define deployment workflows
 desc('Quick deployment (without database backup)');
@@ -243,10 +277,11 @@ task('deploy', [
     'deploy:release',
     'build:assets',
     'rsync',
-    'deploy:shared',
     'deploy:env-local',
+    'deploy:shared',
     'deploy:writable',
     'deploy:vendors',
+    'deploy:fix-module-permissions',
     'artisan:storage:link',
     'artisan:config:cache',
     'artisan:view:cache',
@@ -258,7 +293,7 @@ task('deploy', [
     'supervisor:reload',
     'deploy:publish',
     'health:check-endpoints',
-//    'logs:check',
+    //    'logs:check',
     'deploy:link-dep',
     'notify:success',
 ]);
@@ -278,6 +313,7 @@ task('deploy:full', [
     'deploy:env-local',
     'deploy:writable',
     'deploy:vendors',
+    'deploy:fix-module-permissions',
     'artisan:storage:link',
     'artisan:config:cache',
     'artisan:view:cache',
@@ -290,7 +326,7 @@ task('deploy:full', [
     'supervisor:reload',
     'deploy:publish',
     'health:check-endpoints',
-//    'logs:check',
+    //    'logs:check',
     'deploy:link-dep',
     'notify:success',
 ]);
@@ -311,7 +347,6 @@ $standaloneTasksRequiringEnv = [
 foreach ($standaloneTasksRequiringEnv as $task) {
     before($task, 'deploy:env');
 }
-
 
 // Event handlers
 after('deploy:failed', 'deploy:unlock');

@@ -68,6 +68,19 @@ task('health:check-resources', function () {
 
 // Combined health check and smoke test task
 task('health:check-endpoints', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('🔍 Running deployment health checks...');
+        writeln('<comment>⏭️  Skipping endpoint checks for local environment</comment>');
+        writeln('');
+        writeln('💡 To test the local deployment:');
+        writeln('   cd {{current_path}} && php artisan serve');
+        writeln('');
+        writeln('✅ Local deployment completed successfully!');
+        return;
+    }
+
     $appUrl = run('cd {{current_path}} && php artisan tinker --execute="echo config(\"app.url\");"');
     $appUrl = trim($appUrl);
 

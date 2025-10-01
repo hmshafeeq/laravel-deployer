@@ -337,16 +337,17 @@ task('database:download', function () {
     $backup = selectBackup($backupSelection);
     $remoteInfo = getRemoteFileInfo($backup['path']);
 
-    runLocally('mkdir -p ./backups');
+    $backupDir = './.deploy/downloads/backups';
+    runLocally("mkdir -p {$backupDir}");
 
     writeln("📥 Downloading {$backup['name']} ({$remoteInfo['human']})...");
 
     try {
-        downloadWithProgress($backup['path'], "./backups/{$backup['name']}", $remoteInfo['bytes'], $downloadMethod);
+        downloadWithProgress($backup['path'], "{$backupDir}/{$backup['name']}", $remoteInfo['bytes'], $downloadMethod);
         writeln('');
         writeln('💡 To restore locally: php artisan database:restore '.$backup['name']);
     } catch (Exception $e) {
-        $localFile = "./backups/{$backup['name']}";
+        $localFile = "{$backupDir}/{$backup['name']}";
         if ((int) runLocally("test -f '{$localFile}' && echo 1 || echo 0") === 1) {
             $localSize = (int) runLocally("stat -f%z '{$localFile}' 2>/dev/null || stat -c%s '{$localFile}' 2>/dev/null || echo 0");
             if ($localSize < ($remoteInfo['bytes'] * 0.95)) {
