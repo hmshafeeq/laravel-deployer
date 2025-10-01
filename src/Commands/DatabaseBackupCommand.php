@@ -5,7 +5,6 @@ namespace Shaf\LaravelDeployer\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
-use Symfony\Component\Process\Process as SymfonyProcess;
 
 class DatabaseBackupCommand extends Command
 {
@@ -21,7 +20,7 @@ class DatabaseBackupCommand extends Command
         $this->line('');
 
         $serverName = $this->getServerName();
-        if (!$serverName) {
+        if (! $serverName) {
             return self::FAILURE;
         }
 
@@ -34,7 +33,7 @@ class DatabaseBackupCommand extends Command
             escapeshellarg($serverName)
         );
 
-        $this->info('🚀 Running: ' . $command);
+        $this->info('🚀 Running: '.$command);
         $this->line('');
 
         // Run with real-time output streaming
@@ -49,10 +48,12 @@ class DatabaseBackupCommand extends Command
             $this->info('✅ Database backup completed successfully!');
             $this->info('💡 To download the backup:');
             $this->line("   php artisan database:download {$serverName}");
+
             return self::SUCCESS;
         } else {
             $this->line('');
             $this->error('❌ Database backup failed');
+
             return self::FAILURE;
         }
     }
@@ -65,9 +66,10 @@ class DatabaseBackupCommand extends Command
 
         $serverName = $this->argument('server');
         if ($serverName) {
-            if (!$this->validateServer($serverName)) {
+            if (! $this->validateServer($serverName)) {
                 return null;
             }
+
             return $serverName;
         }
 
@@ -93,15 +95,16 @@ class DatabaseBackupCommand extends Command
 
         $this->info('📋 Available servers:');
         foreach ($servers as $index => $server) {
-            $this->line("   " . ($index + 1) . ". {$server}");
+            $this->line('   '.($index + 1).". {$server}");
         }
         $this->line('');
 
         $choice = $this->ask('Select server', '1');
         $index = (int) $choice - 1;
 
-        if (!isset($servers[$index])) {
+        if (! isset($servers[$index])) {
             $this->error('❌ Invalid server selection');
+
             return null;
         }
 
@@ -111,17 +114,20 @@ class DatabaseBackupCommand extends Command
     protected function getAvailableServers(): array
     {
         $hostsFile = base_path('.deploy/hosts.json');
-        if (!File::exists($hostsFile)) {
+        if (! File::exists($hostsFile)) {
             $this->error('❌ .deploy/hosts.json not found.');
             $this->info('💡 Run: php artisan laravel-deployer:install');
+
             return [];
         }
 
         try {
             $hosts = json_decode(File::get($hostsFile), true);
+
             return array_keys($hosts);
         } catch (\Exception $e) {
             $this->error("❌ Error reading hosts.json: {$e->getMessage()}");
+
             return [];
         }
     }
@@ -129,13 +135,15 @@ class DatabaseBackupCommand extends Command
     protected function validateServer(string $serverName): bool
     {
         $servers = $this->getAvailableServers();
-        if (!in_array($serverName, $servers)) {
+        if (! in_array($serverName, $servers)) {
             $this->error("❌ Server '{$serverName}' not found in hosts.json");
-            if (!empty($servers)) {
-                $this->info('Available servers: ' . implode(', ', $servers));
+            if (! empty($servers)) {
+                $this->info('Available servers: '.implode(', ', $servers));
             }
+
             return false;
         }
+
         return true;
     }
 }

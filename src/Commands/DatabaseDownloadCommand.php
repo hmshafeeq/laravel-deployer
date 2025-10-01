@@ -5,7 +5,6 @@ namespace Shaf\LaravelDeployer\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
-use Symfony\Component\Process\Process as SymfonyProcess;
 
 class DatabaseDownloadCommand extends Command
 {
@@ -23,7 +22,7 @@ class DatabaseDownloadCommand extends Command
         $this->line('');
 
         $serverName = $this->getServerName();
-        if (!$serverName) {
+        if (! $serverName) {
             return self::FAILURE;
         }
 
@@ -32,7 +31,7 @@ class DatabaseDownloadCommand extends Command
 
         // Ensure backups directory exists
         $backupsDir = base_path('backups');
-        if (!File::exists($backupsDir)) {
+        if (! File::exists($backupsDir)) {
             File::makeDirectory($backupsDir, 0755, true);
             $this->info("📁 Created backups directory: {$backupsDir}");
         }
@@ -46,16 +45,16 @@ class DatabaseDownloadCommand extends Command
         // Add backup selection argument if provided
         $backupSelection = $this->argument('backup');
         if ($backupSelection) {
-            $command .= ' ' . escapeshellarg($backupSelection);
+            $command .= ' '.escapeshellarg($backupSelection);
         }
 
         // Add method argument if provided
         $method = $this->argument('method');
         if ($method) {
-            $command .= ' ' . escapeshellarg($method);
+            $command .= ' '.escapeshellarg($method);
         }
 
-        $this->info('🚀 Running: ' . $command);
+        $this->info('🚀 Running: '.$command);
         $this->line('');
 
         // Set environment variables for arguments if provided
@@ -82,10 +81,12 @@ class DatabaseDownloadCommand extends Command
             $this->line('   php artisan database:restore');
             $this->line('');
             $this->info('📁 Downloaded backups are in: ./backups/');
+
             return self::SUCCESS;
         } else {
             $this->line('');
             $this->error('❌ Database download failed');
+
             return self::FAILURE;
         }
     }
@@ -98,9 +99,10 @@ class DatabaseDownloadCommand extends Command
 
         $serverName = $this->argument('server');
         if ($serverName) {
-            if (!$this->validateServer($serverName)) {
+            if (! $this->validateServer($serverName)) {
                 return null;
             }
+
             return $serverName;
         }
 
@@ -126,15 +128,16 @@ class DatabaseDownloadCommand extends Command
 
         $this->info('📋 Available servers:');
         foreach ($servers as $index => $server) {
-            $this->line("   " . ($index + 1) . ". {$server}");
+            $this->line('   '.($index + 1).". {$server}");
         }
         $this->line('');
 
         $choice = $this->ask('Select server', '1');
         $index = (int) $choice - 1;
 
-        if (!isset($servers[$index])) {
+        if (! isset($servers[$index])) {
             $this->error('❌ Invalid server selection');
+
             return null;
         }
 
@@ -144,17 +147,20 @@ class DatabaseDownloadCommand extends Command
     protected function getAvailableServers(): array
     {
         $hostsFile = base_path('.deploy/hosts.json');
-        if (!File::exists($hostsFile)) {
+        if (! File::exists($hostsFile)) {
             $this->error('❌ .deploy/hosts.json not found.');
             $this->info('💡 Run: php artisan laravel-deployer:install');
+
             return [];
         }
 
         try {
             $hosts = json_decode(File::get($hostsFile), true);
+
             return array_keys($hosts);
         } catch (\Exception $e) {
             $this->error("❌ Error reading hosts.json: {$e->getMessage()}");
+
             return [];
         }
     }
@@ -162,13 +168,15 @@ class DatabaseDownloadCommand extends Command
     protected function validateServer(string $serverName): bool
     {
         $servers = $this->getAvailableServers();
-        if (!in_array($serverName, $servers)) {
+        if (! in_array($serverName, $servers)) {
             $this->error("❌ Server '{$serverName}' not found in hosts.json");
-            if (!empty($servers)) {
-                $this->info('Available servers: ' . implode(', ', $servers));
+            if (! empty($servers)) {
+                $this->info('Available servers: '.implode(', ', $servers));
             }
+
             return false;
         }
+
         return true;
     }
 }

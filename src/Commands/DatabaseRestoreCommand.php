@@ -24,15 +24,17 @@ class DatabaseRestoreCommand extends Command
         $this->line('');
 
         // Check if we're in a Laravel project
-        if (!File::exists(base_path('.env'))) {
+        if (! File::exists(base_path('.env'))) {
             $this->error('❌ No .env file found. Please ensure this command is run from a Laravel project.');
+
             return self::FAILURE;
         }
 
         // Check if backups directory exists
         $backupsDir = base_path('backups');
-        if (!File::exists($backupsDir)) {
+        if (! File::exists($backupsDir)) {
             $this->error('❌ No backups directory found. Please run \'php vendor/bin/dep database:download\' first.');
+
             return self::FAILURE;
         }
 
@@ -42,41 +44,45 @@ class DatabaseRestoreCommand extends Command
         if (empty($this->backups)) {
             $this->error('❌ No database backups found in ./backups/ directory.');
             $this->info('ℹ️  Run \'php vendor/bin/dep database:download\' to download backups from server.');
+
             return self::FAILURE;
         }
 
         // Handle --list option
         if ($this->option('list')) {
             $this->displayBackups();
+
             return self::SUCCESS;
         }
 
         // Get selected backup
         $selectedBackup = $this->getSelectedBackup();
-        if (!$selectedBackup) {
+        if (! $selectedBackup) {
             $this->info('ℹ️  Restoration cancelled.');
+
             return self::SUCCESS;
         }
 
         // Get database configuration
         $dbConfig = $this->getDatabaseConfig();
-        if (!$dbConfig) {
+        if (! $dbConfig) {
             return self::FAILURE;
         }
 
         // Confirm restoration
-        if (!$this->confirmRestore($selectedBackup, $dbConfig)) {
+        if (! $this->confirmRestore($selectedBackup, $dbConfig)) {
             $this->info('ℹ️  Restoration cancelled.');
+
             return self::SUCCESS;
         }
 
         // Perform restoration
-        if (!$this->restoreDatabase($selectedBackup, $dbConfig)) {
+        if (! $this->restoreDatabase($selectedBackup, $dbConfig)) {
             return self::FAILURE;
         }
 
         // Run migrations if not skipped
-        if (!$this->option('no-migrate')) {
+        if (! $this->option('no-migrate')) {
             $this->runMigrations();
         }
 
@@ -88,8 +94,8 @@ class DatabaseRestoreCommand extends Command
 
     protected function getAvailableBackups(string $backupsDir): array
     {
-        $files = File::glob($backupsDir . '/db_backup_*.sql.gz');
-        
+        $files = File::glob($backupsDir.'/db_backup_*.sql.gz');
+
         // Sort by modification time (newest first)
         usort($files, function ($a, $b) {
             return filemtime($b) - filemtime($a);
@@ -107,7 +113,7 @@ class DatabaseRestoreCommand extends Command
             $name = basename($backup);
             $size = $this->formatFileSize(filesize($backup));
             $date = date('Y-m-d H:i:s', filemtime($backup));
-            
+
             $this->line(sprintf('   %d. %s (%s) - %s', $index + 1, $name, $size, $date));
         }
 
@@ -131,29 +137,32 @@ class DatabaseRestoreCommand extends Command
                     return $this->backups[$index];
                 }
                 $this->error("❌ Invalid backup selection: {$backupArg}");
+
                 return null;
             }
-            
+
             // Treat as filename
-            $backupPath = base_path('backups/' . $backupArg);
+            $backupPath = base_path('backups/'.$backupArg);
             if (File::exists($backupPath)) {
                 return $backupPath;
             }
-            
+
             $this->error("❌ Backup file not found: {$backupArg}");
+
             return null;
         }
 
         // Interactive selection
         $this->displayBackups();
-        
+
         $choice = $this->ask(
             "Enter backup number to restore (1-{$this->count()}) or press Enter for latest",
             '1'
         );
 
-        if (!is_numeric($choice) || $choice < 1 || $choice > count($this->backups)) {
+        if (! is_numeric($choice) || $choice < 1 || $choice > count($this->backups)) {
             $this->error("❌ Invalid backup selection: {$choice}");
+
             return null;
         }
 
@@ -175,23 +184,27 @@ class DatabaseRestoreCommand extends Command
             // Validate required settings
             if (empty($config['database'])) {
                 $this->error('❌ DB_DATABASE is not set in .env file');
+
                 return null;
             }
 
             if (empty($config['username'])) {
                 $this->error('❌ DB_USERNAME is not set in .env file');
+
                 return null;
             }
 
             // Only support MySQL for now
             if ($config['connection'] !== 'mysql') {
                 $this->error("❌ Only MySQL databases are supported. Current connection: {$config['connection']}");
+
                 return null;
             }
 
             return $config;
         } catch (\Exception $e) {
             $this->error("❌ Error reading database configuration: {$e->getMessage()}");
+
             return null;
         }
     }
@@ -199,7 +212,7 @@ class DatabaseRestoreCommand extends Command
     protected function confirmRestore(string $selectedBackup, array $dbConfig): bool
     {
         $backupName = basename($selectedBackup);
-        
+
         $this->info("📋 Selected backup: {$backupName}");
         $this->line('');
         $this->info('🗄️  Database configuration:');
@@ -209,7 +222,7 @@ class DatabaseRestoreCommand extends Command
         $this->line('');
 
         $this->warn("⚠️  This will COMPLETELY REPLACE all data in database '{$dbConfig['database']}'!");
-        
+
         return $this->confirm('Are you sure you want to continue?', false);
     }
 
@@ -220,8 +233,9 @@ class DatabaseRestoreCommand extends Command
 
         // Test database connection first
         $this->info('🔌 Testing database connection...');
-        if (!$this->testDatabaseConnection($dbConfig)) {
+        if (! $this->testDatabaseConnection($dbConfig)) {
             $this->error('❌ Cannot connect to database. Please check your .env configuration.');
+
             return false;
         }
 
@@ -247,14 +261,15 @@ class DatabaseRestoreCommand extends Command
 
             $result = Process::timeout(3600)->run($command); // 1 hour timeout
 
-            if (!$result->successful()) {
+            if (! $result->successful()) {
                 $this->error('❌ Database restoration failed:');
                 $this->line($result->errorOutput());
+
                 return false;
             }
 
             $duration = time() - $startTime;
-            $this->info("✅ Database restoration completed successfully!");
+            $this->info('✅ Database restoration completed successfully!');
             $this->info("⏱️  Restoration time: {$duration} seconds");
             $this->info("🗄️  Database '{$dbConfig['database']}' has been restored from backup: {$backupName}");
 
@@ -279,6 +294,7 @@ class DatabaseRestoreCommand extends Command
             );
 
             $result = Process::run($command);
+
             return $result->successful();
         } finally {
             if (File::exists($tempConfig)) {
@@ -290,7 +306,7 @@ class DatabaseRestoreCommand extends Command
     protected function createTempMysqlConfig(array $dbConfig): string
     {
         $tempConfig = tempnam(sys_get_temp_dir(), 'mysql_restore_');
-        
+
         $content = sprintf(
             "[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n",
             $dbConfig['host'],
@@ -300,22 +316,22 @@ class DatabaseRestoreCommand extends Command
         );
 
         File::put($tempConfig, $content);
-        
+
         return $tempConfig;
     }
 
     protected function runMigrations(): void
     {
         $this->line('');
-        
-        if (!$this->confirm('Run \'php artisan migrate\' to ensure database schema is up to date?', true)) {
+
+        if (! $this->confirm('Run \'php artisan migrate\' to ensure database schema is up to date?', true)) {
             return;
         }
 
         $this->info('🔄 Running migrations...');
-        
+
         $result = Process::run('php artisan migrate --force');
-        
+
         if ($result->successful()) {
             $this->info('✅ Migrations completed.');
         } else {
@@ -328,13 +344,13 @@ class DatabaseRestoreCommand extends Command
     {
         $units = ['B', 'KB', 'MB', 'GB'];
         $unitIndex = 0;
-        
+
         while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
             $bytes /= 1024;
             $unitIndex++;
         }
-        
-        return round($bytes, 2) . $units[$unitIndex];
+
+        return round($bytes, 2).$units[$unitIndex];
     }
 
     protected function count(): int
