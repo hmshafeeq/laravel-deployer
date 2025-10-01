@@ -30,8 +30,8 @@ A comprehensive Laravel package that provides deployment automation using Deploy
 - 📊 **Health Monitoring**: Comprehensive endpoint testing and server resource checks
 - 💾 **Database Management**: Automated backups with download capabilities and restoration
 - 📝 **Log Analysis**: Automated log checking for errors and warnings with remote access
-- ⚡ **Quick Rollbacks**: Fast rollback without database changes
-- 🔄 **Full Rollbacks**: Complete rollback including database restoration
+- ⚡ **Flexible Deployment**: Choose quick deploy (fast) or full deploy (with database backup)
+- 🔄 **Smart Rollbacks**: Quick rollback (code only) or full rollback (with database restore)
 - 🎯 **Multiple Environments**: Support for local, staging, and production deployments
 - 🔐 **Secure Configuration**: Environment-specific credentials stored in gitignored `.deploy/` directory
 - ⚙️ **Customizable Workflows**: Easy to extend and customize deployment tasks
@@ -99,11 +99,11 @@ DEPLOY_BRANCH=dev
 ### 2. Run Your First Deployment
 
 ```bash
-# Deploy to staging
+# Quick deploy to staging (without database backup)
 vendor/bin/dep deploy staging
 
-# Deploy to production (with confirmation prompt)
-vendor/bin/dep deploy production
+# Full deploy to production with database backup (recommended for production)
+vendor/bin/dep deploy:full production
 ```
 
 ## Configuration
@@ -179,9 +179,9 @@ config:
 
 ## Deployment Workflows
 
-### Standard Deployment
+### Quick Deployment (Default)
 
-Full deployment with database backup (recommended for production):
+Fast deployment without database backup (useful for staging/development):
 
 ```bash
 vendor/bin/dep deploy staging
@@ -196,22 +196,22 @@ vendor/bin/dep deploy production
 5. Rsync files to server
 6. Install Composer dependencies
 7. Run Laravel optimizations (config, view, route cache)
-8. **Database backup** (production safety)
-9. Run migrations
-10. Restart services (PHP-FPM, queue workers, Supervisor)
-11. Health checks and endpoint tests
-12. Desktop notification on completion
+8. Run migrations
+9. Restart services (PHP-FPM, queue workers, Supervisor)
+10. Health checks and endpoint tests
+11. Desktop notification on completion
 
-### Quick Deployment
+### Full Deployment (With Database Backup)
 
-Fast deployment without database backup (useful for staging):
+Complete deployment with automatic database backup (recommended for production):
 
 ```bash
-vendor/bin/dep deploy:quick staging
+vendor/bin/dep deploy:full staging
+vendor/bin/dep deploy:full production
 ```
 
-**Same as standard deployment but skips:**
-- Database backup step
+**Same as quick deployment plus:**
+- **Automatic database backup** before migrations (production safety)
 
 ### Local Deployment
 
@@ -233,12 +233,16 @@ vendor/bin/dep deploy local
 
 | Task | Description |
 |------|-------------|
-| `deploy` | Full deployment with database backup |
-| `deploy:quick` | Quick deployment without database backup |
+| `deploy` | Quick deployment without database backup (default) |
+| `deploy:full` | Full deployment with automatic database backup |
 | `deploy:info` | Display deployment information |
 | `deploy:setup` | Initialize deployment structure on server |
 | `deploy:lock` | Lock deployment to prevent concurrent runs |
 | `deploy:unlock` | Unlock deployment |
+
+> **💡 Quick Reference:**
+> - Use `deploy` for fast deployments to staging/development
+> - Use `deploy:full` for production deployments with automatic database backup
 
 ### Database Management Tasks
 
@@ -346,10 +350,10 @@ vendor/bin/dep rollback:full production
 
 ### Automated Backups
 
-**During Deployment:**
+**During Full Deployment:**
 ```bash
-# Full deployment includes automatic backup
-vendor/bin/dep deploy production
+# Full deployment includes automatic backup before migrations
+vendor/bin/dep deploy:full production
 ```
 
 **Manual Backup:**
@@ -744,7 +748,7 @@ The main orchestration file that:
 **Key Workflows:**
 
 ```php
-// Quick deployment (no database backup)
+// Quick deployment (default - no database backup)
 task('deploy', [
     'deploy:env',
     'deploy:confirm-target',
@@ -758,12 +762,19 @@ task('deploy', [
     'notify:success',
 ]);
 
-// Full deployment (with database backup)
+// Full deployment (with database backup before migrations)
 task('deploy:full', [
-    // ... same as deploy ...
-    'database:backup',  // Added
+    'deploy:env',
+    'deploy:confirm-target',
+    'health:check-resources',
+    'build:assets',
+    'rsync',
+    'deploy:vendors',
+    'database:backup',  // Database backup added here
     'artisan:migrate',
-    // ... rest of tasks ...
+    'php-fpm:restart',
+    'health:check-endpoints',
+    'notify:success',
 ]);
 ```
 
@@ -861,11 +872,12 @@ While Laravel Deployer provides a comprehensive, opinionated deployment solution
 **Laravel Deployer stands out with:**
 - ✅ Built on battle-tested Deployer PHP (used by thousands of projects)
 - ✅ Pre-configured tasks specifically for Laravel applications
+- ✅ Flexible deployment workflows (quick deploy vs. full deploy with backup)
 - ✅ Comprehensive database management (backup, download, restore)
 - ✅ Advanced monitoring and health checks
 - ✅ Cross-platform desktop notifications
 - ✅ Extensive log management capabilities
-- ✅ Both quick and full rollback options
+- ✅ Smart rollback options (quick code-only or full with database restore)
 - ✅ Local deployment testing support
 - ✅ Secure credential management with gitignored `.deploy/` directory
 - ✅ Active maintenance and Laravel version compatibility
