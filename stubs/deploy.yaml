@@ -2,7 +2,7 @@ import:
     - vendor/shaf/laravel-deployer/recipe/deploy.php
 
 config:
-    application: 'Your Application Name'
+    application: 'Application Name'
     ssh_multiplexing: true
     keep_releases: 3
     default_timeout: 900
@@ -25,8 +25,7 @@ config:
             - .phpunit.result.cache
             - .env
             - .env.*
-            - .deploy.json
-            - .deploy.example.json
+            - .deploy/
             - README.md
             - .editorconfig
             - .gitignore
@@ -51,13 +50,11 @@ config:
             - .junie
             - .zed
             - .idea
-            - .mcp*
-            - .deploy
-            - public/hot
         exclude-file: false
         include:
             - composer.json
             - composer.lock
+            - post-deployment.sh
         include-file: false
         filter: [ ]
         filter-file: false
@@ -74,6 +71,8 @@ tasks:
     #  'build:assets':
     'build:assets':
         -   run_locally: 'npm run build'
+    'post-deployment':
+        -   run: '{{current_path}}/post-deployment.sh'
 hosts:
     local:
         labels:
@@ -105,4 +104,10 @@ hosts:
         composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --no-dev --optimize-autoloader'
 
 after:
-    'deploy:failed': [ deploy:unlock, notify:failure ]
+    deploy:failed:
+        - deploy:unlock
+        - notify:failure
+    deploy:success:
+        - post-deployment
+
+# Event handlers moved to deploy.phpoy.php
