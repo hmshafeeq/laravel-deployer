@@ -17,6 +17,7 @@ A comprehensive Laravel package that provides deployment automation using Deploy
 - [Health & Monitoring](#health--monitoring)
 - [Log Management](#log-management)
 - [Rollback Operations](#rollback-operations)
+- [Laravel Artisan Wrapper Commands](#laravel-artisan-wrapper-commands)
 - [Advanced Usage](#advanced-usage)
 - [Task Architecture](#task-architecture)
 - [Similar Projects](#similar-projects)
@@ -34,6 +35,7 @@ A comprehensive Laravel package that provides deployment automation using Deploy
 - 🔄 **Smart Rollbacks**: Quick rollback (code only) or full rollback (with database restore)
 - 🎯 **Multiple Environments**: Support for local, staging, and production deployments
 - 🔐 **Secure Configuration**: Environment-specific credentials stored in gitignored `.deploy/` directory
+- 🎨 **Laravel Integration**: Native Artisan wrapper commands for deployment tasks
 - ⚙️ **Customizable Workflows**: Easy to extend and customize deployment tasks
 
 ## Requirements
@@ -289,8 +291,6 @@ Output includes:
 | Task | Description |
 |------|-------------|
 | `logs:check` | Analyze last 7 days for errors and warnings |
-| `logs:list` | List available log files on server |
-| `logs:view` | View a specific log file |
 | `logs:search` | Search log file for specific terms |
 | `logs:download` | Download log file to local machine |
 
@@ -298,18 +298,20 @@ Output includes:
 ```bash
 # Check recent logs for issues
 vendor/bin/dep logs:check production
-
-# View latest 50 lines
-vendor/bin/dep logs:view production --lines=50
-
-# Follow log in real-time
-vendor/bin/dep logs:view production --follow
+# Or via Laravel wrapper
+php artisan deployer:logs production
 
 # Search for errors
 vendor/bin/dep logs:search production --search="ERROR" --lines=100
+# Or via Laravel wrapper
+php artisan deployer:logs:search production --search="ERROR" --lines=100
 
-# Download log file
-vendor/bin/dep logs:download production --destination=./logs/
+# Download log file (auto-creates .deploy/downloads/logs/{timestamp}/)
+vendor/bin/dep logs:download production
+# Or via Laravel wrapper
+php artisan deployer:logs:download production
+# With custom destination
+php artisan deployer:logs:download production --destination=./storage/logs/
 ```
 
 ### Rollback Tasks
@@ -477,26 +479,6 @@ vendor/bin/dep logs:check production
 
 ### Remote Log Access
 
-**List Available Logs:**
-```bash
-vendor/bin/dep logs:list production
-```
-
-**View Log File:**
-```bash
-# View last 20 lines (default)
-vendor/bin/dep logs:view production
-
-# View last 100 lines
-vendor/bin/dep logs:view production --lines=100
-
-# View all lines
-vendor/bin/dep logs:view production --lines=0
-
-# Follow log in real-time
-vendor/bin/dep logs:view production --follow
-```
-
 **Search Logs:**
 ```bash
 # Interactive search
@@ -566,6 +548,64 @@ Deployer's built-in rollback (code only):
 
 ```bash
 vendor/bin/dep rollback production
+```
+
+## Laravel Artisan Wrapper Commands
+
+For convenience, Laravel Deployer provides Artisan wrapper commands that make deployment tasks feel more native to Laravel:
+
+### Available Laravel Commands
+
+| Laravel Command | Deployer Equivalent | Description |
+|----------------|---------------------|-------------|
+| `php artisan deploy {env} {task}` | `vendor/bin/dep {task} {env}` | Deploy application |
+| `php artisan deployer:logs {env}` | `vendor/bin/dep logs:check {env}` | Check logs for errors/warnings |
+| `php artisan deployer:logs:search {env}` | `vendor/bin/dep logs:search {env}` | Search logs for specific terms |
+| `php artisan deployer:logs:download {env}` | `vendor/bin/dep logs:download {env}` | Download log files |
+| `php artisan database:backup` | `vendor/bin/dep database:backup` | Backup database |
+| `php artisan database:download` | `vendor/bin/dep database:download` | Download database backup |
+| `php artisan database:restore {backup}` | Local restoration only | Restore database from backup |
+
+### Deployment Examples
+
+```bash
+# Quick deployment to staging
+php artisan deploy staging
+
+# Full deployment with backup to production
+php artisan deploy production deploy:full
+
+# View deployment help
+php artisan deploy --help
+```
+
+### Log Management Examples
+
+```bash
+# Check logs on production (default)
+php artisan deployer:logs production
+
+# Search for specific errors
+php artisan deployer:logs:search production --search="SQLSTATE" --lines=50
+
+# Download log file (auto-saves to .deploy/downloads/logs/{timestamp}/)
+php artisan deployer:logs:download production
+
+# Download to custom location
+php artisan deployer:logs:download production --destination=./storage/logs/
+```
+
+### Database Management Examples
+
+```bash
+# Create backup on production server
+php artisan database:backup production
+
+# Download latest backup
+php artisan database:download production
+
+# Restore local database from backup
+php artisan database:restore db_backup_2024-03-15_14-30-45.sql.gz
 ```
 
 ## Advanced Usage
@@ -694,15 +734,12 @@ All deployment tasks are organized in the `tasks/` directory:
 
 **Tasks:**
 - `logs:check` - Analyze last 7 days of logs
-- `logs:list` - Display available log files
-- `logs:view` - View log file with optional following
 - `logs:search` - Search logs with grep
 - `logs:download` - Download log files
 
 **Features:**
 - Multi-day log analysis
 - Error/warning/info categorization
-- Real-time log following
 - Remote log searching
 - Wildcard log file support
 

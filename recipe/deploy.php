@@ -337,7 +337,6 @@ $standaloneTasksRequiringEnv = [
     'database:backup',  // Only when run standalone (not during deploy)
     'database:download',
     'logs:check',
-    'logs:view',
     'logs:search',
     'logs:download',
     'rollback:quick',

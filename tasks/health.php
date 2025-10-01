@@ -13,6 +13,7 @@ task('health:check-resources', function () {
         writeln('<comment>⏭️  Skipping detailed resource checks for local environment</comment>');
         writeln('✅ Local environment checks passed');
         writeln('');
+
         return;
     }
 
@@ -26,7 +27,7 @@ task('health:check-resources', function () {
     $usedPercentIndex = count($diskInfo) === 6 ? 4 : 3;
     $availableIndex = count($diskInfo) === 6 ? 3 : 2;
 
-    if (!isset($diskInfo[$usedPercentIndex])) {
+    if (! isset($diskInfo[$usedPercentIndex])) {
         writeln('<comment>⚠️  Could not parse disk usage information</comment>');
     } else {
         $usedPercent = rtrim($diskInfo[$usedPercentIndex], '%');
@@ -78,6 +79,7 @@ task('health:check-endpoints', function () {
         writeln('   cd {{current_path}} && php artisan serve');
         writeln('');
         writeln('✅ Local deployment completed successfully!');
+
         return;
     }
 
@@ -88,7 +90,7 @@ task('health:check-endpoints', function () {
     writeln('');
 
     // First, check the dedicated health endpoint with detailed output
-    $healthUrl = rtrim($appUrl, '/') . '/health';
+    $healthUrl = rtrim($appUrl, '/').'/health';
 
     // Health check with timeout, retry logic, and proper error handling
     $maxRetries = 3;
@@ -115,7 +117,7 @@ task('health:check-endpoints', function () {
                 writeln('⚠️  Health check connection failed, retrying in 5 seconds...');
                 sleep(5);
             } else {
-                throw new Exception("Health endpoint connection failed after {$maxRetries} attempts: " . $e->getMessage());
+                throw new Exception("Health endpoint connection failed after {$maxRetries} attempts: ".$e->getMessage());
             }
         }
     }
@@ -140,7 +142,7 @@ task('health:check-endpoints', function () {
     ];
 
     foreach ($endpoints as $endpoint => $description) {
-        $url = rtrim($appUrl, '/') . $endpoint;
+        $url = rtrim($appUrl, '/').$endpoint;
         $response = run("curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
 
         if (! in_array($response, ['200', '302', '401'])) { // Allow redirects and auth pages

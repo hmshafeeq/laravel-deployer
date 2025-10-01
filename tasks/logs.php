@@ -54,7 +54,7 @@ task('logs:check', function () {
                     if (! empty(trim($errorLines))) {
                         foreach (explode("\n", trim($errorLines)) as $line) {
                             if (! empty(trim($line))) {
-                                $recentIssues[] = "🔴 [{$date}] " . trim($line);
+                                $recentIssues[] = "🔴 [{$date}] ".trim($line);
                             }
                         }
                     }
@@ -65,7 +65,7 @@ task('logs:check', function () {
                     if (! empty(trim($warningLines))) {
                         foreach (explode("\n", trim($warningLines)) as $line) {
                             if (! empty(trim($line))) {
-                                $recentIssues[] = "🟡 [{$date}] " . trim($line);
+                                $recentIssues[] = "🟡 [{$date}] ".trim($line);
                             }
                         }
                     }
@@ -87,10 +87,10 @@ task('logs:check', function () {
         writeln('🚨 Recent Issues:');
         $displayCount = min(10, count($recentIssues));
         for ($i = 0; $i < $displayCount; $i++) {
-            writeln('   ' . $recentIssues[$i]);
+            writeln('   '.$recentIssues[$i]);
         }
         if (count($recentIssues) > 10) {
-            writeln('   ... and ' . (count($recentIssues) - 10) . ' more');
+            writeln('   ... and '.(count($recentIssues) - 10).' more');
         }
     }
 
@@ -103,75 +103,6 @@ task('logs:check', function () {
         writeln('✅ No errors or warnings found in recent logs');
     }
 })->desc('Check application logs for errors and warnings (last 7 days)');
-
-
-desc('List available log files');
-task('logs:list', function () {
-
-    // Get array of log files
-    if (! has('log_files')) {
-        warning('Please specify "log_files" option in deploy.php to view log files.');
-
-        return;
-    }
-    $logfiles = getLogFilesSettingAsArray();
-    $logfiles = expandLogFiles($logfiles);
-
-    writeln(sprintf('<info>Available log files on %s:</info>', currentHost()));
-    foreach ($logfiles as $file) {
-        writeln($file);
-    }
-});
-
-desc('View a log file');
-task('logs:view', function () {
-
-    // Get array of log files
-    if (! has('log_files')) {
-        warning('Please specify "log_files" option in deploy.php to view log files.');
-
-        return;
-    }
-    $logfiles = getLogFilesSettingAsArray();
-    $logfiles = expandLogFiles($logfiles);
-
-    // Select log file
-    $logfile = getLogfileLogsOption($logfiles, 'view');
-
-    $keepOpen = input()->getOption('follow');
-    if ($keepOpen) {
-        // Get terminal screen height
-        $lines = (int) runLocally('tput lines');
-        if ($lines < 10) {
-            $lines = 20;
-        }
-    } else {
-        // Set number of lines to display
-        if (null !== input()->getOption('lines')) {
-            $lines = (int) input()->getOption('lines');
-        } else {
-            $lines = 20;
-        }
-    }
-
-    // View log file
-    cd('{{current_path}}');
-    if ($lines === 0) {
-        run(sprintf('less %s', $logfile), real_time_output: true);
-    } else {
-        if ($keepOpen) {
-            run(sprintf('tail -f -n %d %s', $lines, $logfile), real_time_output: true);
-
-            return;
-        } else {
-            run(sprintf('tail -n %d %s', $lines, $logfile), real_time_output: true);
-        }
-    }
-
-    // Build example command
-    $command = sprintf('dep logs:view %s --logfile=%s --lines=%d', currentHost(), $logfile, $lines);
-    writeln(sprintf('<info>Run again with: %s</info>', $command));
-});
 
 desc('Search a log file');
 task('logs:search', function () {
@@ -192,15 +123,15 @@ task('logs:search', function () {
     if (! empty(input()->getOption('search'))) {
         $search = input()->getOption('search');
     } else {
-        $search = ask("Enter search term");
+        $search = ask('Enter search term');
         while (empty($search)) {
             warning('Please specify a search term');
-            $search = ask("Enter search term");
+            $search = ask('Enter search term');
         }
     }
 
     // Set number of lines to display
-    if (null !== input()->getOption('lines')) {
+    if (input()->getOption('lines') !== null) {
         $lines = (int) input()->getOption('lines');
     } else {
         $lines = 20;
@@ -235,15 +166,27 @@ task('logs:download', function () {
     $logfile = getLogfileLogsOption($logfiles, 'download');
 
     // Destination
-    if (null !== input()->getOption('destination')) {
+    if (input()->getOption('destination') !== null) {
         $destination = input()->getOption('destination');
     } else {
         $destination = ask('Enter destination path', './');
     }
 
+    // Ensure destination directory exists
+    if (! str_ends_with($destination, '/')) {
+        // If destination is a file path, get the directory
+        $destinationDir = dirname($destination);
+    } else {
+        // If destination is a directory path
+        $destinationDir = rtrim($destination, '/');
+    }
+
+    // Create directory if it doesn't exist
+    runLocally("mkdir -p {$destinationDir}");
+
     // Download log file
-    download('{{current_path}}/' . $logfile, $destination);
-    writeln('Log file downloaded to: ' . $destination);
+    download('{{current_path}}/'.$logfile, $destination);
+    writeln('Log file downloaded to: '.$destination);
 
     // Build example command
     $command = sprintf('dep logs:download %s --logfile=%s', currentHost(), $logfile);
@@ -252,7 +195,6 @@ task('logs:download', function () {
 
 /**
  * Normalise log_files setting so it works with default Deployer tasks (that expect a string)
- * @return void
  */
 function normaliseLogFilesSetting(): void
 {
@@ -267,6 +209,7 @@ function normaliseLogFilesSetting(): void
 
 /**
  * Return log_files setting as an array so it works with these tasks
+ *
  * @return void
  */
 function getLogFilesSettingAsArray(): array
@@ -285,9 +228,7 @@ function getLogFilesSettingAsArray(): array
 /**
  * Expand logfiles array to include any wildcard (*) files
  *
- * @param array $logfiles
  *
- * @return array
  * @throws Exception\Exception
  * @throws Exception\RunException
  * @throws Exception\TimeoutException
@@ -304,14 +245,16 @@ function expandLogFiles(array $logfiles): array
 
             // Test folder exists
             if (! test(sprintf('cd {{current_path}} && [ -d %s ]', $path))) {
-                writeln('<error>Logs directory does not exist: ' . $path . '</error>');
+                writeln('<error>Logs directory does not exist: '.$path.'</error>');
+
                 continue;
             }
 
             // Test files exist in folder
             $numFiles = run(sprintf('cd {{current_path}} && ls -A %s | wc -l', $path));
             if ($numFiles < 1) {
-                writeln('<info>No logfiles exist in: ' . $path . '</info>');
+                writeln('<info>No logfiles exist in: '.$path.'</info>');
+
                 continue;
             }
 
@@ -320,7 +263,7 @@ function expandLogFiles(array $logfiles): array
             $files = explode("\n", $output);
             if (! empty($files)) {
                 array_walk($files, function (&$value) use ($path) {
-                    $value = $path . DIRECTORY_SEPARATOR . $value;
+                    $value = $path.DIRECTORY_SEPARATOR.$value;
                 });
                 $logfiles = array_merge($logfiles, $files);
             }
@@ -335,7 +278,7 @@ function getLogfileLogsOption(array $logfiles, string $action)
     if (! empty(input()->getOption('logfile'))) {
         return input()->getOption('logfile');
     } elseif (count($logfiles) > 1) {
-        return askChoice('Choose a log file to ' . $action, $logfiles);
+        return askChoice('Choose a log file to '.$action, $logfiles);
     } else {
         return $logfiles[0];
     }
@@ -346,6 +289,6 @@ function getLinesLogsOptions(): int
     if (! empty(input()->getOption('lines'))) {
         return (int) input()->getOption('lines');
     } else {
-        return (int) ask("How many lines to display (0 to view all)", '20');
+        return (int) ask('How many lines to display (0 to view all)', '20');
     }
 }

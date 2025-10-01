@@ -21,12 +21,12 @@ function sendNotification(string $title, string $message, bool $isSuccess = true
 
 task('notify:success', function () {
     $title = '✅ Deployment Successful';
-    $message = get('application') . ' v' . get('release_name') . ' deployed successfully to ' . get('hostname');
+    $message = get('application').' v'.get('release_name').' deployed successfully to '.get('hostname');
     sendNotification($title, $message, true);
 })->desc('Send success notification to local system');
 
 task('notify:failure', function () {
     $title = '❌ Deployment Failed';
-    $message = get('application') . ' deployment to ' . get('hostname') . ' failed. Check logs for details.';
+    $message = get('application').' deployment to '.get('hostname').' failed. Check logs for details.';
     sendNotification($title, $message, false);
 })->desc('Send failure notification to local system');
