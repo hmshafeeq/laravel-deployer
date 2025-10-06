@@ -113,20 +113,35 @@ class DatabaseBackupCommand extends Command
 
     protected function getAvailableServers(): array
     {
-        $hostsFile = base_path('.deploy/hosts.json');
-        if (! File::exists($hostsFile)) {
-            $this->error('❌ .deploy/hosts.json not found.');
+        $deployDir = base_path('.deploy');
+        if (! File::exists($deployDir)) {
+            $this->error('❌ .deploy directory not found.');
             $this->info('💡 Run: php artisan laravel-deployer:install');
 
             return [];
         }
 
         try {
-            $hosts = json_decode(File::get($hostsFile), true);
+            $envFiles = File::glob($deployDir.'/.env.*');
+            $servers = [];
 
-            return array_keys($hosts);
+            foreach ($envFiles as $file) {
+                $filename = basename($file);
+                if (preg_match('/^\.env\.(.+?)(?:\.example)?$/', $filename, $matches)) {
+                    if (! str_ends_with($filename, '.example')) {
+                        $servers[] = $matches[1];
+                    }
+                }
+            }
+
+            if (empty($servers)) {
+                $this->error('❌ No environment files found in .deploy/');
+                $this->info('💡 Create .env files in .deploy/ directory (e.g., .env.production, .env.staging)');
+            }
+
+            return $servers;
         } catch (\Exception $e) {
-            $this->error("❌ Error reading hosts.json: {$e->getMessage()}");
+            $this->error("❌ Error reading environment files: {$e->getMessage()}");
 
             return [];
         }
@@ -136,9 +151,9 @@ class DatabaseBackupCommand extends Command
     {
         $servers = $this->getAvailableServers();
         if (! in_array($serverName, $servers)) {
-            $this->error("❌ Server '{$serverName}' not found in hosts.json");
+            $this->error("❌ Server '{$serverName}' not found");
             if (! empty($servers)) {
-                $this->info('Available servers: '.implode(', ', $servers));
+                $this->info('💡 Available servers: '.implode(', ', $servers));
             }
 
             return false;
