@@ -31,9 +31,9 @@ class DatabaseRestoreCommand extends Command
         }
 
         // Check if backups directory exists
-        $backupsDir = base_path('backups');
+        $backupsDir = base_path('.deploy/downloads/backups');
         if (! File::exists($backupsDir)) {
-            $this->error('❌ No backups directory found. Please run \'php vendor/bin/dep database:download\' first.');
+            $this->error('❌ No backups directory found. Please run \'php artisan database:download\' first.');
 
             return self::FAILURE;
         }
@@ -42,8 +42,8 @@ class DatabaseRestoreCommand extends Command
         $this->backups = $this->getAvailableBackups($backupsDir);
 
         if (empty($this->backups)) {
-            $this->error('❌ No database backups found in ./backups/ directory.');
-            $this->info('ℹ️  Run \'php vendor/bin/dep database:download\' to download backups from server.');
+            $this->error('❌ No database backups found in .deploy/downloads/backups/ directory.');
+            $this->info('ℹ️  Run \'php artisan database:download\' to download backups from server.');
 
             return self::FAILURE;
         }
@@ -142,7 +142,7 @@ class DatabaseRestoreCommand extends Command
             }
 
             // Treat as filename
-            $backupPath = base_path('backups/'.$backupArg);
+            $backupPath = base_path('.deploy/downloads/backups/'.$backupArg);
             if (File::exists($backupPath)) {
                 return $backupPath;
             }
