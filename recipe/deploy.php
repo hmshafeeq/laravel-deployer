@@ -20,6 +20,7 @@ require_once __DIR__.'/../tasks/health.php';
 require_once __DIR__.'/../tasks/logs.php';
 require_once __DIR__.'/../tasks/notifications.php';
 require_once __DIR__.'/../tasks/rollback.php';
+require_once __DIR__.'/../tasks/system.php';
 
 // Use timestamp for release name
 set('release_name', function () {
@@ -341,6 +342,9 @@ $standaloneTasksRequiringEnv = [
     'logs:download',
     'rollback:quick',
     'rollback:full',
+    'system:clear',
+    'system:clear-cache',
+    'system:restart',
 ];
 
 foreach ($standaloneTasksRequiringEnv as $task) {
