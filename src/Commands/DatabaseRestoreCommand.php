@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Commands;
 
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -85,6 +86,9 @@ class DatabaseRestoreCommand extends Command
         if (! $this->option('no-migrate')) {
             $this->runMigrations();
         }
+
+        // Offer to reset user password
+        $this->offerPasswordReset();
 
         $this->line('');
         $this->info('✅ Database restore process completed!');
@@ -356,5 +360,66 @@ class DatabaseRestoreCommand extends Command
     protected function count(): int
     {
         return count($this->backups);
+    }
+
+    protected function offerPasswordReset(): void
+    {
+        // Only offer in non-production environments
+        if (config('app.env') === 'production') {
+            return;
+        }
+
+        $this->line('');
+
+        // Check if users table exists and has data
+        try {
+            $usersCount = User::count();
+
+            if ($usersCount === 0) {
+                $this->warn('⚠️  No users found in the database.');
+
+                return;
+            }
+
+            $this->info("👥 Detected {$usersCount} user(s) in the database.");
+
+            if (! $this->confirm('Would you like to reset a user password for testing?', true)) {
+                return;
+            }
+
+            // Get first user as default
+            $firstUser = User::orderBy('created_at')->first();
+            $defaultEmail = $firstUser ? $firstUser->email : '';
+
+            $email = $this->ask('Enter user email', $defaultEmail);
+
+            if (! $email) {
+                $this->warn('⚠️  No email provided. Skipping password reset.');
+
+                return;
+            }
+
+            $user = User::where('email', $email)->first();
+
+            if (! $user) {
+                $this->error("❌ User with email '{$email}' not found.");
+
+                return;
+            }
+
+            $password = $this->ask('Enter new password', 'admin@123');
+
+            $user->password = bcrypt($password);
+            $user->save();
+
+            $this->line('');
+            $this->info("✅ Password for user '{$user->email}' has been reset successfully.");
+            $this->info("   New password: {$password}");
+        } catch (\Exception $e) {
+            // Silently fail if users table doesn't exist or there's any error
+            // This is optional functionality and shouldn't break the restore process
+            $this->line('');
+            $this->comment('ℹ️  Unable to access users table. Skipping password reset option.');
+        }
     }
 }
