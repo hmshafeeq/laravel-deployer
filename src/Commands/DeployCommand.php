@@ -35,15 +35,17 @@ class DeployCommand extends Command
         ];
 
         // Add options
+        $envVars = null;
         if ($noConfirm) {
-            $command[] = '--no-confirm';
+            // Set environment variable to skip confirmation
+            $envVars = ['DEPLOYER_NO_CONFIRM' => '1'];
         }
 
         $this->info("Starting deployment: {$task} to {$environment}");
         $this->newLine();
 
         // Execute the deployer command
-        $process = new Process($command, base_path(), null, null, null);
+        $process = new Process($command, base_path(), $envVars, null, null);
         $process->setTty(Process::isTtySupported());
 
         try {

@@ -111,6 +111,13 @@ task('deploy:env', function () {
 
 desc('Verify deployment target before proceeding');
 task('deploy:confirm-target', function () {
+    // Skip confirmation if DEPLOYER_NO_CONFIRM is set
+    if (getenv('DEPLOYER_NO_CONFIRM') === '1') {
+        writeln('<comment>⏭️  Skipping deployment confirmation (--no-confirm flag used)</comment>');
+        writeln('');
+        return;
+    }
+
     $environment = currentHost()->getAlias();
     $hostname = get('hostname');
     $deployPath = get('deploy_path');
@@ -217,6 +224,51 @@ task('deploy:fix-module-permissions', function () {
     writeln('✅ Module permissions fixed');
 })->desc('Fix permissions for modular structure symlinks');
 
+desc('Check if deployment is locked and prompt to unlock');
+task('deploy:check-lock', function () {
+    $lockFile = '{{deploy_path}}/.dep/deploy.lock';
+
+    // Check if lock file exists
+    if (test("[ -f $lockFile ]")) {
+        // Read lock file content to get who locked it
+        $lockContent = run("cat $lockFile 2>/dev/null || echo 'Unknown'");
+
+        writeln('');
+        writeln('<fg=red>═══════════════════════════════════════════════════════════</>');
+        writeln('<fg=red>              DEPLOYMENT ALREADY LOCKED</>');
+        writeln('<fg=red>═══════════════════════════════════════════════════════════</>');
+        writeln('');
+        writeln("  <comment>Locked by:</comment> <fg=yellow>{$lockContent}</>");
+        writeln('');
+        writeln('<fg=red>═══════════════════════════════════════════════════════════</>');
+        writeln('');
+
+        // Skip prompt if DEPLOYER_NO_CONFIRM is set
+        if (getenv('DEPLOYER_NO_CONFIRM') === '1') {
+            writeln('<fg=red>⏭️  Cannot unlock automatically with --no-confirm flag</fg>');
+            writeln('<fg=red>   Please run: php artisan deploy {environment} deploy:unlock</fg>');
+            writeln('');
+            throw new \Exception('Deployment is locked. Unlock manually and try again.');
+        }
+
+        $unlock = askConfirmation('  Do you want to unlock and continue?', false);
+
+        if ($unlock) {
+            writeln('');
+            writeln('<info>🔓 Unlocking deployment...</info>');
+            invoke('deploy:unlock');
+            writeln('<info>✓ Deployment unlocked successfully</info>');
+            writeln('');
+        } else {
+            writeln('');
+            writeln('<comment>🛑 Deployment cancelled. Deploy is locked.</comment>');
+            writeln('<comment>   To unlock manually, run: php artisan deploy {environment} deploy:unlock</comment>');
+            writeln('');
+            throw new \Exception('Deployment is locked');
+        }
+    }
+});
+
 task('deploy:env-local', function () {
     $environment = currentHost()->getAlias();
 
@@ -274,6 +326,7 @@ task('deploy', [
     'deploy:info',
     'health:check-resources',
     'deploy:setup',
+    'deploy:check-lock',
     'deploy:lock',
     'deploy:release',
     'build:assets',
@@ -306,6 +359,7 @@ task('deploy:full', [
     'deploy:info',
     'health:check-resources',
     'deploy:setup',
+    'deploy:check-lock',
     'deploy:lock',
     'deploy:release',
     'build:assets',
