@@ -266,31 +266,40 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     $targetServer = explode(':', $remoteDestination)[0];
     $targetPath = explode(':', $remoteDestination)[1] . $backupName;
 
-    writeln('🚀 Starting upload with rsync...');
+    writeln('🚀 Starting upload with SCP...');
     writeln("📦 File: {$backupName} ({$totalMB} MB)");
     writeln('');
+    writeln('💡 This may take a while for large files. Monitoring progress every 5 seconds...');
+    writeln('');
 
-    // Build rsync command without progress output
-    $rsyncCmd = sprintf(
-        'rsync -avz -e "ssh -i %s" %s %s > /dev/null 2>&1 & echo $!',
+    // Build SCP command with keepalive options
+    $scpCmd = sprintf(
+        'scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=240 -i %s %s %s > /dev/null 2>&1 & echo $!',
         escapeshellarg($sshKey),
         escapeshellarg($localFile),
         escapeshellarg($remoteDestination)
     );
 
-    // Start rsync in background and get PID
-    $pid = (int) trim(runLocally($rsyncCmd));
+    // Start SCP in background and get PID
+    $pid = (int) trim(runLocally($scpCmd));
 
     if ($pid <= 0) {
-        throw new Exception('Failed to start rsync process');
+        throw new Exception('Failed to start SCP process');
     }
+
+    writeln("📤 Upload in progress (PID: {$pid})");
+    writeln('');
 
     // Monitor progress by checking remote file size
     $lastPercent = 0;
-    while (true) {
-        sleep(3);
+    $stagnantCount = 0;
+    $maxStagnantChecks = 20;
+    $lastRemoteSize = 0;
 
-        // Check if rsync is still running
+    while (true) {
+        sleep(5);
+
+        // Check if SCP is still running
         $running = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
         if ($running !== 0) {
             break;
@@ -299,7 +308,7 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
         // Get remote file size
         try {
             $remoteSize = (int) trim(runLocally(sprintf(
-                'ssh -i %s %s "stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null || echo 0"',
+                'ssh -o ConnectTimeout=10 -o ServerAliveInterval=60 -i %s %s "stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null || echo 0"',
                 escapeshellarg($sshKey),
                 escapeshellarg($targetServer),
                 escapeshellarg($targetPath),
@@ -309,11 +318,22 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
             if ($remoteSize > 0) {
                 $percent = round(($remoteSize / $localSizeBytes) * 100, 1);
                 $uploadedMB = round($remoteSize / 1024 / 1024, 1);
-                $elapsed = time() - $startTime;
-                $speedMBps = $elapsed > 0 ? round($uploadedMB / $elapsed, 2) : 0;
+                $elapsed = max(1, time() - $startTime);
+                $speedMBps = round($uploadedMB / $elapsed, 2);
+
+                // Check for stagnant progress
+                if ($remoteSize > $lastRemoteSize) {
+                    $stagnantCount = 0;
+                } else {
+                    $stagnantCount++;
+                    if ($stagnantCount >= $maxStagnantChecks) {
+                        throw new Exception('Upload stagnant (no progress for '.($stagnantCount * 5).' seconds)');
+                    }
+                }
+                $lastRemoteSize = $remoteSize;
 
                 // Show progress every 5%
-                if ($percent >= $lastPercent + 5) {
+                if ($percent >= $lastPercent + 5 || $percent >= 99) {
                     writeln(sprintf(
                         '📊 Progress: %s%% (%s / %s MB) | Speed: %s MB/s | Elapsed: %ss',
                         $percent,
@@ -331,7 +351,7 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     }
 
     // Wait a moment for file to finalize
-    sleep(1);
+    sleep(2);
 
     // Check if upload succeeded by comparing file sizes
     $finalRemoteSize = (int) trim(runLocally(sprintf(
