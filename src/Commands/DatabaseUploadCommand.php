@@ -88,10 +88,6 @@ class DatabaseUploadCommand extends Command
         $backupName = basename($selectedBackup);
         $remotePath = rtrim($uploadConfig['path'], '/').'/'.$backupName;
         $this->line("      gunzip < {$remotePath} | mysql -u username -p database_name");
-        $this->line('');
-        $this->line('   Or if Laravel is installed on remote:');
-        $this->line('      cd /path/to/project');
-        $this->line('      php artisan database:restore');
 
         return self::SUCCESS;
     }
