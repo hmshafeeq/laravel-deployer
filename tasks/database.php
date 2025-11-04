@@ -263,30 +263,80 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 
     // Build rsync command with progress output
     $rsyncCmd = sprintf(
-        'rsync -avz --progress -e "ssh -i %s" %s %s',
+        'rsync -avz --progress -e "ssh -i %s" %s %s 2>&1',
         escapeshellarg($sshKey),
         escapeshellarg($localFile),
         escapeshellarg($remoteDestination)
     );
 
     writeln('🚀 Starting upload with rsync...');
+    writeln('💡 Large file upload in progress (rsync running)...');
     writeln('');
 
-    // Run rsync directly (blocking) - rsync will show its own progress
-    try {
-        $result = runLocally($rsyncCmd);
+    // Track progress by monitoring file size on remote
+    $backupName = basename($localFile);
+    $targetPath = explode(':', $remoteDestination)[1] . $backupName;
+    $targetServer = explode(':', $remoteDestination)[0];
 
-        $uploadTime = round(microtime(true) - $startTime, 2);
-        $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
+    // Run rsync in background
+    $exitCodeFile = '/tmp/rsync_exit_' . uniqid() . '.txt';
+    $bgCmd = "({$rsyncCmd}; echo \$? > {$exitCodeFile}) >/dev/null 2>&1 &";
+    runLocally($bgCmd);
 
-        writeln('');
-        writeln('✅ Database backup uploaded successfully!');
-        writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
-        writeln("⏱️  Time: {$uploadTime}s");
-        writeln("🚀 Speed: {$speedMBps} MB/s");
-    } catch (\Exception $e) {
-        throw new Exception("Upload failed: ".$e->getMessage());
+    sleep(2);
+
+    // Monitor progress
+    $lastProgress = 0;
+    while (true) {
+        sleep(5);
+
+        // Check if rsync finished
+        if (file_exists($exitCodeFile)) {
+            break;
+        }
+
+        // Try to get remote file size via SSH
+        try {
+            $remoteSize = (int) trim(runLocally(sprintf(
+                'ssh -i %s %s "stat -c%%s %s 2>/dev/null || echo 0"',
+                escapeshellarg($sshKey),
+                escapeshellarg($targetServer),
+                escapeshellarg($targetPath)
+            )));
+
+            if ($remoteSize > 0) {
+                $percent = round(($remoteSize / $localSizeBytes) * 100, 1);
+                $uploadedMB = round($remoteSize / 1024 / 1024, 1);
+                $totalMB = round($localSizeBytes / 1024 / 1024, 1);
+
+                if ($percent > $lastProgress + 5) { // Report every 5%
+                    $elapsed = time() - $startTime;
+                    $speedMBps = $elapsed > 0 ? round($uploadedMB / $elapsed, 2) : 0;
+                    writeln("📊 Progress: {$percent}% ({$uploadedMB} / {$totalMB} MB) | Speed: ~{$speedMBps} MB/s");
+                    $lastProgress = $percent;
+                }
+            }
+        } catch (\Exception $e) {
+            // Continue silently if can't check remote size
+        }
     }
+
+    // Check exit code
+    $exitCode = (int) trim(file_get_contents($exitCodeFile));
+    unlink($exitCodeFile);
+
+    if ($exitCode !== 0) {
+        throw new Exception("Upload failed with exit code: {$exitCode}");
+    }
+
+    $uploadTime = round(microtime(true) - $startTime, 2);
+    $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
+
+    writeln('');
+    writeln('✅ Database backup uploaded successfully!');
+    writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
+    writeln("⏱️  Time: {$uploadTime}s");
+    writeln("🚀 Speed: {$speedMBps} MB/s");
 }
 
 // ============================================================================
