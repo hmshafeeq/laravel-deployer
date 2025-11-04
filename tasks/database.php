@@ -263,48 +263,92 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 
     $backupName = basename($localFile);
     $totalMB = round($localSizeBytes / 1024 / 1024, 1);
+    $targetServer = explode(':', $remoteDestination)[0];
+    $targetPath = explode(':', $remoteDestination)[1] . $backupName;
 
     writeln('🚀 Starting upload with rsync...');
     writeln("📦 File: {$backupName} ({$totalMB} MB)");
     writeln('');
 
-    // Check if system has GNU rsync (supports --info=progress2) or OpenRsync
-    $rsyncVersion = runLocally('rsync --version 2>&1 | head -1');
-    $useProgress2 = stripos($rsyncVersion, 'openrsync') === false;
+    // Build rsync command without progress output
+    $rsyncCmd = sprintf(
+        'rsync -avz -e "ssh -i %s" %s %s > /dev/null 2>&1 & echo $!',
+        escapeshellarg($sshKey),
+        escapeshellarg($localFile),
+        escapeshellarg($remoteDestination)
+    );
 
-    if ($useProgress2) {
-        // Try with --info=progress2 for single-line progress (GNU rsync)
-        $rsyncCmd = sprintf(
-            'rsync -avz --info=progress2 -e "ssh -i %s" %s %s 2>&1 || rsync -avz --progress -e "ssh -i %s" %s %s',
-            escapeshellarg($sshKey),
-            escapeshellarg($localFile),
-            escapeshellarg($remoteDestination),
-            escapeshellarg($sshKey),
-            escapeshellarg($localFile),
-            escapeshellarg($remoteDestination)
-        );
-    } else {
-        // OpenRsync - use regular progress
-        $rsyncCmd = sprintf(
-            'rsync -avz --progress -e "ssh -i %s" %s %s',
-            escapeshellarg($sshKey),
-            escapeshellarg($localFile),
-            escapeshellarg($remoteDestination)
-        );
+    // Start rsync in background and get PID
+    $pid = (int) trim(runLocally($rsyncCmd));
+
+    if ($pid <= 0) {
+        throw new Exception('Failed to start rsync process');
     }
 
-    // Execute rsync directly with passthru so output shows in real-time
-    $exitCode = 0;
-    passthru($rsyncCmd, $exitCode);
+    // Monitor progress by checking remote file size
+    $lastPercent = 0;
+    while (true) {
+        sleep(3);
 
-    if ($exitCode !== 0) {
-        throw new Exception("Upload failed with exit code: {$exitCode}");
+        // Check if rsync is still running
+        $running = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
+        if ($running !== 0) {
+            break;
+        }
+
+        // Get remote file size
+        try {
+            $remoteSize = (int) trim(runLocally(sprintf(
+                'ssh -i %s %s "stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null || echo 0"',
+                escapeshellarg($sshKey),
+                escapeshellarg($targetServer),
+                escapeshellarg($targetPath),
+                escapeshellarg($targetPath)
+            )));
+
+            if ($remoteSize > 0) {
+                $percent = round(($remoteSize / $localSizeBytes) * 100, 1);
+                $uploadedMB = round($remoteSize / 1024 / 1024, 1);
+                $elapsed = time() - $startTime;
+                $speedMBps = $elapsed > 0 ? round($uploadedMB / $elapsed, 2) : 0;
+
+                // Show progress every 5%
+                if ($percent >= $lastPercent + 5) {
+                    writeln(sprintf(
+                        '📊 Progress: %s%% (%s / %s MB) | Speed: %s MB/s | Elapsed: %ss',
+                        $percent,
+                        $uploadedMB,
+                        $totalMB,
+                        $speedMBps,
+                        $elapsed
+                    ));
+                    $lastPercent = $percent;
+                }
+            }
+        } catch (\Exception $e) {
+            // Continue if can't check size
+        }
+    }
+
+    // Wait a moment for file to finalize
+    sleep(1);
+
+    // Check if upload succeeded by comparing file sizes
+    $finalRemoteSize = (int) trim(runLocally(sprintf(
+        'ssh -i %s %s "stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null || echo 0"',
+        escapeshellarg($sshKey),
+        escapeshellarg($targetServer),
+        escapeshellarg($targetPath),
+        escapeshellarg($targetPath)
+    )));
+
+    if ($finalRemoteSize !== $localSizeBytes) {
+        throw new Exception("Upload failed: Size mismatch (local: {$localSizeBytes}, remote: {$finalRemoteSize})");
     }
 
     $uploadTime = round(microtime(true) - $startTime, 2);
     $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
 
-    writeln('');
     writeln('');
     writeln('✅ Database backup uploaded successfully!');
     writeln("⏱️  Total time: {$uploadTime}s");
