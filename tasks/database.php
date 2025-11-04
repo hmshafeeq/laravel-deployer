@@ -261,17 +261,20 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 {
     $startTime = microtime(true);
 
-    // Build rsync command with progress output
+    $backupName = basename($localFile);
+    $totalMB = round($localSizeBytes / 1024 / 1024, 1);
+
+    writeln('🚀 Starting upload with rsync...');
+    writeln("📦 File: {$backupName} ({$totalMB} MB)");
+    writeln('');
+
+    // Build rsync command - pipe through perl to convert newlines to carriage returns for same-line updates
     $rsyncCmd = sprintf(
-        'rsync -avz --progress -e "ssh -i %s" %s %s',
+        'rsync -avz --progress -e "ssh -i %s" %s %s 2>&1 | perl -pe \'$|=1; s/\n/\r/g if /^\s+\d+/\'',
         escapeshellarg($sshKey),
         escapeshellarg($localFile),
         escapeshellarg($remoteDestination)
     );
-
-    writeln('🚀 Starting upload with rsync...');
-    writeln('💡 Large file upload in progress (rsync running)...');
-    writeln('');
 
     // Execute rsync directly with passthru so output shows in real-time
     $exitCode = 0;
@@ -284,6 +287,7 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     $uploadTime = round(microtime(true) - $startTime, 2);
     $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
 
+    writeln('');
     writeln('');
     writeln('✅ Database backup uploaded successfully!');
     writeln("⏱️  Total time: {$uploadTime}s");
