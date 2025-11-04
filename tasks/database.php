@@ -263,37 +263,79 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 
     // Build rsync command with progress output
     $rsyncCmd = sprintf(
-        'rsync -avz --progress -e "ssh -i %s" %s %s',
+        'rsync -avz --info=progress2 -e "ssh -i %s" %s %s',
         escapeshellarg($sshKey),
         escapeshellarg($localFile),
         escapeshellarg($remoteDestination)
     );
 
-    writeln('🚀 Starting upload with progress monitoring...');
-    writeln('💡 This may take a while for large files...');
+    writeln('🚀 Starting upload...');
+    writeln('💡 This may take a while for large files. Monitoring progress...');
     writeln('');
 
-    $logFile = '/tmp/rsync_upload_'.getmypid().'.log';
-    $pid = (int) runLocally("({$rsyncCmd} 2>&1 | tee {$logFile} & echo \$!) | tail -1");
+    $logFile = '/tmp/rsync_upload_'.uniqid().'.log';
+
+    // Run rsync in background with output redirection
+    $bgCmd = "nohup {$rsyncCmd} > {$logFile} 2>&1 & echo \$!";
+    $pidOutput = runLocally($bgCmd);
+    $pid = (int) trim($pidOutput);
 
     if ($pid <= 0) {
         throw new Exception('Failed to start upload process');
     }
 
-    writeln("📤 Upload started (PID: {$pid})");
+    writeln("📤 Upload in progress (PID: {$pid})");
     writeln('');
 
-    monitorUploadProgress($pid, $logFile, $localSizeBytes);
+    // Monitor progress
+    $lastSize = 0;
+    $lastReportTime = time();
+    $checkCount = 0;
 
+    while (true) {
+        sleep(3);
+
+        // Check if process is still running
+        $psCheck = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
+        if ($psCheck !== 0) {
+            break;
+        }
+
+        $checkCount++;
+
+        // Show progress every 9 seconds (every 3 checks)
+        if ($checkCount % 3 === 0) {
+            $logContent = runLocally("tail -5 {$logFile} 2>/dev/null || echo ''");
+
+            // Try to parse progress from rsync output
+            if (preg_match('/(\d+)%/', $logContent, $matches)) {
+                $percent = (int) $matches[1];
+                $currentMB = round(($percent / 100) * $localSizeBytes / 1024 / 1024, 1);
+                $totalMB = round($localSizeBytes / 1024 / 1024, 1);
+
+                // Calculate speed
+                $elapsed = time() - $lastReportTime;
+                if ($elapsed > 0) {
+                    $speedMBps = round($currentMB / (time() - $startTime), 2);
+                    writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: ~{$speedMBps} MB/s");
+                }
+            } else {
+                writeln("📊 Upload in progress... (".round((time() - $startTime), 0)."s elapsed)");
+            }
+        }
+    }
+
+    // Check for errors
     $logContent = runLocally("cat {$logFile} 2>/dev/null || echo 'No log available'");
     $hasError = strpos($logContent, 'rsync error:') !== false ||
         strpos($logContent, 'failed') !== false ||
-        strpos($logContent, 'Permission denied') !== false;
+        strpos($logContent, 'Permission denied') !== false ||
+        strpos($logContent, 'No such file') !== false;
 
     runLocally("rm -f {$logFile}");
 
     if ($hasError) {
-        throw new Exception("Upload failed. Check SSH permissions and remote path access.");
+        throw new Exception("Upload failed. Log snippet: ".substr($logContent, -200));
     }
 
     $uploadTime = round(microtime(true) - $startTime, 2);
@@ -304,37 +346,6 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
     writeln("⏱️  Time: {$uploadTime}s");
     writeln("🚀 Speed: {$speedMBps} MB/s");
-}
-
-/**
- * Monitor upload progress
- */
-function monitorUploadProgress(int $pid, string $logFile, int $totalSizeBytes): void
-{
-    $lastReported = 0;
-
-    while (true) {
-        if ((int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?") !== 0) {
-            break;
-        }
-
-        $logContent = runLocally("tail -20 {$logFile} 2>/dev/null || echo ''");
-
-        // Parse rsync progress output
-        if (preg_match('/(\d+)%.*?(\d+\.\d+[MKG]B\/s)/', $logContent, $matches)) {
-            $percent = (int) $matches[1];
-            $speed = $matches[2];
-
-            if ($percent > $lastReported && $percent % 10 === 0) {
-                $currentMB = round(($percent / 100) * $totalSizeBytes / 1024 / 1024, 1);
-                $totalMB = round($totalSizeBytes / 1024 / 1024, 1);
-                writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: {$speed}");
-                $lastReported = $percent;
-            }
-        }
-
-        sleep(2);
-    }
 }
 
 // ============================================================================
