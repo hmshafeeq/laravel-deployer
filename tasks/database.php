@@ -254,6 +254,89 @@ function verifyDownload(string $localFile, int $remoteSizeBytes, float $download
     writeln("🚀 Speed: {$speedMBps} MB/s");
 }
 
+/**
+ * Upload file with progress monitoring
+ */
+function uploadWithProgress(string $localFile, string $remoteDestination, string $sshKey, int $localSizeBytes): void
+{
+    $startTime = microtime(true);
+
+    // Build rsync command with progress output
+    $rsyncCmd = sprintf(
+        'rsync -avz --progress -e "ssh -i %s" %s %s',
+        escapeshellarg($sshKey),
+        escapeshellarg($localFile),
+        escapeshellarg($remoteDestination)
+    );
+
+    writeln('🚀 Starting upload with progress monitoring...');
+    writeln('💡 This may take a while for large files...');
+    writeln('');
+
+    $logFile = '/tmp/rsync_upload_'.getmypid().'.log';
+    $pid = (int) runLocally("({$rsyncCmd} 2>&1 | tee {$logFile} & echo \$!) | tail -1");
+
+    if ($pid <= 0) {
+        throw new Exception('Failed to start upload process');
+    }
+
+    writeln("📤 Upload started (PID: {$pid})");
+    writeln('');
+
+    monitorUploadProgress($pid, $logFile, $localSizeBytes);
+
+    $logContent = runLocally("cat {$logFile} 2>/dev/null || echo 'No log available'");
+    $hasError = strpos($logContent, 'rsync error:') !== false ||
+        strpos($logContent, 'failed') !== false ||
+        strpos($logContent, 'Permission denied') !== false;
+
+    runLocally("rm -f {$logFile}");
+
+    if ($hasError) {
+        throw new Exception("Upload failed. Check SSH permissions and remote path access.");
+    }
+
+    $uploadTime = round(microtime(true) - $startTime, 2);
+    $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
+
+    writeln('');
+    writeln('✅ Database backup uploaded successfully!');
+    writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
+    writeln("⏱️  Time: {$uploadTime}s");
+    writeln("🚀 Speed: {$speedMBps} MB/s");
+}
+
+/**
+ * Monitor upload progress
+ */
+function monitorUploadProgress(int $pid, string $logFile, int $totalSizeBytes): void
+{
+    $lastReported = 0;
+
+    while (true) {
+        if ((int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?") !== 0) {
+            break;
+        }
+
+        $logContent = runLocally("tail -20 {$logFile} 2>/dev/null || echo ''");
+
+        // Parse rsync progress output
+        if (preg_match('/(\d+)%.*?(\d+\.\d+[MKG]B\/s)/', $logContent, $matches)) {
+            $percent = (int) $matches[1];
+            $speed = $matches[2];
+
+            if ($percent > $lastReported && $percent % 10 === 0) {
+                $currentMB = round(($percent / 100) * $totalSizeBytes / 1024 / 1024, 1);
+                $totalMB = round($totalSizeBytes / 1024 / 1024, 1);
+                writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: {$speed}");
+                $lastReported = $percent;
+            }
+        }
+
+        sleep(2);
+    }
+}
+
 // ============================================================================
 // Tasks
 // ============================================================================
@@ -360,3 +443,54 @@ task('database:download', function () {
         throw new Exception('Download failed: '.$e->getMessage());
     }
 })->desc('Download database backup from server to local machine');
+
+task('database:upload', function () {
+    // Get arguments from environment variables
+    $backupFile = getenv('DEPLOYER_BACKUP_FILE') ?: null;
+    $targetServer = getenv('DEPLOYER_TARGET_SERVER') ?: null;
+    $sshKey = getenv('DEPLOYER_SSH_KEY') ?: null;
+    $remotePath = getenv('DEPLOYER_REMOTE_PATH') ?: '/home/ubuntu/';
+
+    if (! $backupFile) {
+        throw new Exception('DEPLOYER_BACKUP_FILE environment variable is required');
+    }
+
+    if (! $targetServer) {
+        throw new Exception('DEPLOYER_TARGET_SERVER environment variable is required');
+    }
+
+    if (! $sshKey) {
+        throw new Exception('DEPLOYER_SSH_KEY environment variable is required');
+    }
+
+    // Verify local backup file exists
+    $fileCheck = (int) runLocally("test -f '{$backupFile}' && echo 1 || echo 0");
+    if ($fileCheck !== 1) {
+        throw new Exception("Backup file not found: {$backupFile}");
+    }
+
+    // Verify SSH key exists
+    $keyCheck = (int) runLocally("test -f '{$sshKey}' && echo 1 || echo 0");
+    if ($keyCheck !== 1) {
+        throw new Exception("SSH key not found: {$sshKey}");
+    }
+
+    $backupName = basename($backupFile);
+    $localSize = (int) runLocally("stat -f%z '{$backupFile}' 2>/dev/null || stat -c%s '{$backupFile}' 2>/dev/null || echo 0");
+    $localSizeHuman = runLocally("ls -lh '{$backupFile}' | awk '{print \$5}'");
+
+    // Ensure remote path ends with /
+    $remotePath = rtrim($remotePath, '/').'/';
+
+    writeln("📤 Uploading {$backupName} ({$localSizeHuman}) to {$targetServer}...");
+    writeln('');
+
+    try {
+        uploadWithProgress($backupFile, $targetServer.':'.$remotePath, $sshKey, $localSize);
+
+        writeln('');
+        writeln("📁 Remote location: {$targetServer}:{$remotePath}{$backupName}");
+    } catch (Exception $e) {
+        throw new Exception('Upload failed: '.$e->getMessage());
+    }
+})->desc('Upload database backup to remote server');

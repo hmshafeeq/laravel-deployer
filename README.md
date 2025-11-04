@@ -252,6 +252,7 @@ vendor/bin/dep deploy local
 |------|-------------|
 | `database:backup` | Create compressed database backup (keeps last 3) |
 | `database:download` | Download database backup to local machine |
+| `database:upload` | Upload database backup to remote server |
 | `database:restore` | Restore database from backup (local only) |
 
 **Database Backup Example:**
@@ -267,6 +268,9 @@ DEPLOYER_BACKUP_SELECTION=2 vendor/bin/dep database:download production
 
 # Use SCP for faster download
 DEPLOYER_DOWNLOAD_METHOD=scp vendor/bin/dep database:download production
+
+# Upload backup to remote server
+php artisan database:upload --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
 ```
 
 ### Health & Monitoring Tasks
@@ -395,6 +399,73 @@ DEPLOYER_DOWNLOAD_METHOD=scp vendor/bin/dep database:download production
 - Speed calculation
 - Resume capability (with rsync method)
 - Automatic cleanup on failure
+
+### Database Upload
+
+**Upload Backup to Remote Server:**
+
+The `database:upload` command allows you to upload local database backups to remote servers using rsync.
+
+```bash
+# Interactive upload (prompts for backup selection and server details)
+php artisan database:upload
+
+# Upload with all options specified
+php artisan database:upload --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer --path=/home/ubuntu/
+
+# Upload latest backup without prompting
+php artisan database:upload --latest --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
+
+# Upload specific backup by number
+php artisan database:upload 2 --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
+
+# Upload specific backup by filename
+php artisan database:upload db_backup_2024-03-15_14-30-45.sql.gz --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
+
+# List available backups
+php artisan database:upload --list
+```
+
+**Upload Features:**
+- Interactive backup selection with size and date information
+- Real-time progress monitoring (every 10% increment)
+- Speed calculation and time estimation
+- Automatic SSH key validation
+- Custom remote destination path
+- Upload verification with error detection
+
+**Progress Output Example:**
+```bash
+🚀 Starting upload with progress monitoring...
+💡 This may take a while for large files...
+
+📤 Upload started (PID: 12345)
+
+📊 Progress: 10% (136.1 MB / 1361.1 MB) | Speed: 45.2MB/s
+📊 Progress: 20% (272.2 MB / 1361.1 MB) | Speed: 47.8MB/s
+📊 Progress: 30% (408.3 MB / 1361.1 MB) | Speed: 46.5MB/s
+...
+📊 Progress: 100% (1361.1 MB / 1361.1 MB) | Speed: 48.3MB/s
+
+✅ Database backup uploaded successfully!
+📊 Size: 1361.11 MB
+⏱️  Time: 28.4s
+🚀 Speed: 47.93 MB/s
+```
+
+**After Upload:**
+The command displays helpful instructions for restoring the backup on the remote server:
+```bash
+# SSH into the remote server
+ssh ubuntu@54.68.98.96
+
+# Restore using MySQL directly
+gunzip < /home/ubuntu/db_backup_2024-03-15_14-30-45.sql.gz | mysql -u username -p database_name
+
+# Or using Laravel Artisan (if Laravel is installed on remote)
+cd /path/to/project
+php artisan database:restore
+```
 
 ### Database Restoration
 
@@ -564,6 +635,7 @@ For convenience, Laravel Deployer provides Artisan wrapper commands that make de
 | `php artisan deployer:logs:download {env}` | `vendor/bin/dep logs:download {env}` | Download log files |
 | `php artisan database:backup` | `vendor/bin/dep database:backup` | Backup database |
 | `php artisan database:download` | `vendor/bin/dep database:download` | Download database backup |
+| `php artisan database:upload {backup}` | N/A | Upload database backup to remote server |
 | `php artisan database:restore {backup}` | Local restoration only | Restore database from backup |
 
 ### Deployment Examples
@@ -603,6 +675,15 @@ php artisan database:backup production
 
 # Download latest backup
 php artisan database:download production
+
+# Upload backup to remote server
+php artisan database:upload --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
+
+# Upload latest backup to remote server
+php artisan database:upload --latest --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
+
+# Upload specific backup by number
+php artisan database:upload 2 --target=ubuntu@54.68.98.96 --key=~/.ssh/deployer
 
 # Restore local database from backup
 php artisan database:restore db_backup_2024-03-15_14-30-45.sql.gz
@@ -704,6 +785,7 @@ All deployment tasks are organized in the `tasks/` directory:
 **Tasks:**
 - `database:backup` - Creates compressed SQL backups
 - `database:download` - Downloads backups with progress monitoring
+- `database:upload` - Uploads local backups to remote servers
 
 **Features:**
 - Secure credential handling with temporary MySQL config files
@@ -711,6 +793,7 @@ All deployment tasks are organized in the `tasks/` directory:
 - Size verification and error handling
 - Multiple download methods (rsync/SCP)
 - Progress monitoring with speed calculation
+- Remote upload via rsync with SSH key authentication
 
 #### `tasks/health.php`
 

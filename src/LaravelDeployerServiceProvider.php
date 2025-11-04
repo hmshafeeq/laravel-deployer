@@ -7,6 +7,7 @@ use Shaf\LaravelDeployer\Commands\ClearCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseBackupCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseDownloadCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseRestoreCommand;
+use Shaf\LaravelDeployer\Commands\DatabaseUploadCommand;
 use Shaf\LaravelDeployer\Commands\DeployCommand;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
 use Shaf\LaravelDeployer\Commands\Logs\CheckCommand as LogsCheckCommand;
@@ -30,6 +31,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
                 DatabaseRestoreCommand::class,
                 DatabaseBackupCommand::class,
                 DatabaseDownloadCommand::class,
+                DatabaseUploadCommand::class,
                 LogsCheckCommand::class,
                 LogsSearchCommand::class,
                 LogsDownloadCommand::class,
