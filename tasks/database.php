@@ -263,7 +263,7 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 
     // Build rsync command with progress output
     $rsyncCmd = sprintf(
-        'rsync -avz --info=progress2 -e "ssh -i %s" %s %s',
+        'rsync -avz --progress -e "ssh -i %s" %s %s',
         escapeshellarg($sshKey),
         escapeshellarg($localFile),
         escapeshellarg($remoteDestination)
