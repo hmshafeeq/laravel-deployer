@@ -274,13 +274,20 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     writeln('');
 
     $logFile = '/tmp/rsync_upload_'.uniqid().'.log';
+    $pidFile = '/tmp/rsync_upload_pid_'.uniqid().'.txt';
 
-    // Run rsync in background with output redirection
-    $bgCmd = "nohup {$rsyncCmd} > {$logFile} 2>&1 & echo \$!";
-    $pidOutput = runLocally($bgCmd);
-    $pid = (int) trim($pidOutput);
+    // Run rsync in background with PID file
+    $bgCmd = "({$rsyncCmd} > {$logFile} 2>&1; echo \$? > {$logFile}.exit) & echo \$! > {$pidFile}";
+    runLocally($bgCmd);
+
+    // Give it a moment to start
+    sleep(1);
+
+    // Read PID
+    $pid = (int) trim(runLocally("cat {$pidFile} 2>/dev/null || echo 0"));
 
     if ($pid <= 0) {
+        runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
         throw new Exception('Failed to start upload process');
     }
 
@@ -288,16 +295,25 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     writeln('');
 
     // Monitor progress
-    $lastSize = 0;
-    $lastReportTime = time();
     $checkCount = 0;
+    $maxWaitTime = 3600; // 1 hour max
+    $startTimestamp = time();
 
     while (true) {
         sleep(3);
 
+        // Check timeout
+        if ((time() - $startTimestamp) > $maxWaitTime) {
+            runLocally("kill {$pid} 2>/dev/null || true");
+            runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
+            throw new Exception('Upload timed out after 1 hour');
+        }
+
         // Check if process is still running
         $psCheck = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
         if ($psCheck !== 0) {
+            // Process ended, check exit code
+            sleep(1); // Give time for exit code to be written
             break;
         }
 
@@ -305,37 +321,41 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
 
         // Show progress every 9 seconds (every 3 checks)
         if ($checkCount % 3 === 0) {
-            $logContent = runLocally("tail -5 {$logFile} 2>/dev/null || echo ''");
+            $logContent = runLocally("tail -10 {$logFile} 2>/dev/null || echo ''");
 
             // Try to parse progress from rsync output
             if (preg_match('/(\d+)%/', $logContent, $matches)) {
                 $percent = (int) $matches[1];
                 $currentMB = round(($percent / 100) * $localSizeBytes / 1024 / 1024, 1);
                 $totalMB = round($localSizeBytes / 1024 / 1024, 1);
-
-                // Calculate speed
-                $elapsed = time() - $lastReportTime;
-                if ($elapsed > 0) {
-                    $speedMBps = round($currentMB / (time() - $startTime), 2);
-                    writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: ~{$speedMBps} MB/s");
-                }
+                $speedMBps = round($currentMB / (time() - $startTimestamp), 2);
+                writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: ~{$speedMBps} MB/s");
             } else {
-                writeln("📊 Upload in progress... (".round((time() - $startTime), 0)."s elapsed)");
+                $elapsed = time() - $startTimestamp;
+                writeln("📊 Upload in progress... ({$elapsed}s elapsed)");
             }
         }
     }
 
+    // Read exit code
+    $exitCode = (int) trim(runLocally("cat {$logFile}.exit 2>/dev/null || echo 1"));
+
     // Check for errors
     $logContent = runLocally("cat {$logFile} 2>/dev/null || echo 'No log available'");
-    $hasError = strpos($logContent, 'rsync error:') !== false ||
-        strpos($logContent, 'failed') !== false ||
-        strpos($logContent, 'Permission denied') !== false ||
-        strpos($logContent, 'No such file') !== false;
 
-    runLocally("rm -f {$logFile}");
+    // Cleanup
+    runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
 
-    if ($hasError) {
-        throw new Exception("Upload failed. Log snippet: ".substr($logContent, -200));
+    if ($exitCode !== 0) {
+        $hasError = strpos($logContent, 'rsync error:') !== false ||
+            strpos($logContent, 'failed') !== false ||
+            strpos($logContent, 'Permission denied') !== false ||
+            strpos($logContent, 'No such file') !== false ||
+            strpos($logContent, 'Connection refused') !== false;
+
+        if ($hasError || $exitCode !== 0) {
+            throw new Exception("Upload failed (exit code: {$exitCode}). Log:\n".substr($logContent, -500));
+        }
     }
 
     $uploadTime = round(microtime(true) - $startTime, 2);
