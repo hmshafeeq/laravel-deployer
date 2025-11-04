@@ -269,103 +269,24 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
         escapeshellarg($remoteDestination)
     );
 
-    writeln('🚀 Starting upload...');
-    writeln('💡 This may take a while for large files. Monitoring progress...');
+    writeln('🚀 Starting upload with rsync...');
     writeln('');
 
-    $logFile = '/tmp/rsync_upload_'.uniqid().'.log';
-    $pidFile = '/tmp/rsync_upload_pid_'.uniqid().'.txt';
+    // Run rsync directly (blocking) - rsync will show its own progress
+    try {
+        $result = runLocally($rsyncCmd);
 
-    // Run rsync in background with PID file
-    $bgCmd = "({$rsyncCmd} > {$logFile} 2>&1; echo \$? > {$logFile}.exit) & echo \$! > {$pidFile}";
-    runLocally($bgCmd);
+        $uploadTime = round(microtime(true) - $startTime, 2);
+        $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
 
-    // Give it a moment to start
-    sleep(1);
-
-    // Read PID
-    $pid = (int) trim(runLocally("cat {$pidFile} 2>/dev/null || echo 0"));
-
-    if ($pid <= 0) {
-        runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
-        throw new Exception('Failed to start upload process');
+        writeln('');
+        writeln('✅ Database backup uploaded successfully!');
+        writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
+        writeln("⏱️  Time: {$uploadTime}s");
+        writeln("🚀 Speed: {$speedMBps} MB/s");
+    } catch (\Exception $e) {
+        throw new Exception("Upload failed: ".$e->getMessage());
     }
-
-    writeln("📤 Upload in progress (PID: {$pid})");
-    writeln('');
-
-    // Monitor progress
-    $checkCount = 0;
-    $maxWaitTime = 3600; // 1 hour max
-    $startTimestamp = time();
-
-    while (true) {
-        sleep(3);
-
-        // Check timeout
-        if ((time() - $startTimestamp) > $maxWaitTime) {
-            runLocally("kill {$pid} 2>/dev/null || true");
-            runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
-            throw new Exception('Upload timed out after 1 hour');
-        }
-
-        // Check if process is still running
-        $psCheck = (int) runLocally("ps -p {$pid} > /dev/null 2>&1; echo \$?");
-        if ($psCheck !== 0) {
-            // Process ended, check exit code
-            sleep(1); // Give time for exit code to be written
-            break;
-        }
-
-        $checkCount++;
-
-        // Show progress every 9 seconds (every 3 checks)
-        if ($checkCount % 3 === 0) {
-            $logContent = runLocally("tail -10 {$logFile} 2>/dev/null || echo ''");
-
-            // Try to parse progress from rsync output
-            if (preg_match('/(\d+)%/', $logContent, $matches)) {
-                $percent = (int) $matches[1];
-                $currentMB = round(($percent / 100) * $localSizeBytes / 1024 / 1024, 1);
-                $totalMB = round($localSizeBytes / 1024 / 1024, 1);
-                $speedMBps = round($currentMB / (time() - $startTimestamp), 2);
-                writeln("📊 Progress: {$percent}% ({$currentMB} MB / {$totalMB} MB) | Speed: ~{$speedMBps} MB/s");
-            } else {
-                $elapsed = time() - $startTimestamp;
-                writeln("📊 Upload in progress... ({$elapsed}s elapsed)");
-            }
-        }
-    }
-
-    // Read exit code
-    $exitCode = (int) trim(runLocally("cat {$logFile}.exit 2>/dev/null || echo 1"));
-
-    // Check for errors
-    $logContent = runLocally("cat {$logFile} 2>/dev/null || echo 'No log available'");
-
-    // Cleanup
-    runLocally("rm -f {$logFile} {$pidFile} {$logFile}.exit");
-
-    if ($exitCode !== 0) {
-        $hasError = strpos($logContent, 'rsync error:') !== false ||
-            strpos($logContent, 'failed') !== false ||
-            strpos($logContent, 'Permission denied') !== false ||
-            strpos($logContent, 'No such file') !== false ||
-            strpos($logContent, 'Connection refused') !== false;
-
-        if ($hasError || $exitCode !== 0) {
-            throw new Exception("Upload failed (exit code: {$exitCode}). Log:\n".substr($logContent, -500));
-        }
-    }
-
-    $uploadTime = round(microtime(true) - $startTime, 2);
-    $speedMBps = round(($localSizeBytes / 1024 / 1024) / $uploadTime, 2);
-
-    writeln('');
-    writeln('✅ Database backup uploaded successfully!');
-    writeln("📊 Size: ".round($localSizeBytes / 1024 / 1024, 2).' MB');
-    writeln("⏱️  Time: {$uploadTime}s");
-    writeln("🚀 Speed: {$speedMBps} MB/s");
 }
 
 // ============================================================================
