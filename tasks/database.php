@@ -268,13 +268,30 @@ function uploadWithProgress(string $localFile, string $remoteDestination, string
     writeln("📦 File: {$backupName} ({$totalMB} MB)");
     writeln('');
 
-    // Build rsync command - pipe through perl to convert newlines to carriage returns for same-line updates
-    $rsyncCmd = sprintf(
-        'rsync -avz --progress -e "ssh -i %s" %s %s 2>&1 | perl -pe \'$|=1; s/\n/\r/g if /^\s+\d+/\'',
-        escapeshellarg($sshKey),
-        escapeshellarg($localFile),
-        escapeshellarg($remoteDestination)
-    );
+    // Check if system has GNU rsync (supports --info=progress2) or OpenRsync
+    $rsyncVersion = runLocally('rsync --version 2>&1 | head -1');
+    $useProgress2 = stripos($rsyncVersion, 'openrsync') === false;
+
+    if ($useProgress2) {
+        // Try with --info=progress2 for single-line progress (GNU rsync)
+        $rsyncCmd = sprintf(
+            'rsync -avz --info=progress2 -e "ssh -i %s" %s %s 2>&1 || rsync -avz --progress -e "ssh -i %s" %s %s',
+            escapeshellarg($sshKey),
+            escapeshellarg($localFile),
+            escapeshellarg($remoteDestination),
+            escapeshellarg($sshKey),
+            escapeshellarg($localFile),
+            escapeshellarg($remoteDestination)
+        );
+    } else {
+        // OpenRsync - use regular progress
+        $rsyncCmd = sprintf(
+            'rsync -avz --progress -e "ssh -i %s" %s %s',
+            escapeshellarg($sshKey),
+            escapeshellarg($localFile),
+            escapeshellarg($remoteDestination)
+        );
+    }
 
     // Execute rsync directly with passthru so output shows in real-time
     $exitCode = 0;
