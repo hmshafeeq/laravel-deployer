@@ -136,7 +136,7 @@ task('deploy:confirm-target', function () {
     writeln('<fg=yellow>═══════════════════════════════════════════════════════════</>');
     writeln('');
 
-    $confirmed = askConfirmation('  Do you want to continue with this deployment?', false);
+    $confirmed = askConfirmation('  Do you want to continue with this deployment?', true);
 
     if (! $confirmed) {
         writeln('');

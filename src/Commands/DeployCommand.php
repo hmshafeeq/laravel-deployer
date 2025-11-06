@@ -17,12 +17,22 @@ class DeployCommand extends Command
     {
         $environment = $this->argument('environment');
         $task = $this->argument('task');
-        $noConfirm = $this->option('no-confirm');
 
         $validEnvironments = ['local', 'staging', 'production'];
         if (! in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
             $this->info('Valid environments: '.implode(', ', $validEnvironments));
+
+            return self::FAILURE;
+        }
+
+        // Check if Vite is running
+        if ($this->isViteRunning()) {
+            $this->newLine();
+            $this->components->error('Vite bundler is currently running!');
+            $this->newLine();
+            $this->components->warn('Please stop the Vite development server before deploying. 💡 Press Ctrl+C in the terminal where Vite is running to stop it.');
+            $this->newLine();
 
             return self::FAILURE;
         }
@@ -34,10 +44,7 @@ class DeployCommand extends Command
             $environment,
         ];
 
-        // Add options
-        if ($noConfirm) {
-            $command[] = '--no-confirm';
-        }
+
 
         $this->info("Starting deployment: {$task} to {$environment}");
         $this->newLine();
@@ -67,5 +74,27 @@ class DeployCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    protected function isViteRunning(): bool
+    {
+        $process = new Process(['ps', 'aux']);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        $output = $process->getOutput();
+        $projectPath = base_path();
+
+        // Look for vite processes running from this project's directory
+        foreach (explode("\n", $output) as $line) {
+            if (str_contains($line, 'node_modules/.bin/vite') && str_contains($line, $projectPath)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
