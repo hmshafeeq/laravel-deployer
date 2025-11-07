@@ -173,12 +173,19 @@ task('php-fpm:restart', function () {
 
     writeln('🔄 Restarting PHP-FPM...');
 
-    // Detect and restart any PHP-FPM service
-    $phpFpmService = run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""');
+    // Detect all running PHP-FPM services
+    $phpFpmServices = run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
 
-    if (!empty(trim($phpFpmService))) {
-        run("sudo systemctl restart {$phpFpmService}");
-        writeln("✅ Restarted {$phpFpmService}");
+    if (!empty(trim($phpFpmServices))) {
+        $services = array_filter(explode("\n", trim($phpFpmServices)));
+
+        foreach ($services as $service) {
+            $service = trim($service);
+            if (!empty($service)) {
+                run("sudo systemctl restart {$service}");
+                writeln("✅ Restarted {$service}");
+            }
+        }
     } else {
         writeln('<comment>⚠️  No running PHP-FPM service found</comment>');
     }
