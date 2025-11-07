@@ -42,7 +42,7 @@ class Deployer
 
         $result = $this->ssh->execute($command);
 
-        return trim($result);
+        return trim($result->getOutput());
     }
 
     public function runLocally(string $command): string
