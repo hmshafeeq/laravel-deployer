@@ -4,17 +4,19 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
+use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
+use Shaf\LaravelDeployer\Deployer\Deployer;
+use Symfony\Component\Yaml\Yaml;
 
 class DatabaseDownloadCommand extends Command
 {
-    protected $signature = 'database:download 
+    protected $signature = 'database:download
                             {server? : Server name (staging, production, etc.)}
                             {backup? : Backup selection (latest, 1-10, or filename)}
                             {method? : Download method (rsync or scp)}
                             {--select : Show available servers and select interactively}';
 
-    protected $description = 'Download database backup from remote server (wrapper for deployer)';
+    protected $description = 'Download database backup from remote server';
 
     public function handle(): int
     {
@@ -30,65 +32,71 @@ class DatabaseDownloadCommand extends Command
         $this->line('');
 
         // Ensure backups directory exists
-        $backupsDir = base_path('backups');
+        $backupsDir = base_path('.deploy/downloads/backups');
         if (! File::exists($backupsDir)) {
             File::makeDirectory($backupsDir, 0755, true);
             $this->info("📁 Created backups directory: {$backupsDir}");
         }
 
-        // Build deployer command with arguments
-        $command = sprintf(
-            'php vendor/bin/dep database:download %s',
-            escapeshellarg($serverName)
-        );
+        try {
+            // Load configuration
+            $config = $this->loadConfiguration($serverName);
 
-        // Add backup selection argument if provided
-        $backupSelection = $this->argument('backup');
-        if ($backupSelection) {
-            $command .= ' '.escapeshellarg($backupSelection);
-        }
+            // Create deployer instance
+            $deployer = new Deployer($serverName, $config);
 
-        // Add method argument if provided
-        $method = $this->argument('method');
-        if ($method) {
-            $command .= ' '.escapeshellarg($method);
-        }
+            // Load environment variables
+            $deployer->loadEnvironment();
 
-        $this->info('🚀 Running: '.$command);
-        $this->line('');
+            // Create database tasks
+            $databaseTasks = new DatabaseTasks($deployer);
 
-        // Set environment variables for arguments if provided
-        $env = [];
-        if ($backupSelection) {
-            $env['DEPLOYER_BACKUP_SELECTION'] = $backupSelection;
-        }
-        if ($method) {
-            $env['DEPLOYER_DOWNLOAD_METHOD'] = $method;
-        }
+            // Get arguments
+            $backupSelection = $this->argument('backup');
+            $method = $this->argument('method');
 
-        // Run with real-time output streaming and environment variables
-        $result = Process::timeout(3600)
-            ->path(base_path())
-            ->env($env)
-            ->run($command, function ($type, $buffer) {
-                echo $buffer;
-            });
+            // Run download
+            $databaseTasks->download($backupSelection, $method);
 
-        if ($result->successful()) {
             $this->line('');
             $this->info('✅ Database download completed successfully!');
             $this->info('💡 To restore the backup:');
             $this->line('   php artisan database:restore');
             $this->line('');
-            $this->info('📁 Downloaded backups are in: ./backups/');
+            $this->info('📁 Downloaded backups are in: ./.deploy/downloads/backups/');
 
             return self::SUCCESS;
-        } else {
+        } catch (\Exception $e) {
             $this->line('');
             $this->error('❌ Database download failed');
+            $this->error($e->getMessage());
 
             return self::FAILURE;
         }
+    }
+
+    protected function loadConfiguration(string $environment): array
+    {
+        $yamlPath = base_path('deploy.yaml');
+
+        if (!file_exists($yamlPath)) {
+            throw new \RuntimeException("Configuration file not found: {$yamlPath}");
+        }
+
+        $yaml = Yaml::parseFile($yamlPath);
+
+        // Load environment-specific configuration
+        $hostConfig = $yaml['hosts'][$environment] ?? [];
+
+        return [
+            'environment' => $environment,
+            'hostname' => $hostConfig['hostname'] ?? 'localhost',
+            'remote_user' => $hostConfig['remote_user'] ?? 'deploy',
+            'deploy_path' => $hostConfig['deploy_path'] ?? '/var/www/app',
+            'branch' => $hostConfig['branch'] ?? 'main',
+            'local' => $hostConfig['local'] ?? false,
+            'application' => $yaml['config']['application'] ?? 'Application',
+        ];
     }
 
     protected function getServerName(): ?string
