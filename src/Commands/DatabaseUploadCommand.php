@@ -233,34 +233,72 @@ class DatabaseUploadCommand extends Command
     {
         $backupName = basename($selectedBackup);
         $backupSizeMb = round(filesize($selectedBackup) / 1024 / 1024, 2);
+        $remotePath = $uploadConfig['path'].$backupName;
 
         $this->info('🚀 Starting upload...');
         $this->info("📊 Backup size: {$backupSizeMb}MB");
         $this->line('');
 
-        // Set environment variables for deployer task
-        $env = [
-            'DEPLOYER_BACKUP_FILE' => $selectedBackup,
-            'DEPLOYER_TARGET_SERVER' => $uploadConfig['target'],
-            'DEPLOYER_SSH_KEY' => $uploadConfig['key'],
-            'DEPLOYER_REMOTE_PATH' => $uploadConfig['path'],
-        ];
+        // Build SCP command with progress and keepalive options
+        $scpCommand = sprintf(
+            'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i %s %s %s:%s',
+            escapeshellarg($uploadConfig['key']),
+            escapeshellarg($selectedBackup),
+            escapeshellarg($uploadConfig['target']),
+            escapeshellarg($remotePath)
+        );
 
-        // Run deployer task with environment variables
-        $command = 'php vendor/bin/dep database:upload';
+        $this->info("📤 Uploading to {$uploadConfig['target']}:{$remotePath}");
+        $startTime = microtime(true);
 
         $result = Process::timeout(3600)
             ->path(base_path())
-            ->env($env)
-            ->run($command, function ($type, $buffer) {
+            ->run($scpCommand, function ($type, $buffer) {
                 echo $buffer;
             });
 
         if (! $result->successful()) {
             $this->line('');
             $this->error('❌ Upload failed');
+            if ($result->errorOutput()) {
+                $this->error($result->errorOutput());
+            }
 
             return false;
+        }
+
+        $duration = round(microtime(true) - $startTime, 2);
+        $speed = $duration > 0 ? round($backupSizeMb / $duration, 2) : 0;
+
+        $this->line('');
+        $this->info("✓ Upload completed in {$duration}s ({$speed}MB/s)");
+
+        // Verify upload by checking remote file size
+        $this->info('🔍 Verifying upload...');
+
+        $sshCommand = sprintf(
+            'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i %s %s "stat -c %%s %s 2>/dev/null || stat -f %%z %s 2>/dev/null"',
+            escapeshellarg($uploadConfig['key']),
+            escapeshellarg($uploadConfig['target']),
+            escapeshellarg($remotePath),
+            escapeshellarg($remotePath)
+        );
+
+        $result = Process::timeout(30)
+            ->path(base_path())
+            ->run($sshCommand);
+
+        if ($result->successful()) {
+            $remoteSize = (int) trim($result->output());
+            $localSize = filesize($selectedBackup);
+
+            if ($remoteSize === $localSize) {
+                $this->info("✓ File size verified: ".number_format($localSize).' bytes');
+            } else {
+                $this->warn("⚠ File size mismatch - Local: {$localSize}, Remote: {$remoteSize}");
+            }
+        } else {
+            $this->warn('⚠ Could not verify remote file size');
         }
 
         return true;
