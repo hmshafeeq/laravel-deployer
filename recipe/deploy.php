@@ -164,8 +164,32 @@ task('php-fpm:restart', function () {
         return;
     }
 
-    run('sudo service php8.3-fpm restart');
+    writeln('🔄 Restarting PHP-FPM...');
+
+    // Detect and restart any PHP-FPM service
+    $phpFpmService = run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""');
+
+    if (!empty(trim($phpFpmService))) {
+        run("sudo systemctl restart {$phpFpmService}");
+        writeln("✅ Restarted {$phpFpmService}");
+    } else {
+        writeln('<comment>⚠️  No running PHP-FPM service found</comment>');
+    }
 })->desc('Restart PHP-FPM service');
+
+task('nginx:restart', function () {
+    $environment = currentHost()->getAlias();
+
+    if ($environment === 'local') {
+        writeln('<comment>⏭️  Skipping Nginx restart for local environment</comment>');
+
+        return;
+    }
+
+    writeln('🔄 Restarting Nginx...');
+    run('sudo systemctl restart nginx');
+    writeln('✅ Nginx restarted');
+})->desc('Restart Nginx service');
 
 task('supervisor:reload', function () {
     $environment = currentHost()->getAlias();
@@ -176,7 +200,9 @@ task('supervisor:reload', function () {
         return;
     }
 
+    writeln('🔄 Reloading Supervisor...');
     run('sudo supervisorctl reload');
+    writeln('✅ Supervisor reloaded');
 })->desc('Reload Supervisor configuration');
 
 task('cleanup:old-releases', function () {
@@ -291,6 +317,7 @@ task('deploy', [
     'artisan:migrate',
     'artisan:queue:restart',
     'php-fpm:restart',
+    'nginx:restart',
     'supervisor:reload',
     'deploy:publish',
     'health:check-endpoints',
@@ -324,6 +351,7 @@ task('deploy:full', [
     'artisan:migrate',
     'artisan:queue:restart',
     'php-fpm:restart',
+    'nginx:restart',
     'supervisor:reload',
     'deploy:publish',
     'health:check-endpoints',
