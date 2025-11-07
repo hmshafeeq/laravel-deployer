@@ -4,15 +4,17 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
+use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
+use Shaf\LaravelDeployer\Deployer\Deployer;
+use Symfony\Component\Yaml\Yaml;
 
 class DatabaseBackupCommand extends Command
 {
-    protected $signature = 'database:backup 
+    protected $signature = 'database:backup
                             {server? : Server name (staging, production, etc.)}
                             {--select : Show available servers and select interactively}';
 
-    protected $description = 'Create database backup on remote server (wrapper for deployer)';
+    protected $description = 'Create database backup on remote server';
 
     public function handle(): int
     {
@@ -27,35 +29,59 @@ class DatabaseBackupCommand extends Command
         $this->info("🌐 Target server: {$serverName}");
         $this->line('');
 
-        // Run deployer command
-        $command = sprintf(
-            'php vendor/bin/dep database:backup %s',
-            escapeshellarg($serverName)
-        );
+        try {
+            // Load configuration
+            $config = $this->loadConfiguration($serverName);
 
-        $this->info('🚀 Running: '.$command);
-        $this->line('');
+            // Create deployer instance
+            $deployer = new Deployer($serverName, $config);
 
-        // Run with real-time output streaming
-        $result = Process::timeout(3600)
-            ->path(base_path())
-            ->run($command, function ($type, $buffer) {
-                echo $buffer;
-            });
+            // Load environment variables
+            $deployer->loadEnvironment();
 
-        if ($result->successful()) {
+            // Create database tasks
+            $databaseTasks = new DatabaseTasks($deployer);
+
+            // Run backup
+            $databaseTasks->backup();
+
             $this->line('');
             $this->info('✅ Database backup completed successfully!');
             $this->info('💡 To download the backup:');
             $this->line("   php artisan database:download {$serverName}");
 
             return self::SUCCESS;
-        } else {
+        } catch (\Exception $e) {
             $this->line('');
             $this->error('❌ Database backup failed');
+            $this->error($e->getMessage());
 
             return self::FAILURE;
         }
+    }
+
+    protected function loadConfiguration(string $environment): array
+    {
+        $yamlPath = base_path('deploy.yaml');
+
+        if (!file_exists($yamlPath)) {
+            throw new \RuntimeException("Configuration file not found: {$yamlPath}");
+        }
+
+        $yaml = Yaml::parseFile($yamlPath);
+
+        // Load environment-specific configuration
+        $hostConfig = $yaml['hosts'][$environment] ?? [];
+
+        return [
+            'environment' => $environment,
+            'hostname' => $hostConfig['hostname'] ?? 'localhost',
+            'remote_user' => $hostConfig['remote_user'] ?? 'deploy',
+            'deploy_path' => $hostConfig['deploy_path'] ?? '/var/www/app',
+            'branch' => $hostConfig['branch'] ?? 'main',
+            'local' => $hostConfig['local'] ?? false,
+            'application' => $yaml['config']['application'] ?? 'Application',
+        ];
     }
 
     protected function getServerName(): ?string
