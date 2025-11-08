@@ -3,9 +3,15 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
+use Shaf\LaravelDeployer\Deployer;
+use Shaf\LaravelDeployer\Services\ReleaseService;
+use Shaf\LaravelDeployer\Actions\Deployment\RollbackAction;
+use Shaf\LaravelDeployer\Actions\Artisan\ConfigCacheAction;
+use Shaf\LaravelDeployer\Actions\Artisan\ViewCacheAction;
+use Shaf\LaravelDeployer\Actions\Artisan\RouteCacheAction;
+use Shaf\LaravelDeployer\Actions\Artisan\QueueRestartAction;
+use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
+use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
 use Symfony\Component\Yaml\Yaml;
 
 class RollbackCommand extends Command
@@ -46,10 +52,12 @@ class RollbackCommand extends Command
         try {
             $deployer = new Deployer($environment, $config[$environment]);
             $deployer->loadEnvironment();
-            $deploymentTasks = new DeploymentTasks($deployer);
+
+            // Use ReleaseService for release information
+            $releaseService = new ReleaseService($deployer);
 
             // Get available releases
-            $releases = $deploymentTasks->getReleases();
+            $releases = $releaseService->getReleases();
 
             if (empty($releases)) {
                 $this->error('❌ No releases found to rollback to');
@@ -58,7 +66,7 @@ class RollbackCommand extends Command
             }
 
             // Get current release
-            $currentRelease = $deploymentTasks->getCurrentRelease();
+            $currentRelease = $releaseService->getCurrentRelease();
 
             if (!$currentRelease) {
                 $this->error('❌ No current release found');
@@ -115,8 +123,26 @@ class RollbackCommand extends Command
             $this->info('🔄 Starting rollback...');
             $this->newLine();
 
-            // Perform rollback
-            $deploymentTasks->rollback($targetRelease);
+            // Perform rollback using manual deployment path updates
+            // (RollbackAction doesn't support specific release selection)
+            $deployPath = $config[$environment]['deploy_path'];
+            $releasesPath = "{$deployPath}/releases";
+            $targetPath = "{$releasesPath}/{$targetRelease}";
+            $currentPath = "{$deployPath}/current";
+
+            // Verify target release exists
+            $exists = $deployer->test("[ -d {$targetPath} ]");
+            if (!$exists) {
+                throw new \RuntimeException("Release {$targetRelease} does not exist");
+            }
+
+            // Create release symlink
+            $deployer->run("ln -nfs {$targetPath} {$deployPath}/release");
+
+            // Atomic swap to new release
+            $deployer->run("mv -fT {$deployPath}/release {$currentPath}");
+
+            $this->info("✓ Symlink updated to: {$targetRelease}");
 
             // Clear caches
             $this->info('🗑️  Clearing caches...');
@@ -153,15 +179,15 @@ class RollbackCommand extends Command
                 $this->warn('  ⚠ Queue restart failed');
             }
 
-            // Restart services
+            // Restart services using actions
             if ($environment !== 'local') {
-                $serviceTasks = new ServiceTasks($deployer);
-
                 $this->newLine();
                 $this->info('🔄 Restarting services...');
                 try {
-                    $serviceTasks->restartPhpFpm();
-                    $serviceTasks->restartNginx();
+                    $deployer->execute([
+                        RestartPhpFpmAction::class,
+                        RestartNginxAction::class,
+                    ]);
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ Service restart failed: '.$e->getMessage());
                 }
