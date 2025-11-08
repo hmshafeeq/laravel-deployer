@@ -4,7 +4,7 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Shaf\LaravelDeployer\Actions\Maintenance\ClearCachesAction;
 use Shaf\LaravelDeployer\Actions\Maintenance\RestartQueueWorkersAction;
-use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
+use Shaf\LaravelDeployer\Services\ServiceRestarter;
 
 class ClearCommand extends BaseDeployerCommand
 {
@@ -53,7 +53,8 @@ class ClearCommand extends BaseDeployerCommand
         // Restart PHP-FPM (if not local)
         if ($environment !== 'local') {
             $this->newLine();
-            RestartPhpFpmAction::run($deployer);
+            $serviceRestarter = new ServiceRestarter($deployer);
+            $serviceRestarter->restartOnly(['php-fpm'], failSilently: true);
         }
     }
 }

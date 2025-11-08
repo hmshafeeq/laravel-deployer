@@ -9,18 +9,14 @@ use Shaf\LaravelDeployer\Actions\Deployment\OptimizeApplicationAction;
 use Shaf\LaravelDeployer\Actions\Deployment\PrepareDeploymentAction;
 use Shaf\LaravelDeployer\Actions\Deployment\RunPostDeploymentScriptsAction;
 use Shaf\LaravelDeployer\Actions\Deployment\SyncCodeAction;
-use Shaf\LaravelDeployer\Actions\HealthCheck\CheckDiskSpaceAction;
-use Shaf\LaravelDeployer\Actions\HealthCheck\CheckHealthEndpointAction;
-use Shaf\LaravelDeployer\Actions\HealthCheck\CheckMemoryUsageAction;
-use Shaf\LaravelDeployer\Actions\HealthCheck\RunSmokeTestsAction;
 use Shaf\LaravelDeployer\Actions\Notification\SendFailureNotificationAction;
 use Shaf\LaravelDeployer\Actions\Notification\SendSuccessNotificationAction;
-use Shaf\LaravelDeployer\Actions\Service\ReloadSupervisorAction;
-use Shaf\LaravelDeployer\Actions\Service\RestartNginxAction;
-use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Deployer;
+use Shaf\LaravelDeployer\Services\HealthCheckService;
 use Shaf\LaravelDeployer\Services\LockManager;
+use Shaf\LaravelDeployer\Services\ServiceRestarter;
 use Shaf\LaravelDeployer\Services\SharedResourceLinker;
+use Shaf\LaravelDeployer\Services\ViteDetector;
 
 class DeployCommand extends BaseDeployerCommand
 {
@@ -82,8 +78,10 @@ class DeployCommand extends BaseDeployerCommand
      */
     protected function runPreDeploymentChecks(): bool
     {
+        $viteDetector = new ViteDetector();
+
         // Check if Vite is running
-        if ($this->isViteRunning()) {
+        if ($viteDetector->isRunning()) {
             $this->newLine();
             $this->components->error('Vite bundler is currently running!');
             $this->newLine();
@@ -225,10 +223,8 @@ class DeployCommand extends BaseDeployerCommand
      */
     protected function runHealthChecks(): void
     {
-        $this->deployer->writeln("🔍 Checking server resources...");
-        CheckDiskSpaceAction::run($this->deployer);
-        CheckMemoryUsageAction::run($this->deployer);
-        $this->deployer->writeln("");
+        $healthCheckService = new HealthCheckService($this->deployer);
+        $healthCheckService->runPreDeployment();
     }
 
     /**
@@ -267,9 +263,8 @@ class DeployCommand extends BaseDeployerCommand
      */
     protected function restartServices(): void
     {
-        RestartPhpFpmAction::run($this->deployer);
-        RestartNginxAction::run($this->deployer);
-        ReloadSupervisorAction::run($this->deployer);
+        $serviceRestarter = new ServiceRestarter($this->deployer);
+        $serviceRestarter->restartAll(failSilently: true);
     }
 
     /**
@@ -300,31 +295,8 @@ class DeployCommand extends BaseDeployerCommand
      */
     protected function runApplicationHealthChecks(): void
     {
-        $appUrl = $this->getApplicationUrl();
-
-        $this->deployer->writeln("🔍 Running deployment health checks...");
-        $this->deployer->writeln("");
-
-        CheckHealthEndpointAction::run($this->deployer, null, $appUrl);
-        RunSmokeTestsAction::run($this->deployer, $appUrl);
-
-        $this->deployer->writeln("");
-        $this->deployer->writeln("✅ All health checks passed!");
-    }
-
-    /**
-     * Get application URL from deployed application
-     *
-     * @return string
-     */
-    protected function getApplicationUrl(): string
-    {
-        $currentPath = $this->deployer->getCurrentPath();
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config(\\\"app.url\\\");\"");
-        $appUrl = $this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config(\\\"app.url\\\");\"");
-        $this->deployer->writeln($appUrl);
-
-        return trim($appUrl);
+        $healthCheckService = new HealthCheckService($this->deployer);
+        $healthCheckService->runPostDeployment();
     }
 
     /**
@@ -338,32 +310,5 @@ class DeployCommand extends BaseDeployerCommand
         // For now, full deploy is the same as regular deploy
         // You can add database backup tasks here later
         $this->runDeploy($noConfirm);
-    }
-
-    /**
-     * Check if Vite development server is running
-     *
-     * @return bool
-     */
-    protected function isViteRunning(): bool
-    {
-        $process = \Symfony\Component\Process\Process::fromShellCommandline('ps aux');
-        $process->run();
-
-        if (!$process->isSuccessful()) {
-            return false;
-        }
-
-        $output = $process->getOutput();
-        $projectPath = base_path();
-
-        // Look for vite processes running from this project's directory
-        foreach (explode("\n", $output) as $line) {
-            if (str_contains($line, 'node_modules/.bin/vite') && str_contains($line, $projectPath)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

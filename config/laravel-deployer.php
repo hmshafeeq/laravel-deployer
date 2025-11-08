@@ -175,4 +175,19 @@ return [
     |
     */
     'env_prefix' => 'DEPLOY_',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Services Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Services to restart after deployment. Set to false to disable restart
+    | for a specific service.
+    |
+    */
+    'services' => [
+        'php-fpm' => env('DEPLOY_RESTART_PHP_FPM', true),
+        'nginx' => env('DEPLOY_RESTART_NGINX', true),
+        'supervisor' => env('DEPLOY_RESTART_SUPERVISOR', true),
+    ],
 ];

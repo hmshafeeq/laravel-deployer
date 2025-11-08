@@ -5,9 +5,8 @@ namespace Shaf\LaravelDeployer\Commands;
 use Shaf\LaravelDeployer\Actions\Deployment\RollbackDeploymentAction;
 use Shaf\LaravelDeployer\Actions\Maintenance\ClearCachesAction;
 use Shaf\LaravelDeployer\Actions\Maintenance\RestartQueueWorkersAction;
-use Shaf\LaravelDeployer\Actions\Service\RestartNginxAction;
-use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Services\ReleaseManager;
+use Shaf\LaravelDeployer\Services\ServiceRestarter;
 
 class RollbackCommand extends BaseDeployerCommand
 {
@@ -86,13 +85,8 @@ class RollbackCommand extends BaseDeployerCommand
         // Restart services
         if ($environment !== 'local') {
             $this->newLine();
-            $this->info('🔄 Restarting services...');
-            try {
-                RestartPhpFpmAction::run($deployer);
-                RestartNginxAction::run($deployer);
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Service restart failed: '.$e->getMessage());
-            }
+            $serviceRestarter = new ServiceRestarter($deployer);
+            $serviceRestarter->restartOnly(['php-fpm', 'nginx'], failSilently: true);
         }
 
         $this->newLine();
