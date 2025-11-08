@@ -49,15 +49,12 @@ class DatabaseDownloadCommand extends Command
             // Load environment variables
             $deployer->loadEnvironment();
 
-            // Create database tasks
-            $databaseTasks = new DatabaseTasks($deployer);
-
             // Get arguments
             $backupSelection = $this->argument('backup');
             $method = $this->argument('method');
 
             // Run download
-            $databaseTasks->download($backupSelection, $method);
+            DownloadDatabaseBackupAction::run($deployer, $backupSelection, $method);
 
             $this->line('');
             $this->info('✅ Database download completed successfully!');

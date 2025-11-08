@@ -3,9 +3,11 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
+use Shaf\LaravelDeployer\Actions\Deployment\RollbackDeploymentAction;
+use Shaf\LaravelDeployer\Actions\Service\RestartNginxAction;
+use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Deployer;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
+use Shaf\LaravelDeployer\Services\ReleaseManager;
 use Symfony\Component\Yaml\Yaml;
 
 class RollbackCommand extends Command
@@ -46,10 +48,12 @@ class RollbackCommand extends Command
         try {
             $deployer = new Deployer($environment, $config[$environment]);
             $deployer->loadEnvironment();
-            $deploymentTasks = new DeploymentTasks($deployer);
+
+            // Create release manager
+            $releaseManager = new ReleaseManager($deployer);
 
             // Get available releases
-            $releases = $deploymentTasks->getReleases();
+            $releases = $releaseManager->getReleases();
 
             if (empty($releases)) {
                 $this->error('❌ No releases found to rollback to');
@@ -58,7 +62,7 @@ class RollbackCommand extends Command
             }
 
             // Get current release
-            $currentRelease = $deploymentTasks->getCurrentRelease();
+            $currentRelease = $releaseManager->getCurrentRelease();
 
             if (!$currentRelease) {
                 $this->error('❌ No current release found');
@@ -116,7 +120,7 @@ class RollbackCommand extends Command
             $this->newLine();
 
             // Perform rollback
-            $deploymentTasks->rollback($targetRelease);
+            RollbackDeploymentAction::run($deployer, $targetRelease);
 
             // Clear caches
             $this->info('🗑️  Clearing caches...');
@@ -155,13 +159,11 @@ class RollbackCommand extends Command
 
             // Restart services
             if ($environment !== 'local') {
-                $serviceTasks = new ServiceTasks($deployer);
-
                 $this->newLine();
                 $this->info('🔄 Restarting services...');
                 try {
-                    $serviceTasks->restartPhpFpm();
-                    $serviceTasks->restartNginx();
+                    RestartPhpFpmAction::run($deployer);
+                    RestartNginxAction::run($deployer);
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ Service restart failed: '.$e->getMessage());
                 }

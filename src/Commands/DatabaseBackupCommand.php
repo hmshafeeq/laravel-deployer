@@ -40,11 +40,8 @@ class DatabaseBackupCommand extends Command
             // Load environment variables
             $deployer->loadEnvironment();
 
-            // Create database tasks
-            $databaseTasks = new DatabaseTasks($deployer);
-
             // Run backup
-            $databaseTasks->backup();
+            BackupDatabaseAction::run($deployer);
 
             $this->line('');
             $this->info('✅ Database backup completed successfully!');
