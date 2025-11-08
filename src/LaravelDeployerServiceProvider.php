@@ -32,9 +32,6 @@ class LaravelDeployerServiceProvider extends ServiceProvider
                 DatabaseBackupCommand::class,
                 DatabaseDownloadCommand::class,
                 DatabaseUploadCommand::class,
-                LogsCheckCommand::class,
-                LogsSearchCommand::class,
-                LogsDownloadCommand::class,
             ]);
         }
     }
