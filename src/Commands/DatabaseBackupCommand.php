@@ -4,8 +4,8 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Actions\Database\BackupDatabaseAction;
-use Shaf\LaravelDeployer\Deployer;
+use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
+use Shaf\LaravelDeployer\Deployer\Deployer;
 use Symfony\Component\Yaml\Yaml;
 
 class DatabaseBackupCommand extends Command
@@ -39,8 +39,11 @@ class DatabaseBackupCommand extends Command
             // Load environment variables
             $deployer->loadEnvironment();
 
-            // Run backup using action
-            $deployer->execute(BackupDatabaseAction::class);
+            // Create database tasks
+            $databaseTasks = new DatabaseTasks($deployer);
+
+            // Run backup
+            $databaseTasks->backup();
 
             $this->line('');
             $this->info('✅ Database backup completed successfully!');

@@ -16,20 +16,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Register the Deployer singleton
-        $this->app->singleton('deployer', function ($app) {
-            // Default configuration - will be overridden when commands create instances
-            return new Deployer('local', [
-                'hostname' => 'localhost',
-                'remote_user' => 'deploy',
-                'deploy_path' => '/var/www/app',
-                'local' => true,
-            ]);
-        });
-
-        // Register the facade alias
-        $loader = \Illuminate\Foundation\AliasLoader::getInstance();
-        $loader->alias('Deployer', \Shaf\LaravelDeployer\Facades\Deployer::class);
+        //
     }
 
     public function boot(): void

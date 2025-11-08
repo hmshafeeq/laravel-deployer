@@ -1,9 +1,8 @@
 <?php
 
-namespace Shaf\LaravelDeployer;
+namespace Shaf\LaravelDeployer\Deployer;
 
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Contracts\ActionInterface;
 use Spatie\Ssh\Ssh;
 use Symfony\Component\Process\Process;
 
@@ -32,32 +31,6 @@ class Deployer
             if (isset($config['port'])) {
                 $this->ssh->usePort($config['port']);
             }
-        }
-    }
-
-    /**
-     * Execute one or more actions
-     *
-     * @param string|array $actions Action class name(s)
-     * @return void
-     */
-    public function execute(string|array $actions): void
-    {
-        $actions = is_array($actions) ? $actions : [$actions];
-
-        foreach ($actions as $actionClass) {
-            if (!class_exists($actionClass)) {
-                throw new \RuntimeException("Action class not found: {$actionClass}");
-            }
-
-            if (!is_subclass_of($actionClass, ActionInterface::class)) {
-                throw new \RuntimeException("Action class must implement ActionInterface: {$actionClass}");
-            }
-
-            $action = new $actionClass($this);
-
-            echo "\ntask {$action->getName()}\n";
-            $action->execute();
         }
     }
 
@@ -116,11 +89,6 @@ class Deployer
         $this->output[] = $message;
     }
 
-    /**
-     * Legacy task method for backwards compatibility
-     *
-     * @deprecated Use execute() method with Action classes instead
-     */
     public function task(string $name, callable $callback): void
     {
         echo "\ntask {$name}\n";

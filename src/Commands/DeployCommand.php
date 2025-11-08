@@ -3,38 +3,11 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer;
-use Shaf\LaravelDeployer\Actions\Deployment\DeployInfoAction;
-use Shaf\LaravelDeployer\Actions\Health\CheckResourcesAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SetupAction;
-use Shaf\LaravelDeployer\Actions\Deployment\CheckLockAction;
-use Shaf\LaravelDeployer\Actions\Deployment\LockAction;
-use Shaf\LaravelDeployer\Actions\Deployment\ReleaseAction;
-use Shaf\LaravelDeployer\Actions\Deployment\BuildAssetsAction;
-use Shaf\LaravelDeployer\Actions\Deployment\RsyncAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SharedAction;
-use Shaf\LaravelDeployer\Actions\Deployment\WritableAction;
-use Shaf\LaravelDeployer\Actions\Deployment\VendorsAction;
-use Shaf\LaravelDeployer\Actions\Deployment\FixModulePermissionsAction;
-use Shaf\LaravelDeployer\Actions\Artisan\StorageLinkAction;
-use Shaf\LaravelDeployer\Actions\Artisan\ConfigCacheAction;
-use Shaf\LaravelDeployer\Actions\Artisan\ViewCacheAction;
-use Shaf\LaravelDeployer\Actions\Artisan\RouteCacheAction;
-use Shaf\LaravelDeployer\Actions\Artisan\OptimizeAction;
-use Shaf\LaravelDeployer\Actions\Artisan\MigrateAction;
-use Shaf\LaravelDeployer\Actions\Artisan\QueueRestartAction;
-use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
-use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
-use Shaf\LaravelDeployer\Actions\System\ReloadSupervisorAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SymlinkAction;
-use Shaf\LaravelDeployer\Actions\Deployment\CleanupAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SuccessAction;
-use Shaf\LaravelDeployer\Actions\Deployment\PostDeploymentAction;
-use Shaf\LaravelDeployer\Actions\Health\CheckEndpointsAction;
-use Shaf\LaravelDeployer\Actions\Deployment\LinkDepAction;
-use Shaf\LaravelDeployer\Actions\Notification\NotifySuccessAction;
-use Shaf\LaravelDeployer\Actions\Notification\NotifyFailureAction;
-use Shaf\LaravelDeployer\Actions\Deployment\UnlockAction;
+use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
+use Shaf\LaravelDeployer\Deployer\HealthCheckTasks;
+use Shaf\LaravelDeployer\Deployer\NotificationTasks;
+use Shaf\LaravelDeployer\Deployer\ServiceTasks;
 use Symfony\Component\Yaml\Yaml;
 
 class DeployCommand extends Command
@@ -108,11 +81,13 @@ class DeployCommand extends Command
             $this->error('Deployment failed!');
             $this->error($e->getMessage());
 
-            // Send failure notification and unlock
-            $this->deployer->execute([
-                NotifyFailureAction::class,
-                UnlockAction::class,
-            ]);
+            // Send failure notification
+            $notificationTasks = new NotificationTasks($this->deployer);
+            $notificationTasks->failure();
+
+            // Unlock deployment
+            $deploymentTasks = new DeploymentTasks($this->deployer);
+            $deploymentTasks->unlock();
 
             return self::FAILURE;
         }
@@ -160,39 +135,43 @@ class DeployCommand extends Command
         // Generate release name
         $this->deployer->generateReleaseName();
 
-        // Execute deployment actions in order
-        $this->deployer->execute([
-            DeployInfoAction::class,
-            CheckResourcesAction::class,
-            SetupAction::class,
-            CheckLockAction::class,
-            LockAction::class,
-            ReleaseAction::class,
-            BuildAssetsAction::class,
-            RsyncAction::class,
-            SharedAction::class,
-            WritableAction::class,
-            VendorsAction::class,
-            FixModulePermissionsAction::class,
-            StorageLinkAction::class,
-            ConfigCacheAction::class,
-            ViewCacheAction::class,
-            RouteCacheAction::class,
-            OptimizeAction::class,
-            MigrateAction::class,
-            QueueRestartAction::class,
-            RestartPhpFpmAction::class,
-            RestartNginxAction::class,
-            ReloadSupervisorAction::class,
-            SymlinkAction::class,
-            CleanupAction::class,
-            SuccessAction::class,
-            PostDeploymentAction::class,
-            CheckEndpointsAction::class,
-            LinkDepAction::class,
-            NotifySuccessAction::class,
-            UnlockAction::class,
-        ]);
+        // Create task runners
+        $deploymentTasks = new DeploymentTasks($this->deployer);
+        $healthCheckTasks = new HealthCheckTasks($this->deployer);
+        $serviceTasks = new ServiceTasks($this->deployer);
+        $notificationTasks = new NotificationTasks($this->deployer);
+
+        // Run deployment tasks in order
+        $deploymentTasks->deployInfo();
+        $healthCheckTasks->checkResources();
+        $deploymentTasks->setup();
+        $deploymentTasks->checkLock();
+        $deploymentTasks->lock();
+        $deploymentTasks->release();
+        $deploymentTasks->buildAssets();
+        $deploymentTasks->rsync();
+        $deploymentTasks->shared();
+        $deploymentTasks->writable();
+        $deploymentTasks->vendors();
+        $deploymentTasks->fixModulePermissions();
+        $deploymentTasks->artisanStorageLink();
+        $deploymentTasks->artisanConfigCache();
+        $deploymentTasks->artisanViewCache();
+        $deploymentTasks->artisanRouteCache();
+        $deploymentTasks->artisanOptimize();
+        $deploymentTasks->artisanMigrate();
+        $deploymentTasks->artisanQueueRestart();
+        $serviceTasks->restartPhpFpm();
+        $serviceTasks->restartNginx();
+        $serviceTasks->reloadSupervisor();
+        $deploymentTasks->symlink();
+        $deploymentTasks->cleanup();
+        $deploymentTasks->success();
+        $deploymentTasks->postDeployment();
+        $healthCheckTasks->checkEndpoints();
+        $deploymentTasks->linkDep();
+        $notificationTasks->success();
+        $deploymentTasks->unlock();
     }
 
     protected function runFullDeploy(bool $noConfirm): void
