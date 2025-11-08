@@ -24,9 +24,28 @@
         "symfony/yaml": "^7.0",
         "vlucas/phpdotenv": "^5.5"
     },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "pestphp/pest": "^4.0@dev",
+        "pestphp/pest-plugin-laravel": "^4.0@dev"
+    },
     "autoload": {
         "psr-4": {
             "Shaf\\LaravelDeployer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Shaf\\LaravelDeployer\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
         }
     },
     "extra": {
@@ -36,6 +55,6 @@
             ]
         }
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true
 }
