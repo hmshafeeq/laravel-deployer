@@ -34,6 +34,24 @@ class Deployer
         }
     }
 
+    /**
+     * Initialize deployer with configuration and environment loading
+     *
+     * This is a convenience factory method that creates a Deployer instance
+     * and loads the environment variables automatically.
+     *
+     * @param string $environment Environment name (e.g., staging, production)
+     * @param array $config Configuration array for the environment
+     * @return self Initialized deployer instance
+     */
+    public static function init(string $environment, array $config): self
+    {
+        $deployer = new self($environment, $config);
+        $deployer->loadEnvironment();
+
+        return $deployer;
+    }
+
     public function run(string $command, bool $local = false): string
     {
         if ($local || $this->isLocal) {
