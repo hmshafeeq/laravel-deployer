@@ -10,9 +10,7 @@ use Shaf\LaravelDeployer\Commands\DatabaseRestoreCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseUploadCommand;
 use Shaf\LaravelDeployer\Commands\DeployCommand;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
-use Shaf\LaravelDeployer\Commands\Logs\CheckCommand as LogsCheckCommand;
-use Shaf\LaravelDeployer\Commands\Logs\DownloadCommand as LogsDownloadCommand;
-use Shaf\LaravelDeployer\Commands\Logs\SearchCommand as LogsSearchCommand;
+use Shaf\LaravelDeployer\Commands\RollbackCommand;
 
 class LaravelDeployerServiceProvider extends ServiceProvider
 {
@@ -27,6 +25,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
             $this->commands([
                 InstallCommand::class,
                 DeployCommand::class,
+                RollbackCommand::class,
                 ClearCommand::class,
                 DatabaseRestoreCommand::class,
                 DatabaseBackupCommand::class,

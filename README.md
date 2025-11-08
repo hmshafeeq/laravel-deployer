@@ -5,11 +5,13 @@ A lightweight, zero-downtime deployment package for Laravel applications using S
 ## Features
 
 - 🚀 **Zero-Downtime Deployment** - Uses atomic symlink swapping for seamless deployments
+- ⏪ **Instant Rollback** - One-command rollback to any previous release
 - 📦 **Release Management** - Maintains deployment history with configurable retention
 - 🔒 **Deployment Locking** - Prevents concurrent deployments
 - 🗄️ **Database Operations** - Backup, download, upload, and restore database with ease
 - 🔄 **Service Management** - Auto-detect and restart PHP-FPM, Nginx, and Supervisor
 - ❤️ **Health Checks** - Resource monitoring and endpoint health verification
+- 🛡️ **Failsafe Mechanisms** - Multiple safety features for production deployments
 - 📊 **Verbose Output** - Beautiful, colored output showing deployment progress
 - 🧪 **Fully Tested** - Comprehensive test suite with Pest v4
 
@@ -177,6 +179,39 @@ Clear all caches and restart services:
 php artisan deployer:clear staging
 ```
 
+### Rollback
+
+Rollback to the previous release:
+
+```bash
+php artisan deploy:rollback staging
+```
+
+Rollback to a specific release:
+
+```bash
+# List available releases first
+php artisan deploy:rollback staging --release=202501.2
+```
+
+Skip confirmation prompt:
+
+```bash
+php artisan deploy:rollback staging --no-confirm
+```
+
+**Important Notes**:
+- Rollback changes the application code instantly
+- Database migrations are **NOT** automatically rolled back
+- You must manually rollback database changes if needed:
+  ```bash
+  ssh user@server
+  cd /var/www/your-app/current
+  php artisan migrate:rollback --step=N
+  ```
+- Rollback clears all caches and restarts services
+- At least 2 releases must exist to rollback
+
 ## Deployment Workflow
 
 The deployment process follows these steps:
@@ -247,6 +282,55 @@ The deployment creates the following structure on the remote server:
 | `DEPLOY_USER` | Override remote user |
 | `DEPLOY_PATH` | Override deployment path |
 | `DEPLOY_BRANCH` | Override git branch |
+
+## Failsafe Mechanisms
+
+Laravel Deployer includes multiple failsafe mechanisms to ensure safe deployments:
+
+### Built-in Safety Features
+
+1. **Zero-Downtime Deployment** - Atomic symlink swapping ensures no service interruption
+2. **Deployment Locking** - Prevents concurrent deployments that could corrupt the system
+3. **Release History** - Maintains multiple releases for quick rollback
+4. **Instant Rollback** - One-command rollback to any previous release
+5. **Pre-Deployment Validation** - Confirms target before deployment
+6. **Health Checks** - Verifies system resources and endpoint availability
+7. **Shared Resources** - Data persistence across deployments
+8. **Graceful Error Handling** - Automatic cleanup on failures
+9. **Service Management** - Safe service restarts with fallbacks
+10. **Desktop Notifications** - Real-time deployment status alerts
+
+### Rollback Procedure
+
+If a deployment introduces issues:
+
+```bash
+# Quick rollback to previous release
+php artisan deploy:rollback staging
+
+# Or rollback to specific release
+php artisan deploy:rollback staging --release=202501.2
+```
+
+The rollback process:
+- Changes code instantly (atomic symlink swap)
+- Clears all caches
+- Restarts queue workers
+- Restarts services (PHP-FPM, Nginx)
+- **Does NOT rollback database migrations** (manual intervention required)
+
+### Additional Recommendations
+
+For enhanced safety, consider implementing:
+
+- **Automatic Rollback on Failure** - Auto-rollback if health checks fail
+- **Database Backup Before Migration** - Safety net for schema changes
+- **Smoke Tests** - Automated testing after deployment
+- **Deployment Windows** - Restrict deployments to low-traffic periods
+- **Slack/Email Notifications** - Team awareness of deployments
+- **Maintenance Mode** - User-friendly messages during deployment
+
+See [FAILSAFE_MECHANISMS.md](FAILSAFE_MECHANISMS.md) for detailed recommendations and implementation guides.
 
 ## Testing
 
