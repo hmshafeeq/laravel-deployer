@@ -324,4 +324,9 @@ class Deployer
 
         return trim($output);
     }
+
+    public function isLocal(): bool
+    {
+        return $this->isLocal;
+    }
 }
