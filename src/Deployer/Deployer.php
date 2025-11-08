@@ -48,7 +48,7 @@ class Deployer
     public function runLocally(string $command): string
     {
         $process = Process::fromShellCommandline($command, base_path());
-        $process->setTimeout(900);
+        $process->setTimeout(config('laravel-deployer.php.timeout', 900));
         $process->run();
 
         if (!$process->isSuccessful()) {
@@ -74,16 +74,16 @@ class Deployer
     {
         $prefix = "[{$this->environment}]";
 
-        // Handle different styles
-        $colors = [
-            'info' => "\033[32m", // green
-            'comment' => "\033[33m", // yellow
-            'error' => "\033[31m", // red
+        // Get colors from config
+        $colors = config('laravel-deployer.output.colors', [
+            'info' => "\033[32m",
+            'comment' => "\033[33m",
+            'error' => "\033[31m",
             'plain' => "",
-        ];
+        ]);
 
         $color = $colors[$style] ?? $colors['info'];
-        $reset = "\033[0m";
+        $reset = config('laravel-deployer.output.reset', "\033[0m");
 
         echo "{$prefix} {$color}{$message}{$reset}\n";
         $this->output[] = $message;
@@ -117,7 +117,7 @@ class Deployer
             $this->writeln("✅ Loaded environment variables from .deploy/.env.{$this->environment}");
 
             // Override configuration with environment variables
-            $envPrefix = 'DEPLOY_';
+            $envPrefix = config('laravel-deployer.env_prefix', 'DEPLOY_');
 
             if ($host = $_ENV[$envPrefix.'HOST'] ?? getenv($envPrefix.'HOST')) {
                 $this->config['hostname'] = $host;
@@ -266,8 +266,13 @@ class Deployer
             $includeArgs[] = "--include='{$include}'";
         }
 
+        $rsyncFlags = config('laravel-deployer.rsync.flags', '-rzc --delete --delete-after --compress');
+        $sshOptions = config('laravel-deployer.rsync.ssh_options', "-e 'ssh -A -o ControlMaster=auto -o ControlPersist=60'");
+
         $rsyncCommand = sprintf(
-            "rsync -rzc -e 'ssh -A -o ControlMaster=auto -o ControlPersist=60' --delete --delete-after --compress %s %s '%s' '%s'",
+            "rsync %s %s %s %s '%s' '%s'",
+            $rsyncFlags,
+            $sshOptions,
             implode(' ', $includeArgs),
             implode(' ', $excludeArgs),
             $source,
@@ -277,7 +282,7 @@ class Deployer
         $this->writeln("run " . str_replace([base_path(), $this->config['remote_user'] . '@' . $this->config['hostname']], ['', ''], $rsyncCommand));
 
         $process = Process::fromShellCommandline($rsyncCommand, base_path());
-        $process->setTimeout(900);
+        $process->setTimeout(config('laravel-deployer.rsync.timeout', 900));
         $process->run(function ($type, $buffer) {
             if (Process::ERR === $type) {
                 echo $buffer;
@@ -302,7 +307,7 @@ class Deployer
         $this->writeln("run {$command}");
 
         $process = Process::fromShellCommandline($command, base_path());
-        $process->setTimeout(900);
+        $process->setTimeout(config('laravel-deployer.php.timeout', 900));
 
         $output = '';
         $process->run(function ($type, $buffer) use (&$output, $showOutput) {

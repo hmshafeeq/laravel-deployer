@@ -2,183 +2,176 @@
 
 namespace Shaf\LaravelDeployer\Deployer;
 
+use Shaf\LaravelDeployer\Services\DatabaseConfigExtractor;
+use Shaf\LaravelDeployer\ValueObjects\DatabaseConfig;
+use Shaf\LaravelDeployer\ValueObjects\BackupInfo;
+
 class DatabaseTasks
 {
     protected Deployer $deployer;
+    protected DatabaseConfigExtractor $configExtractor;
 
     public function __construct(Deployer $deployer)
     {
         $this->deployer = $deployer;
+        $this->configExtractor = new DatabaseConfigExtractor($deployer);
     }
 
-    protected function getDatabaseConfigWithFile(): array
+    /**
+     * Get database configuration using the extractor service
+     */
+    protected function getDatabaseConfig(): DatabaseConfig
     {
-        $currentPath = $this->deployer->getCurrentPath();
-
-        $this->deployer->writeln("🔍 Getting database configuration...");
-
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config('database.default');\"");
-        $connection = trim($this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config('database.default');\""));
-        $this->deployer->writeln($connection);
-
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.host');\"");
-        $host = trim($this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.host');\""));
-        $this->deployer->writeln($host);
-
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.database');\"");
-        $database = trim($this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.database');\""));
-        $this->deployer->writeln($database);
-
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.username');\"");
-        $username = trim($this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.username');\""));
-        $this->deployer->writeln($username);
-
-        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.password');\"");
-        $password = trim($this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config('database.connections.{$connection}.password');\""));
-        $this->deployer->writeln($password);
-
-        // Validate configuration
-        if (empty($host) || !preg_match('/^[a-zA-Z0-9.-]+$/', $host)) {
-            throw new \RuntimeException("Invalid database host: {$host}");
-        }
-        if (empty($database) || !preg_match('/^[a-zA-Z0-9_]+$/', $database)) {
-            throw new \RuntimeException("Invalid database name: {$database}");
-        }
-        if (empty($username) || !preg_match('/^[a-zA-Z0-9_@.-]+$/', $username)) {
-            throw new \RuntimeException("Invalid database user: {$username}");
-        }
-        if (empty($password)) {
-            throw new \RuntimeException('Database password cannot be empty');
-        }
-
-        $configFile = '/tmp/mysql_backup_' . uniqid() . '.cnf';
-        $this->deployer->writeln("run echo '[client]' > {$configFile}");
-        $this->deployer->run("echo '[client]' > {$configFile}");
-
-        $this->deployer->writeln("run echo 'host={$host}' >> {$configFile}");
-        $this->deployer->run("echo 'host={$host}' >> {$configFile}");
-
-        $this->deployer->writeln("run echo 'user={$username}' >> {$configFile}");
-        $this->deployer->run("echo 'user={$username}' >> {$configFile}");
-
-        $this->deployer->writeln("run echo 'password={$password}' >> {$configFile}");
-        $this->deployer->run("echo 'password={$password}' >> {$configFile}");
-
-        return [
-            'host' => $host,
-            'database' => $database,
-            'username' => $username,
-            'password' => $password,
-            'config_file' => $configFile,
-        ];
+        return $this->configExtractor->extract($this->deployer->getCurrentPath());
     }
 
     public function backup(): void
     {
         $this->deployer->task('database:backup', function ($deployer) {
-            $timestamp = date('Y-m-d_H-i-s');
             $deployPath = $deployer->getDeployPath();
-            $backupFile = "{$deployPath}/shared/backups/db_backup_{$timestamp}.sql.gz";
+            $backupPath = config('laravel-deployer.backup.path', 'shared/backups');
+            $timestamp = date('Y-m-d_H-i-s');
+            $backupFile = "{$deployPath}/{$backupPath}/db_backup_{$timestamp}.sql.gz";
 
-            $deployer->writeln("run mkdir -p {$deployPath}/shared/backups");
-            $deployer->run("mkdir -p {$deployPath}/shared/backups");
+            $deployer->writeln("run mkdir -p {$deployPath}/{$backupPath}");
+            $deployer->run("mkdir -p {$deployPath}/{$backupPath}");
 
-            $config = $this->getDatabaseConfigWithFile();
+            $config = $this->getDatabaseConfig();
+            $configFile = $config->createConfigFile();
 
             try {
-                $deployer->writeln("💾 Starting database backup...");
-                $deployer->writeln("📊 Database: {$config['database']}");
-                $deployer->writeln("🏠 Host: {$config['host']}");
-                $deployer->writeln("");
-                $deployer->writeln("⏳ This may take a while for large databases...");
-
-                // Run mysqldump with timeout and proper error handling
-                $dumpCommand = "timeout 1800 mysqldump --defaults-file={$config['config_file']} --single-transaction --routines --triggers {$config['database']} 2>&1";
-                $compressCommand = "gzip -8 > {$backupFile}";
-
-                $deployer->writeln("run {$dumpCommand} | {$compressCommand}; echo \$?");
-                $result = $deployer->run("{$dumpCommand} | {$compressCommand}; echo \$?");
-                $exitCode = (int) trim($result);
-
-                if ($exitCode !== 0) {
-                    throw new \RuntimeException("mysqldump failed with exit code: {$exitCode}");
-                }
-
-                // Verify backup file was created and has content
-                $deployer->writeln("run test -f {$backupFile} && echo 'OK' || echo 'FAIL'");
-                $fileExists = trim($deployer->run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
-                if (!empty($fileExists)) {
-                    $deployer->writeln($fileExists);
-                }
-
-                if ($fileExists !== 'OK') {
-                    throw new \RuntimeException("Backup file was not created: {$backupFile}");
-                }
-
-                $deployer->writeln("run stat -c%s {$backupFile} 2>/dev/null || stat -f%z {$backupFile} 2>/dev/null || echo 0");
-                $fileSize = (int) trim($deployer->run("stat -c%s {$backupFile} 2>/dev/null || stat -f%z {$backupFile} 2>/dev/null || echo 0"));
-                $deployer->writeln($fileSize);
-
-                if ($fileSize < 100) {
-                    throw new \RuntimeException("Backup file is too small ({$fileSize} bytes), backup likely failed");
-                }
-
-                $deployer->writeln("");
-                $deployer->writeln("✅ Database backup completed successfully!");
-
-                $deployer->writeln("run ls -lh {$backupFile} | awk '{print \$5}'");
-                $fileSizeHuman = trim($deployer->run("ls -lh {$backupFile} | awk '{print \$5}'"));
-                $deployer->writeln($fileSizeHuman);
-
-                $deployer->writeln("📁 Location: {$backupFile}");
-                $deployer->writeln("📊 Size: {$fileSizeHuman}");
-
-                // Clean up old backups (keep only 3 most recent)
-                $deployer->writeln("");
-                $deployer->writeln("🧹 Cleaning up old backups (keeping 3 most recent)...");
-
-                $deployer->writeln("run cd {$deployPath}/shared/backups && ls -t db_backup_*.sql.gz | tail -n +4 | xargs -r rm -f");
-                $deployer->run("cd {$deployPath}/shared/backups && ls -t db_backup_*.sql.gz | tail -n +4 | xargs -r rm -f");
-
-                $deployer->writeln("run cd {$deployPath}/shared/backups && ls -1 db_backup_*.sql.gz 2>/dev/null | wc -l");
-                $backupCount = (int) trim($deployer->run("cd {$deployPath}/shared/backups && ls -1 db_backup_*.sql.gz 2>/dev/null | wc -l"));
-                $deployer->writeln($backupCount);
-
-                $deployer->writeln("✅ Total backups on server: {$backupCount}");
-
+                $this->performBackup($backupFile, $config, $configFile);
+                $this->verifyBackup($backupFile);
+                $this->cleanupOldBackups($deployPath, $backupPath);
             } catch (\Exception $e) {
-                $deployer->writeln("");
-                $deployer->writeln("❌ Backup failed: " . $e->getMessage(), 'error');
-
-                // Clean up failed backup file if it exists
-                $fileExists = trim($deployer->run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
-                if ($fileExists === 'OK') {
-                    $deployer->run("rm -f {$backupFile}");
-                    $deployer->writeln("🧹 Cleaned up failed backup file");
-                }
-
-                throw $e;
+                $this->handleBackupFailure($backupFile, $e);
             } finally {
-                // Always clean up config file
-                $deployer->writeln("run rm -f {$config['config_file']} 2>/dev/null || true");
-                $deployer->run("rm -f {$config['config_file']} 2>/dev/null || true");
+                $this->cleanupConfigFile($configFile);
             }
         });
     }
 
-    public function selectBackup(?string $selection = null): array
+    protected function performBackup(string $backupFile, DatabaseConfig $config, string $configFile): void
+    {
+        $this->deployer->writeln("💾 Starting database backup...");
+        $this->deployer->writeln("📊 Database: {$config->database}");
+        $this->deployer->writeln("🏠 Host: {$config->host}");
+        $this->deployer->writeln("");
+        $this->deployer->writeln("⏳ This may take a while for large databases...");
+
+        $timeout = config('laravel-deployer.backup.timeout', 1800);
+        $compressionLevel = config('laravel-deployer.backup.compression_level', 8);
+
+        $dumpCommand = "timeout {$timeout} mysqldump --defaults-file={$configFile} --single-transaction --routines --triggers {$config->database} 2>&1";
+        $compressCommand = "gzip -{$compressionLevel} > {$backupFile}";
+
+        $this->deployer->writeln("run {$dumpCommand} | {$compressCommand}; echo \$?");
+        $result = $this->deployer->run("{$dumpCommand} | {$compressCommand}; echo \$?");
+        $exitCode = (int) trim($result);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException("mysqldump failed with exit code: {$exitCode}");
+        }
+    }
+
+    protected function verifyBackup(string $backupFile): void
+    {
+        $this->deployer->writeln("run test -f {$backupFile} && echo 'OK' || echo 'FAIL'");
+        $fileExists = trim($this->deployer->run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
+        if (!empty($fileExists)) {
+            $this->deployer->writeln($fileExists);
+        }
+
+        if ($fileExists !== 'OK') {
+            throw new \RuntimeException("Backup file was not created: {$backupFile}");
+        }
+
+        $this->deployer->writeln("run stat -c%s {$backupFile} 2>/dev/null || stat -f%z {$backupFile} 2>/dev/null || echo 0");
+        $fileSize = (int) trim($this->deployer->run("stat -c%s {$backupFile} 2>/dev/null || stat -f%z {$backupFile} 2>/dev/null || echo 0"));
+        $this->deployer->writeln($fileSize);
+
+        if ($fileSize < 100) {
+            throw new \RuntimeException("Backup file is too small ({$fileSize} bytes), backup likely failed");
+        }
+
+        $this->deployer->writeln("");
+        $this->deployer->writeln("✅ Database backup completed successfully!");
+
+        $this->deployer->writeln("run ls -lh {$backupFile} | awk '{print \$5}'");
+        $fileSizeHuman = trim($this->deployer->run("ls -lh {$backupFile} | awk '{print \$5}'"));
+        $this->deployer->writeln($fileSizeHuman);
+
+        $this->deployer->writeln("📁 Location: {$backupFile}");
+        $this->deployer->writeln("📊 Size: {$fileSizeHuman}");
+    }
+
+    protected function cleanupOldBackups(string $deployPath, string $backupPath): void
+    {
+        $keepBackups = config('laravel-deployer.backup.keep', 3);
+
+        $this->deployer->writeln("");
+        $this->deployer->writeln("🧹 Cleaning up old backups (keeping {$keepBackups} most recent)...");
+
+        $this->deployer->writeln("run cd {$deployPath}/{$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepBackups + 1)." | xargs -r rm -f");
+        $this->deployer->run("cd {$deployPath}/{$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepBackups + 1)." | xargs -r rm -f");
+
+        $this->deployer->writeln("run cd {$deployPath}/{$backupPath} && ls -1 db_backup_*.sql.gz 2>/dev/null | wc -l");
+        $backupCount = (int) trim($this->deployer->run("cd {$deployPath}/{$backupPath} && ls -1 db_backup_*.sql.gz 2>/dev/null | wc -l"));
+        $this->deployer->writeln($backupCount);
+
+        $this->deployer->writeln("✅ Total backups on server: {$backupCount}");
+    }
+
+    protected function handleBackupFailure(string $backupFile, \Exception $e): void
+    {
+        $this->deployer->writeln("");
+        $this->deployer->writeln("❌ Backup failed: " . $e->getMessage(), 'error');
+
+        $fileExists = trim($this->deployer->run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
+        if ($fileExists === 'OK') {
+            $this->deployer->run("rm -f {$backupFile}");
+            $this->deployer->writeln("🧹 Cleaned up failed backup file");
+        }
+
+        throw $e;
+    }
+
+    protected function cleanupConfigFile(string $configFile): void
+    {
+        $this->deployer->writeln("run rm -f {$configFile} 2>/dev/null || true");
+        $this->deployer->run("rm -f {$configFile} 2>/dev/null || true");
+    }
+
+    public function selectBackup(?string $selection = null): BackupInfo
     {
         $deployPath = $this->deployer->getDeployPath();
+        $backupPath = config('laravel-deployer.backup.path', 'shared/backups');
 
-        $backupList = $this->deployer->run("ls -lt {$deployPath}/shared/backups/db_backup_*.sql.gz 2>/dev/null || echo \"\"");
+        $backupList = $this->deployer->run("ls -lt {$deployPath}/{$backupPath}/db_backup_*.sql.gz 2>/dev/null || echo \"\"");
         if (empty($backupList)) {
             throw new \RuntimeException('No database backups found on server');
         }
 
-        $backups = $this->deployer->run("ls -lht {$deployPath}/shared/backups/db_backup_*.sql.gz | head -10");
+        $backups = $this->deployer->run("ls -lht {$deployPath}/{$backupPath}/db_backup_*.sql.gz | head -10");
         $lines = array_filter(array_map('trim', explode("\n", trim($backups))));
 
-        // If selection argument provided, don't show interactive list
+        $choiceIndex = $this->determineBackupChoice($selection, $lines);
+
+        if ($choiceIndex < 0 || $choiceIndex >= count($lines)) {
+            throw new \RuntimeException('Invalid backup selection');
+        }
+
+        $parts = preg_split('/\s+/', $lines[$choiceIndex]);
+
+        return new BackupInfo(
+            path: $parts[8],
+            name: basename($parts[8]),
+            size: $parts[4]
+        );
+    }
+
+    protected function determineBackupChoice(?string $selection, array $lines): int
+    {
         if ($selection !== null) {
             if (strtolower($selection) === 'latest') {
                 $choiceIndex = 0;
@@ -187,40 +180,29 @@ class DatabaseTasks
                     $filename = basename($parts[8]);
                     $this->deployer->writeln("📋 Using latest backup: {$filename}");
                 }
+                return 0;
             } elseif (is_numeric($selection)) {
                 $choiceIndex = (int) $selection - 1;
                 $this->deployer->writeln("📋 Using backup #{$selection}: " . basename($lines[$choiceIndex]));
+                return $choiceIndex;
             } else {
                 throw new \RuntimeException("Invalid backup selection: {$selection}");
             }
-        } else {
-            // Interactive selection
-            $this->deployer->writeln("📋 Available database backups:");
-            $this->deployer->writeln("");
-            foreach ($lines as $index => $line) {
-                $parts = preg_split('/\s+/', $line);
-                $size = $parts[4];
-                $filename = basename($parts[8]);
-                $this->deployer->writeln("   " . ($index + 1) . ". {$filename} ({$size})");
-            }
-            $this->deployer->writeln("");
-
-            // For automated selection, default to latest
-            $choiceIndex = 0;
-            $this->deployer->writeln("Using latest backup (automatic selection)");
         }
 
-        if ($choiceIndex < 0 || $choiceIndex >= count($lines)) {
-            throw new \RuntimeException('Invalid backup selection');
+        // Interactive selection - default to latest
+        $this->deployer->writeln("📋 Available database backups:");
+        $this->deployer->writeln("");
+        foreach ($lines as $index => $line) {
+            $parts = preg_split('/\s+/', $line);
+            $size = $parts[4];
+            $filename = basename($parts[8]);
+            $this->deployer->writeln("   " . ($index + 1) . ". {$filename} ({$size})");
         }
+        $this->deployer->writeln("");
+        $this->deployer->writeln("Using latest backup (automatic selection)");
 
-        $parts = preg_split('/\s+/', $lines[$choiceIndex]);
-
-        return [
-            'path' => $parts[8],
-            'name' => basename($parts[8]),
-            'size' => $parts[4],
-        ];
+        return 0;
     }
 
     public function getRemoteFileInfo(string $filePath): array
@@ -240,29 +222,19 @@ class DatabaseTasks
     {
         $this->deployer->task('database:download', function ($deployer) use ($backupSelection, $downloadMethod) {
             $backup = $this->selectBackup($backupSelection);
-            $remoteInfo = $this->getRemoteFileInfo($backup['path']);
+            $remoteInfo = $this->getRemoteFileInfo($backup->path);
 
             $backupDir = './.deploy/downloads/backups';
             $deployer->runLocally("mkdir -p {$backupDir}");
 
-            $deployer->writeln("📥 Downloading {$backup['name']} ({$remoteInfo['human']})...");
+            $deployer->writeln("📥 Downloading {$backup->name} ({$remoteInfo['human']})...");
 
             try {
-                $this->downloadWithProgress($backup['path'], "{$backupDir}/{$backup['name']}", $remoteInfo['bytes'], $downloadMethod);
+                $this->downloadWithProgress($backup->path, "{$backupDir}/{$backup->name}", $remoteInfo['bytes'], $downloadMethod);
                 $deployer->writeln("");
-                $deployer->writeln("💡 To restore locally: php artisan database:restore " . $backup['name']);
+                $deployer->writeln("💡 To restore locally: php artisan database:restore " . $backup->name);
             } catch (\Exception $e) {
-                $localFile = "{$backupDir}/{$backup['name']}";
-                if (file_exists($localFile)) {
-                    $localSize = filesize($localFile);
-                    if ($localSize < ($remoteInfo['bytes'] * 0.95)) {
-                        unlink($localFile);
-                        $deployer->writeln("🧹 Cleaned up partial download");
-                    } else {
-                        $deployer->writeln("📁 File appears complete, keeping download");
-                    }
-                }
-                throw new \RuntimeException('Download failed: ' . $e->getMessage());
+                $this->handleDownloadFailure("{$backupDir}/{$backup->name}", $remoteInfo['bytes'], $e);
             }
         });
     }
@@ -277,21 +249,14 @@ class DatabaseTasks
             $this->deployer->writeln("   • Option 1 (rsync): Best for reliability, resume capability");
             $this->deployer->writeln("   • Option 2 (scp): Often faster for large files, no resume");
             $this->deployer->writeln("");
-            $method = '1'; // Default to rsync
+            $method = '1';
             $this->deployer->writeln("Using rsync (default)");
         } else {
             $methodName = (strtolower($method) === 'scp' || $method === '2') ? 'SCP' : 'rsync';
             $this->deployer->writeln("⚡ Using {$methodName} download method");
         }
 
-        if (strtolower($method) === 'rsync' || $method === '1') {
-            $method = '1';
-        } elseif (strtolower($method) === 'scp' || $method === '2') {
-            $method = '2';
-        } else {
-            $method = '1';
-        }
-
+        $method = (strtolower($method) === 'scp' || $method === '2') ? '2' : '1';
         $startTime = microtime(true);
 
         if ($method === '2') {
@@ -303,11 +268,8 @@ class DatabaseTasks
         }
 
         $this->deployer->writeln("💡 This may take a while for large files...");
-
-        // Run the download command
         $this->deployer->runLocally($cmd);
 
-        // Verify download
         $downloadTime = round(microtime(true) - $startTime, 2);
         $this->verifyDownload($localFile, $remoteSizeBytes, $downloadTime);
     }
@@ -337,6 +299,20 @@ class DatabaseTasks
         $this->deployer->writeln("🚀 Speed: {$speedMBps} MB/s");
     }
 
+    protected function handleDownloadFailure(string $localFile, int $remoteSizeBytes, \Exception $e): void
+    {
+        if (file_exists($localFile)) {
+            $localSize = filesize($localFile);
+            if ($localSize < ($remoteSizeBytes * 0.95)) {
+                unlink($localFile);
+                $this->deployer->writeln("🧹 Cleaned up partial download");
+            } else {
+                $this->deployer->writeln("📁 File appears complete, keeping download");
+            }
+        }
+        throw new \RuntimeException('Download failed: ' . $e->getMessage());
+    }
+
     public function upload(string $localFile, string $targetServer, string $sshKey, string $remotePath = '/home/ubuntu/'): void
     {
         // Verify local backup file exists
@@ -353,7 +329,6 @@ class DatabaseTasks
         $localSize = filesize($localFile);
         $localSizeHuman = $this->deployer->runLocally("ls -lh '{$localFile}' | awk '{print \$5}'");
 
-        // Ensure remote path ends with /
         $remotePath = rtrim($remotePath, '/') . '/';
         $targetPath = $remotePath . $backupName;
 
@@ -369,7 +344,6 @@ class DatabaseTasks
     protected function uploadWithProgress(string $localFile, string $targetServer, string $sshKey, string $remotePath, int $localSizeBytes): void
     {
         $startTime = microtime(true);
-
         $backupName = basename($localFile);
         $totalMB = round($localSizeBytes / 1024 / 1024, 1);
         $targetPath = $remotePath . $backupName;
@@ -380,7 +354,6 @@ class DatabaseTasks
         $this->deployer->writeln("💡 This may take a while for large files...");
         $this->deployer->writeln("");
 
-        // Build SCP command with keepalive options
         $scpCmd = sprintf(
             'scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=240 -i %s %s %s',
             escapeshellarg($sshKey),
@@ -388,10 +361,9 @@ class DatabaseTasks
             escapeshellarg($targetServer . ':' . $remotePath)
         );
 
-        // Run SCP command
         $this->deployer->runLocally($scpCmd);
 
-        // Verify upload by checking remote file size
+        // Verify upload
         $finalRemoteSize = (int) trim($this->deployer->runLocally(sprintf(
             'ssh -i %s %s "stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null || echo 0"',
             escapeshellarg($sshKey),

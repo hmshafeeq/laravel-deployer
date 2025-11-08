@@ -2,13 +2,20 @@
 
 namespace Shaf\LaravelDeployer\Deployer;
 
+use Shaf\LaravelDeployer\Services\ArtisanCommandRunner;
+use Shaf\LaravelDeployer\Services\SystemCommandDetector;
+
 class DeploymentTasks
 {
     protected Deployer $deployer;
+    protected ArtisanCommandRunner $artisan;
+    protected SystemCommandDetector $systemDetector;
 
     public function __construct(Deployer $deployer)
     {
         $this->deployer = $deployer;
+        $this->artisan = new ArtisanCommandRunner($deployer);
+        $this->systemDetector = new SystemCommandDetector($deployer);
     }
 
     public function deployInfo(): void
@@ -269,8 +276,8 @@ class DeploymentTasks
                 $deployer->writeln($result);
             }
 
-            // Create writable directories
-            $dirs = [
+            // Create writable directories from config
+            $dirs = config('laravel-deployer.paths.writable_dirs', [
                 'bootstrap/cache',
                 'storage',
                 'storage/app',
@@ -281,101 +288,79 @@ class DeploymentTasks
                 'storage/framework/sessions',
                 'storage/framework/views',
                 'storage/logs'
-            ];
+            ]);
 
             $dirList = implode(' ', $dirs);
             $deployer->writeln("run cd {$releasePath} && (mkdir -p {$dirList})");
             $deployer->run("cd {$releasePath} && (mkdir -p {$dirList})");
 
             // Detect web server user
-            $deployer->writeln("run cd {$releasePath} && (ps axo comm,user | grep -E '[a]pache|[h]ttpd|[_]www|[w]ww-data|[n]ginx' | grep -v root | sort | awk '{print \$NF}' | uniq)");
-            $httpUser = $deployer->run("cd {$releasePath} && (ps axo comm,user | grep -E '[a]pache|[h]ttpd|[_]www|[w]ww-data|[n]ginx' | grep -v root | sort | awk '{print \$NF}' | uniq)");
-            if (!empty($httpUser)) {
-                $deployer->writeln($httpUser);
-            }
-
-            // Check if chmod supports specific format
-            $deployer->writeln("run cd {$releasePath} && (chmod 2>&1; true)");
-            $chmodResult = $deployer->run("cd {$releasePath} && (chmod 2>&1; true)");
-            if (!empty($chmodResult)) {
-                $lines = explode("\n", trim($chmodResult));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $httpUser = $this->systemDetector->getWebServerUser($releasePath);
 
             // Check if setfacl is available
-            $deployer->writeln("run cd {$releasePath} && (if hash setfacl 2>/dev/null; then echo +true; fi)");
-            $hasSetfacl = $deployer->run("cd {$releasePath} && (if hash setfacl 2>/dev/null; then echo +true; fi)");
-            if (!empty($hasSetfacl)) {
-                $deployer->writeln($hasSetfacl);
-
-                // Get current user
-                $currentUser = $deployer->get('remote_user');
-                $deployer->writeln("run cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
-                $userExists = $deployer->run("cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
-                if (!empty($userExists)) {
-                    $deployer->writeln($userExists);
-                }
-
-                // Set ACLs for bootstrap/cache
-                $deployer->writeln("run cd {$releasePath} && (getfacl -p bootstrap/cache | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-                $aclCount = $deployer->run("cd {$releasePath} && (getfacl -p bootstrap/cache | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-                if (!empty($aclCount) && trim($aclCount) !== '0') {
-                    $deployer->writeln($aclCount);
-                } else {
-                    $deployer->writeln("run cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
-                    $deployer->run("cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
-
-                    $deployer->writeln("run cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
-                    $deployer->run("cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
-                }
-
-                // Check ACLs for storage directories
-                foreach (['storage', 'storage/app', 'storage/app/public', 'storage/framework', 'storage/framework/cache', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs'] as $dir) {
-                    $deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-                    $aclCount = $deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-                    if (!empty($aclCount)) {
-                        $deployer->writeln($aclCount);
-                    }
-                }
+            if ($this->systemDetector->hasSetfacl($releasePath)) {
+                $this->setAclPermissions($releasePath, $httpUser, $dirs);
             }
         });
+    }
+
+    protected function setAclPermissions(string $releasePath, ?string $httpUser, array $dirs): void
+    {
+        if (!$httpUser) {
+            return;
+        }
+
+        $currentUser = $this->deployer->get('remote_user');
+        $this->deployer->writeln("run cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
+        $userExists = $this->deployer->run("cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
+        if (!empty($userExists)) {
+            $this->deployer->writeln($userExists);
+        }
+
+        // Set ACLs for bootstrap/cache
+        $this->deployer->writeln("run cd {$releasePath} && (getfacl -p bootstrap/cache | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+        $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p bootstrap/cache | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+        if (!empty($aclCount) && trim($aclCount) !== '0') {
+            $this->deployer->writeln($aclCount);
+        } else {
+            $this->deployer->writeln("run cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
+            $this->deployer->run("cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
+
+            $this->deployer->writeln("run cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
+            $this->deployer->run("cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX bootstrap/cache)");
+        }
+
+        // Check ACLs for storage directories
+        foreach ($dirs as $dir) {
+            if (str_starts_with($dir, 'storage')) {
+                $this->deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+                $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+                if (!empty($aclCount)) {
+                    $this->deployer->writeln($aclCount);
+                }
+            }
+        }
     }
 
     public function vendors(): void
     {
         $this->deployer->task('deploy:vendors', function ($deployer) {
             $releasePath = $deployer->getReleasePath();
-            $composerOptions = $deployer->get('composer_options', '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader');
+            $composerOptions = config('laravel-deployer.composer.options');
 
             // Check if unzip is available
-            $deployer->writeln("run if hash unzip 2>/dev/null; then echo +accurate; fi");
-            $hasUnzip = $deployer->run("if hash unzip 2>/dev/null; then echo +accurate; fi");
-            if (!empty($hasUnzip)) {
-                $deployer->writeln($hasUnzip);
-            }
+            $this->systemDetector->hasUnzip();
 
             // Check for composer.phar
             $deployer->writeln("run if [ -f {$deployer->getDeployPath()}/.dep/composer.phar ]; then echo +true; fi");
             $deployer->run("if [ -f {$deployer->getDeployPath()}/.dep/composer.phar ]; then echo +true; fi");
 
             // Check if composer command is available
-            $deployer->writeln("run if hash composer 2>/dev/null; then echo +indeed; fi");
-            $hasComposer = $deployer->run("if hash composer 2>/dev/null; then echo +indeed; fi");
-            if (!empty($hasComposer)) {
-                $deployer->writeln($hasComposer);
-            }
+            $this->systemDetector->hasComposer();
 
-            // Get composer path
-            $deployer->writeln("run command -v 'composer' || which 'composer' || type -p 'composer'");
-            $composerPath = $deployer->run("command -v 'composer' || which 'composer' || type -p 'composer'");
-            $deployer->writeln($composerPath);
-
-            // Get PHP path
-            $deployer->writeln("run command -v 'php' || which 'php' || type -p 'php'");
-            $phpPath = $deployer->run("command -v 'php' || which 'php' || type -p 'php'");
-            $deployer->writeln($phpPath);
+            // Get composer and PHP paths
+            $composerPath = $this->systemDetector->getComposerPath();
+            $phpPath = $this->systemDetector->getPhpPath();
 
             // Run composer install
             $composerCommand = "cd {$releasePath} && {$phpPath} {$composerPath} install {$composerOptions} 2>&1";
@@ -431,7 +416,7 @@ class DeploymentTasks
     {
         $this->deployer->task('deploy:cleanup', function ($deployer) {
             $deployPath = $deployer->getDeployPath();
-            $keepReleases = $deployer->get('keep_releases', 3);
+            $keepReleases = config('laravel-deployer.paths.keep_releases', 3);
 
             // Remove release symlink
             $deployer->writeln("run cd {$deployPath} && if [ -e release ]; then rm release; fi");
@@ -472,10 +457,11 @@ class DeploymentTasks
     {
         $this->deployer->task('post:deployment', function ($deployer) {
             $currentPath = $deployer->getCurrentPath();
+            $phpPath = config('laravel-deployer.php.executable');
 
             // Publish log viewer assets
-            $deployer->writeln("run cd {$currentPath} && /usr/bin/php artisan vendor:publish --tag=log-viewer-assets --force");
-            $result = $deployer->run("cd {$currentPath} && /usr/bin/php artisan vendor:publish --tag=log-viewer-assets --force");
+            $deployer->writeln("run cd {$currentPath} && {$phpPath} artisan vendor:publish --tag=log-viewer-assets --force");
+            $result = $deployer->run("cd {$currentPath} && {$phpPath} artisan vendor:publish --tag=log-viewer-assets --force");
             if (!empty($result)) {
                 $lines = explode("\n", trim($result));
                 foreach ($lines as $line) {
@@ -495,93 +481,44 @@ class DeploymentTasks
         });
     }
 
-    // Artisan tasks
+    // ======================================================================
+    // Artisan Commands - Refactored using ArtisanCommandRunner
+    // ======================================================================
+
     public function artisanStorageLink(): void
     {
         $this->deployer->task('artisan:storage:link', function ($deployer) {
             $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan --version");
-            $version = $deployer->run("{$phpPath} {$releasePath}/artisan --version");
-            $deployer->writeln($version);
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan storage:link");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan storage:link");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->version($releasePath);
+            $this->artisan->run('storage:link', $releasePath);
         });
     }
 
     public function artisanConfigCache(): void
     {
         $this->deployer->task('artisan:config:cache', function ($deployer) {
-            $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan config:cache");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan config:cache");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->run('config:cache', $deployer->getReleasePath());
         });
     }
 
     public function artisanViewCache(): void
     {
         $this->deployer->task('artisan:view:cache', function ($deployer) {
-            $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan view:cache");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan view:cache");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->run('view:cache', $deployer->getReleasePath());
         });
     }
 
     public function artisanRouteCache(): void
     {
         $this->deployer->task('artisan:route:cache', function ($deployer) {
-            $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan route:cache");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan route:cache");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->run('route:cache', $deployer->getReleasePath());
         });
     }
 
     public function artisanOptimize(): void
     {
         $this->deployer->task('artisan:optimize', function ($deployer) {
-            $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan optimize");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan optimize");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->run('optimize', $deployer->getReleasePath());
         });
     }
 
@@ -589,41 +526,21 @@ class DeploymentTasks
     {
         $this->deployer->task('artisan:migrate', function ($deployer) {
             $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run if [ -s {$releasePath}/.env ]; then echo +accurate; fi");
-            $hasEnv = $deployer->run("if [ -s {$releasePath}/.env ]; then echo +accurate; fi");
-            if (!empty($hasEnv)) {
-                $deployer->writeln($hasEnv);
-            }
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan migrate --force");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan migrate --force");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->checkEnv($releasePath);
+            $this->artisan->run('migrate --force', $releasePath);
         });
     }
 
     public function artisanQueueRestart(): void
     {
         $this->deployer->task('artisan:queue:restart', function ($deployer) {
-            $releasePath = $deployer->getReleasePath();
-            $phpPath = "/usr/bin/php";
-
-            $deployer->writeln("run {$phpPath} {$releasePath}/artisan queue:restart");
-            $result = $deployer->run("{$phpPath} {$releasePath}/artisan queue:restart");
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-            }
+            $this->artisan->run('queue:restart', $deployer->getReleasePath());
         });
     }
+
+    // ======================================================================
+    // Release Management
+    // ======================================================================
 
     /**
      * Get list of all releases sorted by time (newest first)
