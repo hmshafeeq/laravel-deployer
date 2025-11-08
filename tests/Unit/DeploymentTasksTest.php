@@ -116,7 +116,9 @@ test('cleanup removes old releases', function () {
     for ($i = 1; $i <= 3; $i++) {
         $releaseName = date('Ym').'.'.$i;
         mkdir($releasesPath.'/'.$releaseName, 0755, true);
-        sleep(1);
+        if ($i < 3) {
+            sleep(1);
+        }
     }
 
     // Run cleanup (keep_releases = 2)

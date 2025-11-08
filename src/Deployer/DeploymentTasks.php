@@ -435,7 +435,7 @@ class DeploymentTasks
 
             // Remove release symlink
             $deployer->writeln("run cd {$deployPath} && if [ -e release ]; then rm release; fi");
-            $deployer->run("cd {$deployPath} && if [ -e release ]; then rm release");
+            $deployer->run("cd {$deployPath} && if [ -e release ]; then rm release; fi");
 
             // Get list of releases sorted by time, keep only the specified number
             $releases = $deployer->run("cd {$deployPath}/releases && ls -t -1 -d */ | tail -n +".($keepReleases + 1));
