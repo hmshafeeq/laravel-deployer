@@ -1,6 +1,6 @@
 <?php
 
-namespace Shaf\LaravelDeployer\Deployer;
+namespace Shaf\LaravelDeployer;
 
 use Illuminate\Support\Facades\File;
 use Spatie\Ssh\Ssh;
@@ -45,7 +45,7 @@ class Deployer
         return trim($result->getOutput());
     }
 
-    public function runLocally(string $command): string
+    public function runLocally(string $command, bool $showOutput = false): string
     {
         $process = Process::fromShellCommandline($command, base_path());
         $process->setTimeout(config('laravel-deployer.php.timeout', 900));

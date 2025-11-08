@@ -5,7 +5,7 @@ namespace Shaf\LaravelDeployer\Actions\Deployment;
 use Shaf\LaravelDeployer\Services\LockManager;
 use Shaf\LaravelDeployer\Services\ReleaseManager;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 class PrepareDeploymentAction extends DeploymentAction
 {

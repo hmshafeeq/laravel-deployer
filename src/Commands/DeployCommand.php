@@ -3,11 +3,23 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\HealthCheckTasks;
-use Shaf\LaravelDeployer\Deployer\NotificationTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
+use Shaf\LaravelDeployer\Deployer;
+use Shaf\LaravelDeployer\Actions\Deployment\PrepareDeploymentAction;
+use Shaf\LaravelDeployer\Actions\Deployment\SyncCodeAction;
+use Shaf\LaravelDeployer\Actions\Deployment\ConfigureReleaseAction;
+use Shaf\LaravelDeployer\Actions\Deployment\OptimizeApplicationAction;
+use Shaf\LaravelDeployer\Actions\Deployment\ActivateReleaseAction;
+use Shaf\LaravelDeployer\Actions\HealthCheck\CheckDiskSpaceAction;
+use Shaf\LaravelDeployer\Actions\HealthCheck\CheckMemoryUsageAction;
+use Shaf\LaravelDeployer\Actions\HealthCheck\CheckHealthEndpointAction;
+use Shaf\LaravelDeployer\Actions\HealthCheck\RunSmokeTestsAction;
+use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
+use Shaf\LaravelDeployer\Actions\Service\RestartNginxAction;
+use Shaf\LaravelDeployer\Actions\Service\ReloadSupervisorAction;
+use Shaf\LaravelDeployer\Actions\Notification\SendSuccessNotificationAction;
+use Shaf\LaravelDeployer\Actions\Notification\SendFailureNotificationAction;
+use Shaf\LaravelDeployer\Services\LockManager;
+use Shaf\LaravelDeployer\Services\SharedResourceLinker;
 use Symfony\Component\Yaml\Yaml;
 
 class DeployCommand extends Command
@@ -82,12 +94,11 @@ class DeployCommand extends Command
             $this->error($e->getMessage());
 
             // Send failure notification
-            $notificationTasks = new NotificationTasks($this->deployer);
-            $notificationTasks->failure();
+            SendFailureNotificationAction::run($this->deployer);
 
             // Unlock deployment
-            $deploymentTasks = new DeploymentTasks($this->deployer);
-            $deploymentTasks->unlock();
+            $lockManager = new LockManager($this->deployer);
+            $lockManager->unlock();
 
             return self::FAILURE;
         }
@@ -135,43 +146,99 @@ class DeployCommand extends Command
         // Generate release name
         $this->deployer->generateReleaseName();
 
-        // Create task runners
-        $deploymentTasks = new DeploymentTasks($this->deployer);
-        $healthCheckTasks = new HealthCheckTasks($this->deployer);
-        $serviceTasks = new ServiceTasks($this->deployer);
-        $notificationTasks = new NotificationTasks($this->deployer);
+        // Display deployment info
+        $this->displayDeploymentInfo();
 
-        // Run deployment tasks in order
-        $deploymentTasks->deployInfo();
-        $healthCheckTasks->checkResources();
-        $deploymentTasks->setup();
-        $deploymentTasks->checkLock();
-        $deploymentTasks->lock();
-        $deploymentTasks->release();
-        $deploymentTasks->buildAssets();
-        $deploymentTasks->rsync();
-        $deploymentTasks->shared();
-        $deploymentTasks->writable();
-        $deploymentTasks->vendors();
-        $deploymentTasks->fixModulePermissions();
-        $deploymentTasks->artisanStorageLink();
-        $deploymentTasks->artisanConfigCache();
-        $deploymentTasks->artisanViewCache();
-        $deploymentTasks->artisanRouteCache();
-        $deploymentTasks->artisanOptimize();
-        $deploymentTasks->artisanMigrate();
-        $deploymentTasks->artisanQueueRestart();
-        $serviceTasks->restartPhpFpm();
-        $serviceTasks->restartNginx();
-        $serviceTasks->reloadSupervisor();
-        $deploymentTasks->symlink();
-        $deploymentTasks->cleanup();
-        $deploymentTasks->success();
-        $deploymentTasks->postDeployment();
-        $healthCheckTasks->checkEndpoints();
-        $deploymentTasks->linkDep();
-        $notificationTasks->success();
-        $deploymentTasks->unlock();
+        // Check server resources
+        $this->deployer->writeln("🔍 Checking server resources...");
+        CheckDiskSpaceAction::run($this->deployer);
+        CheckMemoryUsageAction::run($this->deployer);
+        $this->deployer->writeln("");
+
+        // Prepare deployment (setup, lock, create release)
+        PrepareDeploymentAction::run($this->deployer);
+
+        // Build assets locally
+        $this->deployer->runLocalCommand('npm run build');
+
+        // Sync code to server
+        SyncCodeAction::run($this->deployer);
+
+        // Configure release (shared resources, vendors, permissions)
+        ConfigureReleaseAction::run($this->deployer);
+
+        // Optimize application (artisan commands, migrations)
+        OptimizeApplicationAction::run($this->deployer);
+
+        // Restart services
+        RestartPhpFpmAction::run($this->deployer);
+        RestartNginxAction::run($this->deployer);
+        ReloadSupervisorAction::run($this->deployer);
+
+        // Activate release (symlink, cleanup, unlock)
+        ActivateReleaseAction::run($this->deployer);
+
+        // Post-deployment tasks
+        $this->runPostDeployment();
+
+        // Health checks
+        $appUrl = $this->getApplicationUrl();
+        $this->deployer->writeln("🔍 Running deployment health checks...");
+        $this->deployer->writeln("");
+        CheckHealthEndpointAction::run($this->deployer, null, $appUrl);
+        RunSmokeTestsAction::run($this->deployer, $appUrl);
+        $this->deployer->writeln("");
+        $this->deployer->writeln("✅ All health checks passed!");
+
+        // Link deployment metadata
+        $resourceLinker = new SharedResourceLinker($this->deployer);
+        $resourceLinker->linkDeploymentMetadata();
+
+        // Send success notification
+        SendSuccessNotificationAction::run($this->deployer);
+    }
+
+    protected function displayDeploymentInfo(): void
+    {
+        $user = $this->deployer->runLocally('git config --get user.name', false);
+        $branch = $this->deployer->get('branch', 'HEAD');
+        $releaseName = $this->deployer->getReleaseName();
+        $this->deployer->writeln("info deploying something to {$this->deployer->get('hostname')} (release {$releaseName})");
+    }
+
+    protected function runPostDeployment(): void
+    {
+        $currentPath = $this->deployer->getCurrentPath();
+        $phpPath = config('laravel-deployer.php.executable');
+
+        // Publish log viewer assets
+        $this->deployer->writeln("run cd {$currentPath} && {$phpPath} artisan vendor:publish --tag=log-viewer-assets --force");
+        $result = $this->deployer->run("cd {$currentPath} && {$phpPath} artisan vendor:publish --tag=log-viewer-assets --force");
+        if (!empty($result)) {
+            $lines = explode("\n", trim($result));
+            foreach ($lines as $line) {
+                $this->deployer->writeln($line);
+            }
+        }
+
+        // Run post-deployment script if it exists
+        $this->deployer->writeln("run cd {$currentPath} && ./post-deployment.sh");
+        $result = $this->deployer->run("cd {$currentPath} && ./post-deployment.sh");
+        if (!empty($result)) {
+            $lines = explode("\n", trim($result));
+            foreach ($lines as $line) {
+                $this->deployer->writeln($line);
+            }
+        }
+    }
+
+    protected function getApplicationUrl(): string
+    {
+        $currentPath = $this->deployer->getCurrentPath();
+        $this->deployer->writeln("run cd {$currentPath} && php artisan tinker --execute=\"echo config(\\\"app.url\\\");\"");
+        $appUrl = $this->deployer->run("cd {$currentPath} && php artisan tinker --execute=\"echo config(\\\"app.url\\\");\"");
+        $this->deployer->writeln($appUrl);
+        return trim($appUrl);
     }
 
     protected function runFullDeploy(bool $noConfirm): void

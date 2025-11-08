@@ -4,7 +4,7 @@ namespace Shaf\LaravelDeployer\Actions\Deployment;
 
 use Shaf\LaravelDeployer\Services\ArtisanCommandRunner;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 class OptimizeApplicationAction extends DeploymentAction
 {

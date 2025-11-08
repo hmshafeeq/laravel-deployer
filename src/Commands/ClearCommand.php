@@ -3,7 +3,7 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 use Symfony\Component\Yaml\Yaml;
 
 class ClearCommand extends Command

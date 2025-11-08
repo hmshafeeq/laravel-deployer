@@ -2,7 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Support\Abstract;
 
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Services\DatabaseConfigExtractor;
 
 abstract class DatabaseAction extends Action

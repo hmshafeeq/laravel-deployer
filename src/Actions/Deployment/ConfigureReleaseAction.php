@@ -6,7 +6,7 @@ use Shaf\LaravelDeployer\Services\SharedResourceLinker;
 use Shaf\LaravelDeployer\Services\PermissionManager;
 use Shaf\LaravelDeployer\Services\SystemCommandDetector;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 class ConfigureReleaseAction extends DeploymentAction
 {

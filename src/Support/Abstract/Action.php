@@ -2,7 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Support\Abstract;
 
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 abstract class Action
 {

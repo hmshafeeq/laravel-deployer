@@ -4,7 +4,7 @@ namespace Shaf\LaravelDeployer\Actions\HealthCheck;
 
 use Shaf\LaravelDeployer\Services\CommandRetryService;
 use Shaf\LaravelDeployer\Support\Abstract\HealthCheckAction;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 class CheckHealthEndpointAction extends HealthCheckAction
 {

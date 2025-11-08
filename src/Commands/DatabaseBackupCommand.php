@@ -4,8 +4,9 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Actions\Database\BackupDatabaseAction;
+use Shaf\LaravelDeployer\Actions\Database\DownloadDatabaseBackupAction;
+use Shaf\LaravelDeployer\Deployer;
 use Symfony\Component\Yaml\Yaml;
 
 class DatabaseBackupCommand extends Command

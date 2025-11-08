@@ -2,7 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Services;
 
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 class SharedResourceLinker
 {

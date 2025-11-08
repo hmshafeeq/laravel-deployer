@@ -2,7 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Support\Abstract;
 
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 
 /**
  * Base class for notification actions
