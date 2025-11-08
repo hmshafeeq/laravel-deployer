@@ -2,11 +2,11 @@
 
 namespace Shaf\LaravelDeployer\Commands;
 
-use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer;
-use Symfony\Component\Yaml\Yaml;
+use Shaf\LaravelDeployer\Actions\Maintenance\ClearCachesAction;
+use Shaf\LaravelDeployer\Actions\Maintenance\RestartQueueWorkersAction;
+use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
 
-class ClearCommand extends Command
+class ClearCommand extends BaseDeployerCommand
 {
     protected $signature = 'deployer:clear {environment : The deployment environment}
                             {--no-confirm : Skip confirmation prompt}';
@@ -18,123 +18,42 @@ class ClearCommand extends Command
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
 
-        // Load deploy configuration
-        $deployYamlPath = base_path('.deploy/deploy.yaml');
-        if (!file_exists($deployYamlPath)) {
-            $deployYamlPath = base_path('deploy.yaml');
-        }
-
-        if (!file_exists($deployYamlPath)) {
-            $this->error('❌ deploy.yaml not found');
-            $this->info('💡 Run: php artisan laravel-deployer:install');
-
-            return self::FAILURE;
-        }
-
-        $config = Yaml::parseFile($deployYamlPath);
-
-        if (!isset($config[$environment])) {
-            $this->error("❌ Environment '{$environment}' not found in deploy.yaml");
-
-            return self::FAILURE;
-        }
-
-        // Show confirmation for non-local environments
-        if ($environment !== 'local' && !$noConfirm) {
-            $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
-
-            if (!$this->confirm('Do you want to continue?', false)) {
-                $this->info('Operation cancelled.');
-
-                return self::SUCCESS;
-            }
+        // Confirm operation for non-local environments
+        if (!$this->confirmNonLocalOperation($environment, 'clear caches and restart services', $noConfirm)) {
+            return self::SUCCESS;
         }
 
         $this->info("Clearing caches and restarting services on {$environment}...");
         $this->newLine();
 
-        try {
-            $deployer = new Deployer($environment, $config[$environment]);
-            $deployer->loadEnvironment();
+        return $this->executeWithErrorHandling(
+            fn () => $this->performClear($environment),
+            '✅ System clear completed successfully!',
+            '❌ System clear failed!'
+        );
+    }
 
-            // Get current release path
-            $currentPath = $config[$environment]['deploy_path'].'/current';
+    /**
+     * Perform the clear operation
+     *
+     * @param string $environment
+     * @return void
+     */
+    protected function performClear(string $environment): void
+    {
+        $deployer = $this->initDeployer($environment);
 
-            // Clear Laravel caches
-            $this->info('🗑️  Clearing Laravel caches...');
+        // Clear Laravel caches
+        ClearCachesAction::run($deployer);
 
-            try {
-                $deployer->run("cd {$currentPath} && php artisan config:clear");
-                $this->info('  ✓ Config cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Config cache clear failed');
-            }
+        // Restart queue workers
+        $this->newLine();
+        RestartQueueWorkersAction::run($deployer);
 
-            try {
-                $deployer->run("cd {$currentPath} && php artisan view:clear");
-                $this->info('  ✓ View cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ View cache clear failed');
-            }
-
-            try {
-                $deployer->run("cd {$currentPath} && php artisan route:clear");
-                $this->info('  ✓ Route cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Route cache clear failed');
-            }
-
-            try {
-                $deployer->run("cd {$currentPath} && php artisan cache:clear");
-                $this->info('  ✓ Application cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Application cache clear failed');
-            }
-
-            // Restart queue workers
+        // Restart PHP-FPM (if not local)
+        if ($environment !== 'local') {
             $this->newLine();
-            $this->info('🔄 Restarting queue workers...');
-            try {
-                $deployer->run("cd {$currentPath} && php artisan queue:restart");
-                $this->info('  ✓ Queue workers restarted');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Queue restart failed');
-            }
-
-            // Restart PHP-FPM (if not local)
-            if ($environment !== 'local') {
-                $this->newLine();
-                $this->info('🔄 Restarting PHP-FPM...');
-                try {
-                    $phpFpmServices = $deployer->run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
-
-                    if (!empty(trim($phpFpmServices))) {
-                        $services = array_filter(explode("\n", trim($phpFpmServices)));
-                        foreach ($services as $service) {
-                            $service = trim($service);
-                            if (!empty($service)) {
-                                $deployer->run("sudo systemctl restart {$service}");
-                                $this->info("  ✓ Restarted {$service}");
-                            }
-                        }
-                    } else {
-                        $this->warn('  ⚠ No running PHP-FPM service found');
-                    }
-                } catch (\Exception $e) {
-                    $this->warn('  ⚠ PHP-FPM restart failed');
-                }
-            }
-
-            $this->newLine();
-            $this->info('✅ System clear completed successfully!');
-
-            return self::SUCCESS;
-        } catch (\Exception $e) {
-            $this->newLine();
-            $this->error('❌ System clear failed!');
-            $this->error($e->getMessage());
-
-            return self::FAILURE;
+            RestartPhpFpmAction::run($deployer);
         }
     }
 }
