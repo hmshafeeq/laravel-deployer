@@ -3,6 +3,20 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
+use Shaf\LaravelDeployer\Actions\Deployment\BuildAssetsAction;
+use Shaf\LaravelDeployer\Actions\Deployment\CreateReleaseAction;
+use Shaf\LaravelDeployer\Actions\Deployment\LockDeploymentAction;
+use Shaf\LaravelDeployer\Actions\Deployment\SetupDeploymentStructureAction;
+use Shaf\LaravelDeployer\Actions\Deployment\SymlinkReleaseAction;
+use Shaf\LaravelDeployer\Actions\Deployment\SyncFilesAction;
+use Shaf\LaravelDeployer\Actions\Health\CheckEndpointsAction;
+use Shaf\LaravelDeployer\Actions\Health\CheckServerResourcesAction;
+use Shaf\LaravelDeployer\Actions\Notification\SendFailureNotificationAction;
+use Shaf\LaravelDeployer\Actions\Notification\SendSuccessNotificationAction;
+use Shaf\LaravelDeployer\Actions\System\ReloadSupervisorAction;
+use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
+use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
+use Shaf\LaravelDeployer\Services\DeploymentOperationsService;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class DeployCommand extends Command
@@ -74,12 +88,22 @@ class DeployCommand extends Command
             $this->error($e->getMessage());
 
             // Send failure notification
-            $notificationTasks = $this->factory->createNotificationTasks();
-            $notificationTasks->failure();
+            $failureNotification = new SendFailureNotificationAction(
+                $this->factory->createCommandExecutor(),
+                $this->factory->getOutput(),
+                $this->factory->getConfig(),
+                $e->getMessage()
+            );
+            $failureNotification->execute();
 
             // Unlock deployment
-            $deploymentTasks = $this->factory->createDeploymentTasks();
-            $deploymentTasks->unlock();
+            $lockFile = $this->factory->getConfig()->deployPath . '/.dep/deploy.lock';
+            $lockAction = new LockDeploymentAction(
+                $this->factory->createCommandExecutor(),
+                $this->factory->getOutput(),
+                $lockFile
+            );
+            $lockAction->unlock();
 
             return self::FAILURE;
         }
@@ -94,44 +118,156 @@ class DeployCommand extends Command
 
         // Generate release name
         $this->factory->generateReleaseName();
+        $releaseName = $this->factory->getReleaseName();
 
-        // Create task runners
-        $deploymentTasks = $this->factory->createDeploymentTasks();
-        $healthCheckTasks = $this->factory->createHealthCheckTasks();
-        $serviceTasks = $this->factory->createServiceTasks();
-        $notificationTasks = $this->factory->createNotificationTasks();
+        // Create deployment operations service
+        $deployOps = new DeploymentOperationsService(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig(),
+            $releaseName
+        );
 
-        // Run deployment tasks in order
-        $deploymentTasks->deployInfo();
-        $healthCheckTasks->checkResources();
-        $deploymentTasks->setup();
-        $deploymentTasks->checkLock();
-        $deploymentTasks->lock();
-        $deploymentTasks->release();
-        $deploymentTasks->buildAssets();
-        $deploymentTasks->rsync();
-        $deploymentTasks->shared();
-        $deploymentTasks->writable();
-        $deploymentTasks->vendors();
-        $deploymentTasks->fixModulePermissions();
-        $deploymentTasks->artisanStorageLink();
-        $deploymentTasks->artisanConfigCache();
-        $deploymentTasks->artisanViewCache();
-        $deploymentTasks->artisanRouteCache();
-        $deploymentTasks->artisanOptimize();
-        $deploymentTasks->artisanMigrate();
-        $deploymentTasks->artisanQueueRestart();
-        $serviceTasks->restartPhpFpm();
-        $serviceTasks->restartNginx();
-        $serviceTasks->reloadSupervisor();
-        $deploymentTasks->symlink();
-        $deploymentTasks->cleanup();
-        $deploymentTasks->success();
-        $deploymentTasks->postDeployment();
-        $healthCheckTasks->checkEndpoints();
-        $deploymentTasks->linkDep();
-        $notificationTasks->success();
-        $deploymentTasks->unlock();
+        // Get lock file path
+        $lockFile = $this->factory->getConfig()->deployPath . '/.dep/deploy.lock';
+
+        // Display deployment info
+        $deployOps->displayDeploymentInfo();
+
+        // Check server resources
+        $checkResources = new CheckServerResourcesAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput()
+        );
+        $checkResources->execute();
+
+        // Setup deployment structure
+        $setup = new SetupDeploymentStructureAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig()
+        );
+        $setup->execute();
+
+        // Check and create deployment lock
+        $lockAction = new LockDeploymentAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $lockFile
+        );
+        $lockAction->check();
+        $lockAction->lock();
+
+        // Create release directory
+        $createRelease = new CreateReleaseAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig(),
+            $releaseName
+        );
+        $createRelease->execute();
+
+        // Build assets locally
+        $buildAssets = new BuildAssetsAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            base_path()
+        );
+        $buildAssets->execute();
+
+        // Sync files to server
+        $syncFiles = new SyncFilesAction(
+            $this->factory->createRsyncService(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig(),
+            $releaseName
+        );
+        $syncFiles->execute();
+
+        // Create shared links
+        $deployOps->createSharedLinks();
+
+        // Set writable permissions
+        $deployOps->setWritablePermissions();
+
+        // Install composer dependencies
+        $deployOps->installComposerDependencies();
+
+        // Fix module permissions
+        $deployOps->fixModulePermissions();
+
+        // Run artisan commands
+        $artisan = $this->factory->createArtisanTaskRunner();
+
+        $artisan->storageLink();
+        $artisan->configCache();
+        $artisan->viewCache();
+        $artisan->routeCache();
+        $artisan->optimize();
+        $artisan->migrate();
+        $artisan->queueRestart();
+
+        // Restart services (if not local)
+        if (!$this->factory->getConfig()->isLocal) {
+            $restartPhpFpm = new RestartPhpFpmAction(
+                $this->factory->createCommandExecutor(),
+                $this->factory->getOutput()
+            );
+            $restartPhpFpm->execute();
+
+            $restartNginx = new RestartNginxAction(
+                $this->factory->createCommandExecutor(),
+                $this->factory->getOutput()
+            );
+            $restartNginx->execute();
+
+            $reloadSupervisor = new ReloadSupervisorAction(
+                $this->factory->createCommandExecutor(),
+                $this->factory->getOutput()
+            );
+            $reloadSupervisor->execute();
+        }
+
+        // Symlink new release
+        $symlink = new SymlinkReleaseAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig(),
+            $releaseName
+        );
+        $symlink->execute();
+
+        // Cleanup old releases
+        $deployOps->cleanupOldReleases();
+
+        // Log deployment success
+        $deployOps->logDeploymentSuccess();
+
+        // Run post-deployment hooks
+        $deployOps->runPostDeploymentHooks();
+
+        // Check endpoints
+        $checkEndpoints = new CheckEndpointsAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig()
+        );
+        $checkEndpoints->execute();
+
+        // Link .dep directory
+        $deployOps->linkDepDirectory();
+
+        // Send success notification
+        $successNotification = new SendSuccessNotificationAction(
+            $this->factory->createCommandExecutor(),
+            $this->factory->getOutput(),
+            $this->factory->getConfig(),
+            $releaseName
+        );
+        $successNotification->execute();
+
+        // Unlock deployment
+        $lockAction->unlock();
     }
 
     protected function runFullDeploy(bool $noConfirm): void

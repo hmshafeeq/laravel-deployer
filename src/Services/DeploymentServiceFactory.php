@@ -6,10 +6,6 @@ use Shaf\LaravelDeployer\Constants\Commands;
 use Shaf\LaravelDeployer\Contracts\CommandExecutor;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\ServerConnection;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\HealthCheckTasks;
-use Shaf\LaravelDeployer\Deployer\NotificationTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class DeploymentServiceFactory
@@ -62,54 +58,6 @@ class DeploymentServiceFactory
         $this->releaseName = $releaseName;
     }
 
-    public function createDeploymentTasks(): DeploymentTasks
-    {
-        $tasks = new DeploymentTasks(
-            $this->executor,
-            $this->output,
-            $this->config,
-            $this->releaseName
-        );
-
-        // Inject dependencies
-        $tasks->setArtisanRunner($this->createArtisanRunner());
-        $tasks->setLockManager($this->createLockManager());
-        $tasks->setReleaseManager($this->createReleaseManager());
-        $tasks->setRsyncService($this->createRsyncService());
-
-        return $tasks;
-    }
-
-    public function createHealthCheckTasks(): HealthCheckTasks
-    {
-        return new HealthCheckTasks(
-            $this->executor,
-            $this->output,
-            $this->config,
-            $this->releaseName
-        );
-    }
-
-    public function createServiceTasks(): ServiceTasks
-    {
-        return new ServiceTasks(
-            $this->executor,
-            $this->output,
-            $this->config,
-            $this->releaseName
-        );
-    }
-
-    public function createNotificationTasks(): NotificationTasks
-    {
-        return new NotificationTasks(
-            $this->executor,
-            $this->output,
-            $this->config,
-            $this->releaseName
-        );
-    }
-
     public function getConfig(): DeploymentConfig
     {
         return $this->config;
@@ -118,6 +66,43 @@ class DeploymentServiceFactory
     public function getOutput(): OutputService
     {
         return $this->output;
+    }
+
+    public function createCommandExecutor(): CommandExecutor
+    {
+        if ($this->executor) {
+            return $this->executor;
+        }
+
+        return $this->createCommandExecutorInternal();
+    }
+
+    public function createReleaseManager(): ReleaseManager
+    {
+        return new ReleaseManager(
+            $this->executor,
+            $this->output,
+            $this->config->deployPath
+        );
+    }
+
+    public function createArtisanTaskRunner(): ArtisanTaskRunner
+    {
+        return new ArtisanTaskRunner(
+            $this->executor,
+            $this->output,
+            $this->config->deployPath . '/releases/' . $this->releaseName,
+            Commands::PHP_BINARY
+        );
+    }
+
+    public function createRsyncService(): RsyncService
+    {
+        return new RsyncService(
+            $this->output,
+            $this->config,
+            $this->basePath
+        );
     }
 
     public function createLockManager(): LockManager
@@ -130,24 +115,6 @@ class DeploymentServiceFactory
             $this->config->deployPath,
             $releaseManager->getUser()
         );
-    }
-
-    public function createReleaseManager(): ReleaseManager
-    {
-        return new ReleaseManager(
-            $this->executor,
-            $this->output,
-            $this->config->deployPath
-        );
-    }
-
-    public function createCommandExecutor(): CommandExecutor
-    {
-        if ($this->executor) {
-            return $this->executor;
-        }
-
-        return $this->createCommandExecutorInternal();
     }
 
     private function createCommandExecutorInternal(): CommandExecutor
@@ -165,25 +132,6 @@ class DeploymentServiceFactory
             $connection,
             $this->output,
             $this->config->deployPath
-        );
-    }
-
-    private function createArtisanRunner(): ArtisanTaskRunner
-    {
-        return new ArtisanTaskRunner(
-            $this->executor,
-            $this->output,
-            $this->config->deployPath . '/releases/' . $this->releaseName,
-            Commands::PHP_BINARY
-        );
-    }
-
-    private function createRsyncService(): RsyncService
-    {
-        return new RsyncService(
-            $this->output,
-            $this->config,
-            $this->basePath
         );
     }
 

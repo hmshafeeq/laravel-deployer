@@ -3,6 +3,9 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
+use Shaf\LaravelDeployer\Actions\Deployment\RollbackReleaseAction;
+use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
+use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class RollbackCommand extends Command
@@ -27,11 +30,16 @@ class RollbackCommand extends Command
             );
             $factory->createForEnvironment($environment);
 
-            // Create task runners
-            $deploymentTasks = $factory->createDeploymentTasks();
+            // Create rollback action (use dummy release name for now)
+            $rollbackAction = new RollbackReleaseAction(
+                $factory->createCommandExecutor(),
+                $factory->getOutput(),
+                $factory->getConfig(),
+                '' // Will be set after we determine target
+            );
 
             // Get available releases
-            $releases = $deploymentTasks->getReleases();
+            $releases = $rollbackAction->getAvailableReleases();
 
             if (empty($releases)) {
                 $this->error('❌ No releases found to rollback to');
@@ -40,7 +48,7 @@ class RollbackCommand extends Command
             }
 
             // Get current release
-            $currentRelease = $deploymentTasks->getCurrentRelease();
+            $currentRelease = $rollbackAction->getCurrentRelease();
 
             if (!$currentRelease) {
                 $this->error('❌ No current release found');
@@ -97,34 +105,39 @@ class RollbackCommand extends Command
             $this->info('🔄 Starting rollback...');
             $this->newLine();
 
-            // Perform rollback
-            $deploymentTasks->rollback($targetRelease);
+            // Perform rollback with correct target release
+            $rollbackAction = new RollbackReleaseAction(
+                $factory->createCommandExecutor(),
+                $factory->getOutput(),
+                $factory->getConfig(),
+                $targetRelease
+            );
+            $rollbackAction->execute();
 
-            // Clear caches and restart services
+            // Clear caches
             $this->newLine();
             $this->info('🗑️  Clearing caches...');
 
-            // Note: We need to recreate the deployment tasks with the target release
-            // to run artisan commands in the context of the rolled-back release
+            // Set release name for artisan commands
             $factory->setReleaseName($targetRelease);
-            $postRollbackTasks = $factory->createDeploymentTasks();
+            $artisan = $factory->createArtisanTaskRunner();
 
             try {
-                $postRollbackTasks->artisanConfigCache();
+                $artisan->run('config:cache');
                 $this->info('  ✓ Config cache cleared');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ Config cache operation failed');
             }
 
             try {
-                $postRollbackTasks->artisanViewCache();
+                $artisan->run('view:cache');
                 $this->info('  ✓ View cache cleared');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ View cache operation failed');
             }
 
             try {
-                $postRollbackTasks->artisanRouteCache();
+                $artisan->run('route:cache');
                 $this->info('  ✓ Route cache cleared');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ Route cache operation failed');
@@ -134,7 +147,7 @@ class RollbackCommand extends Command
             $this->newLine();
             $this->info('🔄 Restarting queue workers...');
             try {
-                $postRollbackTasks->artisanQueueRestart();
+                $artisan->run('queue:restart');
                 $this->info('  ✓ Queue workers restarted');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ Queue restart failed');
@@ -142,13 +155,20 @@ class RollbackCommand extends Command
 
             // Restart services
             if (!$factory->getConfig()->isLocal) {
-                $serviceTasks = $factory->createServiceTasks();
-
                 $this->newLine();
                 $this->info('🔄 Restarting services...');
                 try {
-                    $serviceTasks->restartPhpFpm();
-                    $serviceTasks->restartNginx();
+                    $restartPhpFpm = new RestartPhpFpmAction(
+                        $factory->createCommandExecutor(),
+                        $factory->getOutput()
+                    );
+                    $restartPhpFpm->execute();
+
+                    $restartNginx = new RestartNginxAction(
+                        $factory->createCommandExecutor(),
+                        $factory->getOutput()
+                    );
+                    $restartNginx->execute();
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ Service restart failed: '.$e->getMessage());
                 }
