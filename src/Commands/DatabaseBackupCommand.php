@@ -4,7 +4,7 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
+use Shaf\LaravelDeployer\Actions\Database\BackupDatabaseAction;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class DatabaseBackupCommand extends Command
@@ -36,15 +36,14 @@ class DatabaseBackupCommand extends Command
             );
             $factory->createForEnvironment($serverName);
 
-            // Create database tasks with new services
-            $databaseTasks = new DatabaseTasks(
+            // Create and execute backup action
+            $backupAction = new BackupDatabaseAction(
                 $factory->createCommandExecutor(),
                 $factory->getOutput(),
                 $factory->getConfig()
             );
 
-            // Run backup
-            $databaseTasks->backup();
+            $backupAction->execute();
 
             $this->line('');
             $this->info('✅ Database backup completed successfully!');

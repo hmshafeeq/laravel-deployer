@@ -4,7 +4,7 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
+use Shaf\LaravelDeployer\Actions\Database\DownloadDatabaseAction;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class DatabaseDownloadCommand extends Command
@@ -45,19 +45,17 @@ class DatabaseDownloadCommand extends Command
             );
             $factory->createForEnvironment($serverName);
 
-            // Create database tasks with new services
-            $databaseTasks = new DatabaseTasks(
+            // Create and execute download action
+            $downloadAction = new DownloadDatabaseAction(
                 $factory->createCommandExecutor(),
                 $factory->getOutput(),
                 $factory->getConfig()
             );
 
-            // Get arguments
             $backupSelection = $this->argument('backup');
             $method = $this->argument('method');
 
-            // Run download
-            $databaseTasks->download($backupSelection, $method);
+            $downloadAction->execute($backupSelection, $method);
 
             $this->line('');
             $this->info('✅ Database download completed successfully!');
