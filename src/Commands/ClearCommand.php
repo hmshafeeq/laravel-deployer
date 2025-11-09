@@ -3,8 +3,7 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Symfony\Component\Yaml\Yaml;
+use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class ClearCommand extends Command
 {
@@ -18,108 +17,83 @@ class ClearCommand extends Command
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
 
-        // Load deploy configuration
-        $deployYamlPath = base_path('.deploy/deploy.yaml');
-        if (!file_exists($deployYamlPath)) {
-            $deployYamlPath = base_path('deploy.yaml');
-        }
-
-        if (!file_exists($deployYamlPath)) {
-            $this->error('❌ deploy.yaml not found');
-            $this->info('💡 Run: php artisan laravel-deployer:install');
-
-            return self::FAILURE;
-        }
-
-        $config = Yaml::parseFile($deployYamlPath);
-
-        if (!isset($config[$environment])) {
-            $this->error("❌ Environment '{$environment}' not found in deploy.yaml");
-
-            return self::FAILURE;
-        }
-
-        // Show confirmation for non-local environments
-        if ($environment !== 'local' && !$noConfirm) {
-            $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
-
-            if (!$this->confirm('Do you want to continue?', false)) {
-                $this->info('Operation cancelled.');
-
-                return self::SUCCESS;
-            }
-        }
-
-        $this->info("Clearing caches and restarting services on {$environment}...");
-        $this->newLine();
-
         try {
-            $deployer = new Deployer($environment, $config[$environment]);
-            $deployer->loadEnvironment();
+            // Create factory and initialize for environment
+            $factory = new DeploymentServiceFactory(
+                base_path(),
+                $this->output
+            );
+            $factory->createForEnvironment($environment);
 
-            // Get current release path
-            $currentPath = $config[$environment]['deploy_path'].'/current';
+            // Show confirmation for non-local environments
+            if (!$factory->getConfig()->isLocal && !$noConfirm) {
+                $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
+
+                if (!$this->confirm('Do you want to continue?', false)) {
+                    $this->info('Operation cancelled.');
+
+                    return self::SUCCESS;
+                }
+            }
+
+            $this->info("Clearing caches and restarting services on {$environment}...");
+            $this->newLine();
+
+            // We need to use the current release (not a specific release)
+            $releaseManager = $factory->createReleaseManager();
+            $currentRelease = $releaseManager->getCurrentRelease();
+
+            if ($currentRelease) {
+                $factory->setReleaseName($currentRelease);
+            }
+
+            // Create artisan task runner
+            $deploymentTasks = $factory->createDeploymentTasks();
 
             // Clear Laravel caches
             $this->info('🗑️  Clearing Laravel caches...');
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan config:clear");
+                // Use artisan commands to clear individual caches
+                $deploymentTasks->artisanConfigCache();
                 $this->info('  ✓ Config cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ Config cache clear failed');
+                $this->warn('  ⚠ Config cache operation failed');
             }
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan view:clear");
+                $deploymentTasks->artisanViewCache();
                 $this->info('  ✓ View cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ View cache clear failed');
+                $this->warn('  ⚠ View cache operation failed');
             }
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan route:clear");
+                $deploymentTasks->artisanRouteCache();
                 $this->info('  ✓ Route cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ Route cache clear failed');
-            }
-
-            try {
-                $deployer->run("cd {$currentPath} && php artisan cache:clear");
-                $this->info('  ✓ Application cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Application cache clear failed');
+                $this->warn('  ⚠ Route cache operation failed');
             }
 
             // Restart queue workers
             $this->newLine();
             $this->info('🔄 Restarting queue workers...');
             try {
-                $deployer->run("cd {$currentPath} && php artisan queue:restart");
+                $deploymentTasks->artisanQueueRestart();
                 $this->info('  ✓ Queue workers restarted');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ Queue restart failed');
             }
 
             // Restart PHP-FPM (if not local)
-            if ($environment !== 'local') {
+            if (!$factory->getConfig()->isLocal) {
+                $serviceTasks = $factory->createServiceTasks();
+
                 $this->newLine();
                 $this->info('🔄 Restarting PHP-FPM...');
                 try {
-                    $phpFpmServices = $deployer->run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
-
-                    if (!empty(trim($phpFpmServices))) {
-                        $services = array_filter(explode("\n", trim($phpFpmServices)));
-                        foreach ($services as $service) {
-                            $service = trim($service);
-                            if (!empty($service)) {
-                                $deployer->run("sudo systemctl restart {$service}");
-                                $this->info("  ✓ Restarted {$service}");
-                            }
-                        }
-                    } else {
-                        $this->warn('  ⚠ No running PHP-FPM service found');
-                    }
+                    $serviceTasks->restartPhpFpm();
+                    $this->info('  ✓ PHP-FPM restarted');
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ PHP-FPM restart failed');
                 }

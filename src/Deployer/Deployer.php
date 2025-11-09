@@ -8,20 +8,22 @@ use Symfony\Component\Process\Process;
 
 /**
  * @deprecated This class is deprecated and will be removed in a future version.
- *             Use DeploymentServiceFactory and related services instead:
+ *
+ *             All commands have been migrated to use DeploymentServiceFactory and related services:
  *             - CommandExecutor (RemoteCommandExecutor, LocalCommandExecutor) for command execution
  *             - OutputService for output handling
  *             - ConfigurationService for configuration loading
  *             - ReleaseManager for release management
  *             - RsyncService for rsync operations
+ *             - DatabaseTasks now uses the new service architecture
  *
- *             Currently still used by:
- *             - DatabaseTasks
- *             - DatabaseDownloadCommand
- *             - ClearCommand
- *             - DatabaseBackupCommand
+ *             This class is only kept for backward compatibility and is only used by:
+ *             - Unit tests
+ *
+ *             It will be removed in the next major version.
  *
  * @see \Shaf\LaravelDeployer\Services\DeploymentServiceFactory
+ * @see \Shaf\LaravelDeployer\Deployer\DatabaseTasks
  */
 class Deployer
 {

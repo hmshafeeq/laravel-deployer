@@ -39,7 +39,7 @@ class DeploymentServiceFactory
         );
 
         // Create command executor
-        $this->executor = $this->createCommandExecutor();
+        $this->executor = $this->createCommandExecutorInternal();
 
         return $this;
     }
@@ -141,7 +141,16 @@ class DeploymentServiceFactory
         );
     }
 
-    private function createCommandExecutor(): CommandExecutor
+    public function createCommandExecutor(): CommandExecutor
+    {
+        if ($this->executor) {
+            return $this->executor;
+        }
+
+        return $this->createCommandExecutorInternal();
+    }
+
+    private function createCommandExecutorInternal(): CommandExecutor
     {
         if ($this->config->isLocal) {
             return new LocalCommandExecutor(

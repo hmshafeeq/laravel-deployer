@@ -5,8 +5,7 @@ namespace Shaf\LaravelDeployer\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Shaf\LaravelDeployer\Deployer\DatabaseTasks;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Symfony\Component\Yaml\Yaml;
+use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class DatabaseDownloadCommand extends Command
 {
@@ -39,17 +38,19 @@ class DatabaseDownloadCommand extends Command
         }
 
         try {
-            // Load configuration
-            $config = $this->loadConfiguration($serverName);
+            // Create factory and initialize for environment
+            $factory = new DeploymentServiceFactory(
+                base_path(),
+                $this->output
+            );
+            $factory->createForEnvironment($serverName);
 
-            // Create deployer instance
-            $deployer = new Deployer($serverName, $config);
-
-            // Load environment variables
-            $deployer->loadEnvironment();
-
-            // Create database tasks
-            $databaseTasks = new DatabaseTasks($deployer);
+            // Create database tasks with new services
+            $databaseTasks = new DatabaseTasks(
+                $factory->createCommandExecutor(),
+                $factory->getOutput(),
+                $factory->getConfig()
+            );
 
             // Get arguments
             $backupSelection = $this->argument('backup');
@@ -73,30 +74,6 @@ class DatabaseDownloadCommand extends Command
 
             return self::FAILURE;
         }
-    }
-
-    protected function loadConfiguration(string $environment): array
-    {
-        $yamlPath = base_path('deploy.yaml');
-
-        if (!file_exists($yamlPath)) {
-            throw new \RuntimeException("Configuration file not found: {$yamlPath}");
-        }
-
-        $yaml = Yaml::parseFile($yamlPath);
-
-        // Load environment-specific configuration
-        $hostConfig = $yaml['hosts'][$environment] ?? [];
-
-        return [
-            'environment' => $environment,
-            'hostname' => $hostConfig['hostname'] ?? 'localhost',
-            'remote_user' => $hostConfig['remote_user'] ?? 'deploy',
-            'deploy_path' => $hostConfig['deploy_path'] ?? '/var/www/app',
-            'branch' => $hostConfig['branch'] ?? 'main',
-            'local' => $hostConfig['local'] ?? false,
-            'application' => $yaml['config']['application'] ?? 'Application',
-        ];
     }
 
     protected function getServerName(): ?string
