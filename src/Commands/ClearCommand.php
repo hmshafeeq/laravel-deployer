@@ -3,6 +3,8 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
+use Shaf\LaravelDeployer\Actions\System\ClearCachesAction;
+use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class ClearCommand extends Command
@@ -47,52 +49,37 @@ class ClearCommand extends Command
                 $factory->setReleaseName($currentRelease);
             }
 
-            // Create artisan task runner
-            $deploymentTasks = $factory->createDeploymentTasks();
-
-            // Clear Laravel caches
+            // Clear Laravel caches using action
             $this->info('🗑️  Clearing Laravel caches...');
 
-            try {
-                // Use artisan commands to clear individual caches
-                $deploymentTasks->artisanConfigCache();
-                $this->info('  ✓ Config cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Config cache operation failed');
-            }
+            $clearCachesAction = new ClearCachesAction(
+                $factory->createArtisanTaskRunner()
+            );
 
-            try {
-                $deploymentTasks->artisanViewCache();
-                $this->info('  ✓ View cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ View cache operation failed');
-            }
+            $results = $clearCachesAction->execute();
 
-            try {
-                $deploymentTasks->artisanRouteCache();
-                $this->info('  ✓ Route cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Route cache operation failed');
-            }
+            // Display results
+            $this->info($results['config'] ? '  ✓ Config cache cleared' : '  ⚠ Config cache operation failed');
+            $this->info($results['view'] ? '  ✓ View cache cleared' : '  ⚠ View cache operation failed');
+            $this->info($results['route'] ? '  ✓ Route cache cleared' : '  ⚠ Route cache operation failed');
 
             // Restart queue workers
             $this->newLine();
             $this->info('🔄 Restarting queue workers...');
-            try {
-                $deploymentTasks->artisanQueueRestart();
-                $this->info('  ✓ Queue workers restarted');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Queue restart failed');
-            }
+            $this->info($results['queue'] ? '  ✓ Queue workers restarted' : '  ⚠ Queue restart failed');
 
             // Restart PHP-FPM (if not local)
             if (!$factory->getConfig()->isLocal) {
-                $serviceTasks = $factory->createServiceTasks();
-
                 $this->newLine();
                 $this->info('🔄 Restarting PHP-FPM...');
+
                 try {
-                    $serviceTasks->restartPhpFpm();
+                    $restartPhpFpmAction = new RestartPhpFpmAction(
+                        $factory->createCommandExecutor(),
+                        $factory->getOutput()
+                    );
+
+                    $restartPhpFpmAction->execute();
                     $this->info('  ✓ PHP-FPM restarted');
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ PHP-FPM restart failed');
