@@ -57,7 +57,7 @@ class ClearCachesAction extends Action
     {
         try {
             $currentPath = $this->getCurrentPath();
-            $this->run("cd {$currentPath} && php artisan {$cache}:clear");
+            $this->cmd("cd {$currentPath} && php artisan {$cache}:clear");
             $this->writeln('  ✓ '.ucfirst($cache).' cache cleared', 'info');
         } catch (\Exception $e) {
             $this->writeln('  ⚠ '.ucfirst($cache).' cache clear failed', 'comment');

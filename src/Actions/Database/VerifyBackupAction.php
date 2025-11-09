@@ -16,7 +16,7 @@ class VerifyBackupAction extends DatabaseAction
     protected function checkFileExists(string $file): void
     {
         $this->writeln("run test -f {$file} && echo 'OK' || echo 'FAIL'");
-        $exists = trim($this->run("test -f {$file} && echo 'OK' || echo 'FAIL'"));
+        $exists = trim($this->cmd("test -f {$file} && echo 'OK' || echo 'FAIL'"));
 
         if (!empty($exists)) {
             $this->writeln($exists);
@@ -30,7 +30,7 @@ class VerifyBackupAction extends DatabaseAction
     protected function checkFileSize(string $file): void
     {
         $this->writeln("run stat -c%s {$file} 2>/dev/null || stat -f%z {$file} 2>/dev/null || echo 0");
-        $fileSize = (int) trim($this->run("stat -c%s {$file} 2>/dev/null || stat -f%z {$file} 2>/dev/null || echo 0"));
+        $fileSize = (int) trim($this->cmd("stat -c%s {$file} 2>/dev/null || stat -f%z {$file} 2>/dev/null || echo 0"));
         $this->writeln($fileSize);
 
         if ($fileSize < 100) {
@@ -44,7 +44,7 @@ class VerifyBackupAction extends DatabaseAction
         $this->writeln("✅ Database backup completed successfully!");
 
         $this->writeln("run ls -lh {$file} | awk '{print \$5}'");
-        $fileSizeHuman = trim($this->run("ls -lh {$file} | awk '{print \$5}'"));
+        $fileSizeHuman = trim($this->cmd("ls -lh {$file} | awk '{print \$5}'"));
         $this->writeln($fileSizeHuman);
 
         $this->writeln("📁 Location: {$file}");

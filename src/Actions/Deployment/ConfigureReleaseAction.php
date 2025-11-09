@@ -48,7 +48,7 @@ class ConfigureReleaseAction extends DeploymentAction
 
         // Check for composer.phar
         $this->writeln("run if [ -f {$this->getDeployPath()}/.dep/composer.phar ]; then echo +true; fi");
-        $this->run("if [ -f {$this->getDeployPath()}/.dep/composer.phar ]; then echo +true; fi");
+        $this->cmd("if [ -f {$this->getDeployPath()}/.dep/composer.phar ]; then echo +true; fi");
 
         // Check if composer command is available
         $this->systemDetector->hasComposer();
@@ -61,7 +61,7 @@ class ConfigureReleaseAction extends DeploymentAction
         $composerCommand = "cd {$releasePath} && {$phpPath} {$composerPath} install {$composerOptions} 2>&1";
         $this->writeln("run {$composerCommand}");
 
-        $result = $this->run($composerCommand);
+        $result = $this->cmd($composerCommand);
         if (!empty($result)) {
             $lines = explode("\n", $result);
             foreach ($lines as $line) {
@@ -77,7 +77,7 @@ class ConfigureReleaseAction extends DeploymentAction
     {
         // Check if release symlink exists
         $this->writeln("run if [ -h {$this->getDeployPath()}/release ]; then echo +correct; fi");
-        $result = $this->run("if [ -h {$this->getDeployPath()}/release ]; then echo +correct; fi");
+        $result = $this->cmd("if [ -h {$this->getDeployPath()}/release ]; then echo +correct; fi");
         if (!empty($result)) {
             $this->writeln($result);
         }

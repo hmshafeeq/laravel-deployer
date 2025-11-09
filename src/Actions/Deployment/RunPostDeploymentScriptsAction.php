@@ -52,7 +52,7 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
         $this->writeln("run {$command}");
 
         try {
-            $result = $this->run($command);
+            $result = $this->cmd($command);
 
             if (!empty($result)) {
                 $lines = explode("\n", trim($result));
@@ -86,7 +86,7 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
         $this->writeln("run {$command}");
 
         try {
-            $result = $this->run($command);
+            $result = $this->cmd($command);
 
             if (!empty($result)) {
                 $lines = explode("\n", trim($result));

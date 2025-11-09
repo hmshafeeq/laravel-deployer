@@ -40,7 +40,7 @@ class ArtisanCommandRunner
      */
     public function version(string $path): string
     {
-        return $this->run('--version', $path, true);
+        return $this->cmd('--version', $path, true);
     }
 
     /**
@@ -63,6 +63,6 @@ class ArtisanCommandRunner
      */
     public function runQuiet(string $command, string $path): string
     {
-        return $this->run($command, $path, false);
+        return $this->cmd($command, $path, false);
     }
 }

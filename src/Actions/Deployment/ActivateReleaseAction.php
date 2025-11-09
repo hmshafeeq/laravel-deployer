@@ -49,12 +49,12 @@ class ActivateReleaseAction extends DeploymentAction
     protected function activateRelease(string $deployPath): void
     {
         $this->writeln("run (man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true");
-        $supportsNoTarget = $this->run("(man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true");
+        $supportsNoTarget = $this->cmd("(man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true");
         if (!empty($supportsNoTarget)) {
             $this->writeln("       -T, --no-target-directory");
         }
 
         $this->writeln("run mv -T {$deployPath}/release {$deployPath}/current");
-        $this->run("mv -T {$deployPath}/release {$deployPath}/current");
+        $this->cmd("mv -T {$deployPath}/release {$deployPath}/current");
     }
 }

@@ -9,7 +9,7 @@ class CheckDiskSpaceAction extends HealthCheckAction
     public function execute(): array
     {
         $this->writeln("run df -h {$this->getDeployPath()} | tail -1");
-        $diskUsage = $this->run("df -h {$this->getDeployPath()} | tail -1");
+        $diskUsage = $this->cmd("df -h {$this->getDeployPath()} | tail -1");
         $this->writeln($diskUsage);
 
         return $this->analyzeDiskSpace($diskUsage);

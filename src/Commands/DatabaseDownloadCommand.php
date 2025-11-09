@@ -3,32 +3,32 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Shaf\LaravelDeployer\Actions\Database\DownloadDatabaseBackupAction;
-use Shaf\LaravelDeployer\Commands\Traits\ManagesServerSelection;
+use Shaf\LaravelDeployer\Commands\Traits\ManagesEnvironmentSelection;
 use Shaf\LaravelDeployer\Services\BackupManager;
 
 class DatabaseDownloadCommand extends BaseDeployerCommand
 {
-    use ManagesServerSelection;
+    use ManagesEnvironmentSelection;
 
     protected $signature = 'database:download
-                            {server? : Server name (staging, production, etc.)}
+                            {environment? : Environment name (staging, production, etc.)}
                             {backup? : Backup selection (latest, 1-10, or filename)}
                             {method? : Download method (rsync or scp)}
-                            {--select : Show available servers and select interactively}';
+                            {--select : Show available environments and select interactively}';
 
-    protected $description = 'Download database backup from remote server';
+    protected $description = 'Download database backup from remote environment';
 
     public function handle(): int
     {
         $this->info('📥 Database Download');
         $this->line('');
 
-        $serverName = $this->getServerName();
-        if (!$serverName) {
+        $environment = $this->getEnvironmentName();
+        if (!$environment) {
             return self::FAILURE;
         }
 
-        $this->info("🌐 Target server: {$serverName}");
+        $this->info("🌐 Target environment: {$environment}");
         $this->line('');
 
         // Ensure backups directory exists
@@ -36,7 +36,7 @@ class DatabaseDownloadCommand extends BaseDeployerCommand
         $backupManager->ensureBackupsDirectoryExists();
 
         return $this->executeWithErrorHandling(
-            fn () => $this->performDownload($serverName),
+            fn () => $this->performDownload($environment),
             '✅ Database download completed successfully!',
             '❌ Database download failed'
         );
@@ -45,12 +45,12 @@ class DatabaseDownloadCommand extends BaseDeployerCommand
     /**
      * Perform the database download operation
      *
-     * @param string $serverName
+     * @param string $environment
      * @return void
      */
-    protected function performDownload(string $serverName): void
+    protected function performDownload(string $environment): void
     {
-        $deployer = $this->initDeployer($serverName);
+        $deployer = $this->initDeployer($environment);
 
         $backupSelection = $this->argument('backup');
         $method = $this->argument('method');

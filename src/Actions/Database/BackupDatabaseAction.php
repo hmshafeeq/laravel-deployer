@@ -34,7 +34,7 @@ class BackupDatabaseAction extends DatabaseAction
         $backupPath = $this->getFullBackupPath();
 
         $this->writeln("run mkdir -p {$backupPath}");
-        $this->run("mkdir -p {$backupPath}");
+        $this->cmd("mkdir -p {$backupPath}");
 
         return "{$backupPath}/db_backup_{$timestamp}.sql.gz";
     }
@@ -55,7 +55,7 @@ class BackupDatabaseAction extends DatabaseAction
         $compressCommand = "gzip -{$compression} > {$backupFile}";
 
         $this->writeln("run {$dumpCommand} | {$compressCommand}; echo \$?");
-        $result = $this->run("{$dumpCommand} | {$compressCommand}; echo \$?");
+        $result = $this->cmd("{$dumpCommand} | {$compressCommand}; echo \$?");
         $exitCode = (int) trim($result);
 
         if ($exitCode !== 0) {
@@ -68,9 +68,9 @@ class BackupDatabaseAction extends DatabaseAction
         $this->writeln("");
         $this->writeln("❌ Backup failed: " . $e->getMessage(), 'error');
 
-        $fileExists = trim($this->run("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
+        $fileExists = trim($this->cmd("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
         if ($fileExists === 'OK') {
-            $this->run("rm -f {$backupFile}");
+            $this->cmd("rm -f {$backupFile}");
             $this->writeln("🧹 Cleaned up failed backup file");
         }
     }

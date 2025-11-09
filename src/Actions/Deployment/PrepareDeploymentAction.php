@@ -43,7 +43,7 @@ class PrepareDeploymentAction extends DeploymentAction
         $branch = $this->deployer->get('branch', 'HEAD');
         $releaseName = $this->deployer->getReleaseName();
 
-        $this->writeln("info deploying something to {$this->deployer->get('hostname')} (release {$releaseName})");
+        $this->writeln("info deploying {$branch} to {$this->deployer->get('hostname')} (release {$releaseName})");
     }
 
     /**
@@ -53,26 +53,20 @@ class PrepareDeploymentAction extends DeploymentAction
     {
         $deployPath = $this->getDeployPath();
 
-        $this->writeln("run [ -d {$deployPath} ] || mkdir -p {$deployPath};");
-        $this->run("[ -d {$deployPath} ] || mkdir -p {$deployPath}");
-
-        $this->writeln("run cd {$deployPath};");
-        $this->run("cd {$deployPath}");
-
-        $this->writeln("run [ -d .dep ] || mkdir .dep;");
-        $this->run("cd {$deployPath} && [ -d .dep ] || mkdir .dep");
-
-        $this->writeln("run [ -d releases ] || mkdir releases;");
-        $this->run("cd {$deployPath} && [ -d releases ] || mkdir releases");
-
-        $this->writeln("run [ -d shared ] || mkdir shared;");
-        $this->run("cd {$deployPath} && [ -d shared ] || mkdir shared");
+        // Set up deployment structure quietly
+        $this->writeln("Setting up deployment structure...");
+        
+        $this->runBatch([
+            "[ -d {$deployPath} ] || mkdir -p {$deployPath}",
+            "cd {$deployPath} && [ -d .dep ] || mkdir .dep",
+            "cd {$deployPath} && [ -d releases ] || mkdir releases",
+            "cd {$deployPath} && [ -d shared ] || mkdir shared",
+        ]);
 
         // Check if current exists and is not a symlink
-        $this->writeln("run if [ ! -L {$deployPath}/current ] && [ -d {$deployPath}/current ]; then echo +appropriate; fi");
-        $result = $this->run("if [ ! -L {$deployPath}/current ] && [ -d {$deployPath}/current ]; then echo +appropriate; fi");
-        if (!empty($result)) {
-            $this->writeln($result);
+        $result = $this->runQuietly("if [ ! -L {$deployPath}/current ] && [ -d {$deployPath}/current ]; then echo 'legacy_current_found'; fi");
+        if (!empty(trim($result))) {
+            $this->writeln("⚠ Legacy 'current' directory found (not a symlink)", 'comment');
         }
     }
 }

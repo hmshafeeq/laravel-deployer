@@ -3,33 +3,33 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Shaf\LaravelDeployer\Actions\Database\BackupDatabaseAction;
-use Shaf\LaravelDeployer\Commands\Traits\ManagesServerSelection;
+use Shaf\LaravelDeployer\Commands\Traits\ManagesEnvironmentSelection;
 
 class DatabaseBackupCommand extends BaseDeployerCommand
 {
-    use ManagesServerSelection;
+    use ManagesEnvironmentSelection;
 
     protected $signature = 'database:backup
-                            {server? : Server name (staging, production, etc.)}
-                            {--select : Show available servers and select interactively}';
+                            {environment? : Environment name (staging, production, etc.)}
+                            {--select : Show available environments and select interactively}';
 
-    protected $description = 'Create database backup on remote server';
+    protected $description = 'Create database backup on remote environment';
 
     public function handle(): int
     {
         $this->info('💾 Database Backup');
         $this->line('');
 
-        $serverName = $this->getServerName();
-        if (!$serverName) {
+        $environment = $this->getEnvironmentName();
+        if (!$environment) {
             return self::FAILURE;
         }
 
-        $this->info("🌐 Target server: {$serverName}");
+        $this->info("🌐 Target environment: {$environment}");
         $this->line('');
 
         return $this->executeWithErrorHandling(
-            fn () => $this->performBackup($serverName),
+            fn () => $this->performBackup($environment),
             '✅ Database backup completed successfully!',
             '❌ Database backup failed'
         );
@@ -38,16 +38,16 @@ class DatabaseBackupCommand extends BaseDeployerCommand
     /**
      * Perform the database backup operation
      *
-     * @param string $serverName
+     * @param string $environment
      * @return void
      */
-    protected function performBackup(string $serverName): void
+    protected function performBackup(string $environment): void
     {
-        $deployer = $this->initDeployer($serverName);
+        $deployer = $this->initDeployer($environment);
 
         BackupDatabaseAction::run($deployer);
 
         $this->info('💡 To download the backup:');
-        $this->line("   php artisan database:download {$serverName}");
+        $this->line("   php artisan database:download {$environment}");
     }
 }

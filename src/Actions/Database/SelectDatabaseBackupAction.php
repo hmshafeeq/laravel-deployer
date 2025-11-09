@@ -34,13 +34,13 @@ class SelectDatabaseBackupAction extends DatabaseAction
 
     protected function listAvailableBackups(string $backupPath): array
     {
-        $backupList = $this->run("ls -lt {$backupPath}/db_backup_*.sql.gz 2>/dev/null || echo \"\"");
+        $backupList = $this->cmd("ls -lt {$backupPath}/db_backup_*.sql.gz 2>/dev/null || echo \"\"");
 
         if (empty($backupList)) {
             return [];
         }
 
-        $backups = $this->run("ls -lht {$backupPath}/db_backup_*.sql.gz | head -10");
+        $backups = $this->cmd("ls -lht {$backupPath}/db_backup_*.sql.gz | head -10");
 
         return array_filter(array_map('trim', explode("\n", trim($backups))));
     }

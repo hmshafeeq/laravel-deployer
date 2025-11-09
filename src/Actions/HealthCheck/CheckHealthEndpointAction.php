@@ -29,11 +29,11 @@ class CheckHealthEndpointAction extends HealthCheckAction
                 $this->writeln("🔄 Health check attempt {$attempt}/{$maxRetries}...");
 
                 $this->writeln("run timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} {$healthUrl}");
-                $response = $this->run("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} {$healthUrl}");
+                $response = $this->cmd("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} {$healthUrl}");
                 $this->writeln($response);
 
                 $this->writeln("run timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} -o /dev/null -w '%{http_code}' {$healthUrl}");
-                $statusCode = $this->run("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} -o /dev/null -w '%{http_code}' {$healthUrl}");
+                $statusCode = $this->cmd("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} -o /dev/null -w '%{http_code}' {$healthUrl}");
                 $this->writeln($statusCode);
 
                 if ($statusCode !== '200') {
@@ -61,7 +61,7 @@ class CheckHealthEndpointAction extends HealthCheckAction
     {
         $this->writeln("📊 Health Status:");
         $this->writeln("run echo '{$healthResponse}' | python3 -m json.tool 2>/dev/null || echo '{$healthResponse}'");
-        $prettyHealth = $this->run("echo '{$healthResponse}' | python3 -m json.tool 2>/dev/null || echo '{$healthResponse}'");
+        $prettyHealth = $this->cmd("echo '{$healthResponse}' | python3 -m json.tool 2>/dev/null || echo '{$healthResponse}'");
 
         $lines = explode("\n", trim($prettyHealth));
         foreach ($lines as $line) {
