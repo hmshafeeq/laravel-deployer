@@ -3,12 +3,7 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\HealthCheckTasks;
-use Shaf\LaravelDeployer\Deployer\NotificationTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
-use Symfony\Component\Yaml\Yaml;
+use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class DeployCommand extends Command
 {
@@ -18,8 +13,7 @@ class DeployCommand extends Command
 
     protected $description = 'Deploy the application using Spatie SSH';
 
-    protected Deployer $deployer;
-    protected array $config;
+    protected DeploymentServiceFactory $factory;
 
     public function handle(): int
     {
@@ -46,16 +40,14 @@ class DeployCommand extends Command
             return self::FAILURE;
         }
 
-        // Load configuration
-        $this->loadConfiguration($environment);
-
-        // Create deployer instance
-        $this->deployer = new Deployer($environment, $this->config);
+        // Create factory and initialize for environment
+        $this->factory = new DeploymentServiceFactory(
+            base_path(),
+            $this->output
+        );
+        $this->factory->createForEnvironment($environment);
 
         try {
-            // Load environment variables
-            $this->deployer->loadEnvironment();
-
             // Run the requested task
             $this->info("Starting deployment: {$task} to {$environment}");
             $this->newLine();
@@ -82,64 +74,32 @@ class DeployCommand extends Command
             $this->error($e->getMessage());
 
             // Send failure notification
-            $notificationTasks = new NotificationTasks($this->deployer);
+            $notificationTasks = $this->factory->createNotificationTasks();
             $notificationTasks->failure();
 
             // Unlock deployment
-            $deploymentTasks = new DeploymentTasks($this->deployer);
+            $deploymentTasks = $this->factory->createDeploymentTasks();
             $deploymentTasks->unlock();
 
             return self::FAILURE;
         }
     }
 
-    protected function loadConfiguration(string $environment): void
-    {
-        $yamlPath = base_path('deploy.yaml');
-
-        if (!file_exists($yamlPath)) {
-            throw new \RuntimeException("Configuration file not found: {$yamlPath}");
-        }
-
-        $yaml = Yaml::parseFile($yamlPath);
-
-        // Load environment-specific configuration
-        $hostConfig = $yaml['hosts'][$environment] ?? [];
-
-        $this->config = [
-            'environment' => $environment,
-            'hostname' => $hostConfig['hostname'] ?? 'localhost',
-            'remote_user' => $hostConfig['remote_user'] ?? 'deploy',
-            'deploy_path' => $hostConfig['deploy_path'] ?? '/var/www/app',
-            'branch' => $hostConfig['branch'] ?? 'main',
-            'composer_options' => $hostConfig['composer_options'] ?? '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader',
-            'keep_releases' => $yaml['config']['keep_releases'] ?? 3,
-            'local' => $hostConfig['local'] ?? false,
-            'application' => $yaml['config']['application'] ?? 'Application',
-            'rsync' => $yaml['config']['rsync'] ?? [],
-        ];
-    }
-
     protected function runDeploy(bool $noConfirm): void
     {
         // Confirm deployment
-        if (!$this->deployer->confirmDeployment($noConfirm)) {
+        if (!$this->factory->confirmDeployment($noConfirm)) {
             throw new \RuntimeException('Deployment cancelled by user');
         }
 
-        // Set up rsync excludes and includes
-        $rsyncConfig = $this->config['rsync'];
-        $this->deployer->setRsyncExcludes($rsyncConfig['exclude'] ?? []);
-        $this->deployer->setRsyncIncludes($rsyncConfig['include'] ?? []);
-
         // Generate release name
-        $this->deployer->generateReleaseName();
+        $this->factory->generateReleaseName();
 
         // Create task runners
-        $deploymentTasks = new DeploymentTasks($this->deployer);
-        $healthCheckTasks = new HealthCheckTasks($this->deployer);
-        $serviceTasks = new ServiceTasks($this->deployer);
-        $notificationTasks = new NotificationTasks($this->deployer);
+        $deploymentTasks = $this->factory->createDeploymentTasks();
+        $healthCheckTasks = $this->factory->createHealthCheckTasks();
+        $serviceTasks = $this->factory->createServiceTasks();
+        $notificationTasks = $this->factory->createNotificationTasks();
 
         // Run deployment tasks in order
         $deploymentTasks->deployInfo();

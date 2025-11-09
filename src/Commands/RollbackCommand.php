@@ -3,10 +3,7 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Deployer\Deployer;
-use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
-use Shaf\LaravelDeployer\Deployer\ServiceTasks;
-use Symfony\Component\Yaml\Yaml;
+use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
 class RollbackCommand extends Command
 {
@@ -22,31 +19,16 @@ class RollbackCommand extends Command
         $specificRelease = $this->option('release');
         $noConfirm = $this->option('no-confirm');
 
-        // Load deploy configuration
-        $deployYamlPath = base_path('.deploy/deploy.yaml');
-        if (!file_exists($deployYamlPath)) {
-            $deployYamlPath = base_path('deploy.yaml');
-        }
-
-        if (!file_exists($deployYamlPath)) {
-            $this->error('❌ deploy.yaml not found');
-            $this->info('💡 Run: php artisan laravel-deployer:install');
-
-            return self::FAILURE;
-        }
-
-        $config = Yaml::parseFile($deployYamlPath);
-
-        if (!isset($config[$environment])) {
-            $this->error("❌ Environment '{$environment}' not found in deploy.yaml");
-
-            return self::FAILURE;
-        }
-
         try {
-            $deployer = new Deployer($environment, $config[$environment]);
-            $deployer->loadEnvironment();
-            $deploymentTasks = new DeploymentTasks($deployer);
+            // Create factory and initialize for environment
+            $factory = new DeploymentServiceFactory(
+                base_path(),
+                $this->output
+            );
+            $factory->createForEnvironment($environment);
+
+            // Create task runners
+            $deploymentTasks = $factory->createDeploymentTasks();
 
             // Get available releases
             $releases = $deploymentTasks->getReleases();
@@ -118,44 +100,49 @@ class RollbackCommand extends Command
             // Perform rollback
             $deploymentTasks->rollback($targetRelease);
 
-            // Clear caches
+            // Clear caches and restart services
+            $this->newLine();
             $this->info('🗑️  Clearing caches...');
-            $currentPath = $config[$environment]['deploy_path'].'/current';
+
+            // Note: We need to recreate the deployment tasks with the target release
+            // to run artisan commands in the context of the rolled-back release
+            $factory->setReleaseName($targetRelease);
+            $postRollbackTasks = $factory->createDeploymentTasks();
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan config:clear");
+                $postRollbackTasks->artisanConfigCache();
                 $this->info('  ✓ Config cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ Config cache clear failed');
+                $this->warn('  ⚠ Config cache operation failed');
             }
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan view:clear");
+                $postRollbackTasks->artisanViewCache();
                 $this->info('  ✓ View cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ View cache clear failed');
+                $this->warn('  ⚠ View cache operation failed');
             }
 
             try {
-                $deployer->run("cd {$currentPath} && php artisan route:clear");
+                $postRollbackTasks->artisanRouteCache();
                 $this->info('  ✓ Route cache cleared');
             } catch (\Exception $e) {
-                $this->warn('  ⚠ Route cache clear failed');
+                $this->warn('  ⚠ Route cache operation failed');
             }
 
             // Restart queue workers
             $this->newLine();
             $this->info('🔄 Restarting queue workers...');
             try {
-                $deployer->run("cd {$currentPath} && php artisan queue:restart");
+                $postRollbackTasks->artisanQueueRestart();
                 $this->info('  ✓ Queue workers restarted');
             } catch (\Exception $e) {
                 $this->warn('  ⚠ Queue restart failed');
             }
 
             // Restart services
-            if ($environment !== 'local') {
-                $serviceTasks = new ServiceTasks($deployer);
+            if (!$factory->getConfig()->isLocal) {
+                $serviceTasks = $factory->createServiceTasks();
 
                 $this->newLine();
                 $this->info('🔄 Restarting services...');

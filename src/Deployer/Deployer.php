@@ -6,6 +6,23 @@ use Illuminate\Support\Facades\File;
 use Spatie\Ssh\Ssh;
 use Symfony\Component\Process\Process;
 
+/**
+ * @deprecated This class is deprecated and will be removed in a future version.
+ *             Use DeploymentServiceFactory and related services instead:
+ *             - CommandExecutor (RemoteCommandExecutor, LocalCommandExecutor) for command execution
+ *             - OutputService for output handling
+ *             - ConfigurationService for configuration loading
+ *             - ReleaseManager for release management
+ *             - RsyncService for rsync operations
+ *
+ *             Currently still used by:
+ *             - DatabaseTasks
+ *             - DatabaseDownloadCommand
+ *             - ClearCommand
+ *             - DatabaseBackupCommand
+ *
+ * @see \Shaf\LaravelDeployer\Services\DeploymentServiceFactory
+ */
 class Deployer
 {
     protected string $environment;
