@@ -1,439 +1,409 @@
 # Laravel Deployer
 
-A lightweight, zero-downtime deployment package for Laravel applications using Spatie SSH.
+A lightweight, zero-downtime deployment package for Laravel applications.
 
-## Features
+> **Simple, powerful deployment for Laravel apps.** Deploy your application with a single command using atomic symlink swapping for zero downtime.
 
-- 🚀 **Zero-Downtime Deployment** - Uses atomic symlink swapping for seamless deployments
-- ⏪ **Instant Rollback** - One-command rollback to any previous release
-- 📦 **Release Management** - Maintains deployment history with configurable retention
+## ✨ Features
+
+- 🚀 **Zero-Downtime Deployment** - Atomic symlink swapping for seamless releases
+- ⏪ **Instant Rollback** - One-command rollback to previous releases
+- 📦 **Release Management** - Automatic versioning and cleanup
 - 🔒 **Deployment Locking** - Prevents concurrent deployments
-- 🗄️ **Database Operations** - Backup, download, upload, and restore database with ease
-- 🔄 **Service Management** - Auto-detect and restart PHP-FPM, Nginx, and Supervisor
-- ❤️ **Health Checks** - Resource monitoring and endpoint health verification
-- 🛡️ **Failsafe Mechanisms** - Multiple safety features for production deployments
-- 📊 **Verbose Output** - Beautiful, colored output showing deployment progress
-- 🧪 **Fully Tested** - Comprehensive test suite with Pest v4
+- 💾 **Database Operations** - Backup, download, upload, and restore
+- 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
+- ❤️ **Health Checks** - Pre-deployment resource and endpoint verification
+- 🎨 **Beautiful Output** - Clear, colored progress indicators
+- 📢 **Notifications** - Slack and Discord integration
 
-## Requirements
+## 📋 Requirements
 
-- PHP 8.2 or higher
-- Laravel 11.0 or 12.0
-- Composer
-- SSH access to deployment server
-- rsync installed on both local and remote machines
+- PHP 8.2+
+- Laravel 11.x or 12.x
+- SSH access to your server
+- `rsync` installed locally and on server
 
-## Installation
+## 🚀 Installation
 
-Install the package via Composer:
+### 1. Install via Composer
 
 ```bash
 composer require shaf/laravel-deployer
 ```
 
-Run the installation command to generate configuration files:
+### 2. Run Installation Command
 
 ```bash
 php artisan laravel-deployer:install
 ```
 
-This will create:
-- `.deploy/deploy.yaml` - Main deployment configuration
-- `.deploy/.env.{environment}.example` - Environment-specific credentials
-- `.gitignore` entry for `.deploy/` directory
+This creates:
+- `.deploy/deploy.yaml` - Deployment configuration
+- `.deploy/.env.{environment}.example` - Environment templates
+- `.gitignore` entries for credentials
 
-## Configuration
+## ⚙️ Configuration
 
-### 1. Set up deployment configuration
+### Basic Setup
 
-Edit `.deploy/deploy.yaml`:
+**1. Edit `.deploy/deploy.yaml`:**
 
 ```yaml
-staging:
-  hostname: your-server.com
-  remote_user: deploy
-  deploy_path: /var/www/your-app
-  repository: git@github.com:username/repo.git
-  branch: main
-  shared_dirs:
-    - storage/app
-    - storage/framework
-    - storage/logs
-  shared_files:
-    - .env
-  writable_dirs:
-    - bootstrap/cache
-    - storage
-  keep_releases: 3
-  rsync:
-    - app
-    - bootstrap
-    - config
-    - database
-    - public
-    - resources
-    - routes
-    - composer.json
-    - composer.lock
-    - artisan
-  health_checks:
-    endpoints:
-      - https://your-app.com/api/health
+hosts:
+  staging:
+    hostname: staging.yourapp.com
+    remote_user: deploy
+    deploy_path: /var/www/staging
+    branch: main
 
-production:
-  hostname: production-server.com
-  remote_user: deploy
-  deploy_path: /var/www/production
-  repository: git@github.com:username/repo.git
-  branch: production
-  # ... same structure as staging
+  production:
+    hostname: yourapp.com
+    remote_user: deploy
+    deploy_path: /var/www/production
+    branch: production
+
+config:
+  keep_releases: 3
+  composer_options: '--no-dev --optimize-autoloader'
 ```
 
-### 2. Set up environment credentials
-
-Copy and edit environment files:
+**2. Create environment credentials:**
 
 ```bash
+# Copy example files
 cp .deploy/.env.staging.example .deploy/.env.staging
 cp .deploy/.env.production.example .deploy/.env.production
+
+# Edit with your credentials
+nano .deploy/.env.staging
 ```
 
-Edit `.deploy/.env.staging`:
+**Example `.env.staging`:**
 
 ```env
-DEPLOY_HOST=your-server.com
+DEPLOY_HOST=staging.yourapp.com
 DEPLOY_USER=deploy
-DEPLOY_PATH=/var/www/your-app
+DEPLOY_PATH=/var/www/staging
 DEPLOY_BRANCH=main
 ```
 
-## Usage
-
-### Deployment
-
-Deploy to an environment:
+**3. Setup SSH key authentication:**
 
 ```bash
-php artisan deploy staging
+# Generate SSH key if needed
+ssh-keygen -t ed25519 -C "deploy@yourapp.com"
+
+# Copy to server
+ssh-copy-id deploy@staging.yourapp.com
+
+# Test connection
+ssh deploy@staging.yourapp.com
 ```
 
-Deploy without confirmation prompt:
+### Server Preparation
+
+On your server, ensure the deployment path exists:
 
 ```bash
-php artisan deploy staging --no-confirm
+# On your server
+sudo mkdir -p /var/www/staging
+sudo chown deploy:deploy /var/www/staging
+```
+
+## 🎯 Usage
+
+### Deploy Your Application
+
+```bash
+# Deploy to staging
+php artisan deploy staging
+
+# Deploy to production (with confirmation)
+php artisan deploy production
+
+# Skip confirmation
+php artisan deploy production --no-confirm
+
+# Skip health checks
+php artisan deploy staging --skip-health-check
+```
+
+**What happens during deployment:**
+
+1. ✅ Health checks (disk space, memory)
+2. 🔒 Lock deployment
+3. 📦 Create new release directory
+4. 🏗️ Build assets locally (`npm run build`)
+5. 📤 Sync files to server via rsync
+6. 🔗 Link shared directories (storage, .env)
+7. 📥 Install composer dependencies
+8. 🗄️ Run database migrations
+9. ⚡ Optimize (cache config, views, routes)
+10. 🔄 Restart services (PHP-FPM, Nginx)
+11. ✨ Symlink to new release
+12. 🧹 Cleanup old releases
+13. 🔓 Unlock deployment
+
+### Rollback
+
+```bash
+# Rollback to previous release
+php artisan deploy:rollback production
+
+# Skip confirmation
+php artisan deploy:rollback staging --no-confirm
 ```
 
 ### Database Operations
 
-#### Backup Database
-
-Create a database backup on the remote server:
+**Backup Database:**
 
 ```bash
-php artisan database:backup staging
+# Backup database on server
+php artisan database:backup production
+
+# Interactive server selection
+php artisan database:backup --select
 ```
 
-#### Download Database
-
-Download the latest database backup:
+**Download Backup:**
 
 ```bash
-php artisan database:download staging
+# Download latest backup
+php artisan database:download production
+
+# Interactive selection
+php artisan database:download --select
 ```
 
-Download a specific backup:
+**Upload Backup:**
 
 ```bash
-php artisan database:download staging --list
-php artisan database:download staging 2
+# Upload backup to server
+php artisan database:upload backup-file.sql --target=user@server
 ```
 
-Choose download method:
+**Restore Database:**
 
 ```bash
-php artisan database:download staging --method=scp
-php artisan database:download staging --method=rsync
+# Restore from downloaded backup
+php artisan database:restore --latest
 ```
 
-#### Upload Database
+## 📖 Advanced Configuration
 
-Upload a local backup to a remote server:
+### Rsync Exclusions
+
+Edit `.deploy/deploy.yaml` to customize what gets deployed:
+
+```yaml
+config:
+  rsync_excludes:
+    - .git/
+    - node_modules/
+    - .env
+    - storage/
+    - tests/
+
+  rsync_includes:
+    - app/
+    - bootstrap/
+    - config/
+    - database/
+    - public/
+    - resources/
+    - routes/
+    - composer.json
+    - composer.lock
+    - artisan
+```
+
+### Health Check Endpoints
+
+Configure health check endpoints:
+
+```yaml
+hosts:
+  production:
+    hostname: yourapp.com
+    # ... other config
+    health_check_endpoints:
+      - url: https://yourapp.com/health
+        status: 200
+      - url: https://yourapp.com/api/status
+        status: 200
+```
+
+### Notifications
+
+Set environment variables for notifications:
+
+```env
+# Slack
+DEPLOY_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Discord
+DEPLOY_DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR/WEBHOOK/URL
+```
+
+### Custom Post-Deployment Hooks
+
+Create `.dep/post-deploy.sh` on your server:
 
 ```bash
-php artisan database:upload /path/to/backup.sql.gz --target=user@host --key=~/.ssh/id_rsa
+#!/bin/bash
+# Run custom tasks after deployment
+echo "Running custom post-deployment tasks..."
+
+# Example: Clear application cache
+php artisan cache:clear
+
+# Example: Restart custom services
+sudo systemctl restart your-custom-service
 ```
 
-#### Restore Database
+## 🔧 Common Tasks
 
-Restore a database backup locally:
+### First Deployment
 
 ```bash
-php artisan database:restore /path/to/backup.sql.gz
+# 1. Ensure server is prepared
+ssh deploy@yourserver.com "mkdir -p /var/www/app"
+
+# 2. Deploy application
+php artisan deploy staging
+
+# 3. SSH to server and create .env
+ssh deploy@yourserver.com
+cd /var/www/app/current
+nano .env  # Add your production environment variables
+exit
+
+# 4. Deploy again to apply configuration
+php artisan deploy staging
 ```
 
-### Cache Management
-
-Clear all caches and restart services:
+### View Releases
 
 ```bash
-php artisan deployer:clear staging
+# SSH to your server
+ssh deploy@yourserver.com
+
+# List releases
+ls -la /var/www/app/releases/
+
+# Current release
+ls -la /var/www/app/current
 ```
 
-### Rollback
+### Manual Rollback
 
-Rollback to the previous release:
+If needed, you can manually rollback:
 
 ```bash
-php artisan deploy:rollback staging
+# SSH to server
+ssh deploy@yourserver.com
+
+# List releases
+cd /var/www/app/releases
+ls -t
+
+# Symlink to previous release
+ln -nfs /var/www/app/releases/202501.2 /var/www/app/current
 ```
 
-Rollback to a specific release:
+## 🐛 Troubleshooting
+
+### SSH Connection Issues
 
 ```bash
-# List available releases first
-php artisan deploy:rollback staging --release=202501.2
+# Test SSH connection
+ssh deploy@yourserver.com
+
+# Verify SSH key is added
+ssh-add -l
+
+# Add SSH key if needed
+ssh-add ~/.ssh/id_ed25519
 ```
 
-Skip confirmation prompt:
+### Permission Issues
 
 ```bash
-php artisan deploy:rollback staging --no-confirm
+# On server, ensure correct ownership
+sudo chown -R deploy:deploy /var/www/app
+
+# Ensure writable directories
+chmod -R 775 /var/www/app/shared/storage
 ```
-
-**Important Notes**:
-- Rollback changes the application code instantly
-- Database migrations are **NOT** automatically rolled back
-- You must manually rollback database changes if needed:
-  ```bash
-  ssh user@server
-  cd /var/www/your-app/current
-  php artisan migrate:rollback --step=N
-  ```
-- Rollback clears all caches and restarts services
-- At least 2 releases must exist to rollback
-
-## Deployment Workflow
-
-The deployment process follows these steps:
-
-1. **Validation** - Confirms deployment target
-2. **Lock Check** - Ensures no concurrent deployment
-3. **Lock** - Creates deployment lock
-4. **Release** - Creates new release directory
-5. **Build Assets** - Compiles frontend assets (npm run build)
-6. **Rsync** - Syncs files to server
-7. **Shared** - Links shared directories and files
-8. **Writable** - Sets proper permissions
-9. **Vendors** - Installs composer dependencies
-10. **Storage Link** - Creates storage symlink
-11. **Cache** - Builds configuration, view, and route caches
-12. **Optimize** - Runs Laravel optimization
-13. **Migrate** - Runs database migrations
-14. **Services** - Restarts PHP-FPM, Nginx, Supervisor
-15. **Symlink** - Atomic swap to new release
-16. **Cleanup** - Removes old releases
-17. **Health Check** - Verifies deployment success
-18. **Unlock** - Removes deployment lock
-19. **Notification** - Sends desktop notification
-
-## Directory Structure
-
-The deployment creates the following structure on the remote server:
-
-```
-/var/www/your-app/
-├── .dep/                    # Deployment metadata
-│   ├── deploy.lock         # Deployment lock file
-│   └── release_counter/    # Release numbering
-├── releases/               # All releases
-│   ├── 202501.1/          # Release YYYYMM.N
-│   ├── 202501.2/
-│   └── 202501.3/
-├── shared/                 # Shared files/directories
-│   ├── .env
-│   └── storage/
-├── current -> releases/202501.3/  # Symlink to active release
-└── backups/               # Database backups
-```
-
-## Configuration Options
-
-### Deploy Configuration
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `hostname` | Remote server hostname | `server.com` |
-| `remote_user` | SSH user | `deploy` |
-| `deploy_path` | Deployment directory | `/var/www/app` |
-| `repository` | Git repository | `git@github.com:user/repo.git` |
-| `branch` | Git branch | `main` |
-| `shared_dirs` | Directories to share between releases | `['storage']` |
-| `shared_files` | Files to share between releases | `['.env']` |
-| `writable_dirs` | Directories needing write permission | `['storage']` |
-| `keep_releases` | Number of releases to keep | `3` |
-| `rsync` | Files/directories to sync | `['app', 'public']` |
-| `health_checks.endpoints` | URLs to check after deployment | `['https://app.com/health']` |
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DEPLOY_HOST` | Override hostname from deploy.yaml |
-| `DEPLOY_USER` | Override remote user |
-| `DEPLOY_PATH` | Override deployment path |
-| `DEPLOY_BRANCH` | Override git branch |
-
-## Failsafe Mechanisms
-
-Laravel Deployer includes multiple failsafe mechanisms to ensure safe deployments:
-
-### Built-in Safety Features
-
-1. **Zero-Downtime Deployment** - Atomic symlink swapping ensures no service interruption
-2. **Deployment Locking** - Prevents concurrent deployments that could corrupt the system
-3. **Release History** - Maintains multiple releases for quick rollback
-4. **Instant Rollback** - One-command rollback to any previous release
-5. **Pre-Deployment Validation** - Confirms target before deployment
-6. **Health Checks** - Verifies system resources and endpoint availability
-7. **Shared Resources** - Data persistence across deployments
-8. **Graceful Error Handling** - Automatic cleanup on failures
-9. **Service Management** - Safe service restarts with fallbacks
-10. **Desktop Notifications** - Real-time deployment status alerts
-
-### Rollback Procedure
-
-If a deployment introduces issues:
-
-```bash
-# Quick rollback to previous release
-php artisan deploy:rollback staging
-
-# Or rollback to specific release
-php artisan deploy:rollback staging --release=202501.2
-```
-
-The rollback process:
-- Changes code instantly (atomic symlink swap)
-- Clears all caches
-- Restarts queue workers
-- Restarts services (PHP-FPM, Nginx)
-- **Does NOT rollback database migrations** (manual intervention required)
-
-### Additional Recommendations
-
-For enhanced safety, consider implementing:
-
-- **Automatic Rollback on Failure** - Auto-rollback if health checks fail
-- **Database Backup Before Migration** - Safety net for schema changes
-- **Smoke Tests** - Automated testing after deployment
-- **Deployment Windows** - Restrict deployments to low-traffic periods
-- **Slack/Email Notifications** - Team awareness of deployments
-- **Maintenance Mode** - User-friendly messages during deployment
-
-See [FAILSAFE_MECHANISMS.md](FAILSAFE_MECHANISMS.md) for detailed recommendations and implementation guides.
-
-## Testing
-
-Run the test suite:
-
-```bash
-composer test
-```
-
-Or using Pest directly:
-
-```bash
-vendor/bin/pest
-```
-
-Run specific tests:
-
-```bash
-vendor/bin/pest tests/Unit/DeployerTest.php
-vendor/bin/pest --filter="deployment tasks"
-```
-
-## Troubleshooting
 
 ### Deployment Locked
 
-If deployment fails and leaves a lock:
+If deployment is stuck locked:
 
 ```bash
-# SSH into server
-ssh user@server
+# SSH to server
+ssh deploy@yourserver.com
 
 # Remove lock file
-rm /var/www/your-app/.dep/deploy.lock
+rm /var/www/app/.dep/deploy.lock
 ```
 
-### Permission Errors
-
-Ensure the deployment user has proper permissions:
+### Rsync Issues
 
 ```bash
-# On the server
-sudo chown -R deploy:deploy /var/www/your-app
-sudo chmod -R 755 /var/www/your-app
+# Ensure rsync is installed locally
+which rsync
+
+# Ensure rsync is installed on server
+ssh deploy@yourserver.com "which rsync"
+
+# Install if missing (Ubuntu/Debian)
+sudo apt-get install rsync
 ```
 
-### PHP-FPM Not Restarting
+## 📚 Architecture
 
-Grant sudo permissions for service restart:
+This package uses a **simple, cohesive action-based architecture**:
 
-```bash
-# Edit sudoers file
-sudo visudo
+**Actions** (Complete workflows):
+- `DeployAction` - Full deployment process
+- `RollbackAction` - Rollback to previous release
+- `DatabaseAction` - Database operations
+- `HealthCheckAction` - Health verification
+- `OptimizeAction` - Cache & service optimization
+- `NotificationAction` - Deployment notifications
 
-# Add this line
-deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart php*-fpm, /usr/bin/systemctl restart nginx, /usr/sbin/supervisorctl reload
-```
+**Services** (Core functionality):
+- `CommandService` - Execute local/remote commands
+- `DeploymentService` - Release & lock management
+- `ConfigService` - Configuration loading
+- `RsyncService` - File synchronization
 
-## Architecture
+## 🤝 Contributing
 
-This package replaces the traditional `deployer/deployer` dependency with a lightweight implementation using:
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- **Spatie SSH** - For remote command execution
-- **Symfony Process** - For local command execution
-- **Symfony YAML** - For configuration parsing
+## 📄 License
 
-The architecture follows a task-based approach:
+The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
 
-- `Deployer` - Core class for SSH and command execution
-- `DeploymentTasks` - All deployment-related tasks
-- `DatabaseTasks` - Database backup/restore operations
-- `ServiceTasks` - PHP-FPM, Nginx, Supervisor management
-- `HealthCheckTasks` - Resource and endpoint monitoring
-- `NotificationTasks` - Desktop notifications
+## 🙏 Credits
 
-## Security
+- Built with [Spatie SSH](https://github.com/spatie/ssh)
+- Inspired by [Deployer](https://deployer.org/)
+- Architecture follows **SIMPLICITY over complexity**
 
-- All `.deploy/` files are gitignored by default
-- SSH keys are never committed to version control
-- Database credentials stored in environment-specific `.env` files
-- Deployment locks prevent concurrent access
-- Health checks verify successful deployment
+## 💡 Tips
 
-## Contributing
+- **Always test deployments on staging first**
+- **Backup your database before major updates**
+- **Use `--no-confirm` in CI/CD pipelines**
+- **Monitor the first few deployments closely**
+- **Set up health check endpoints for critical apps**
 
-Contributions are welcome! Please ensure:
+---
 
-1. All tests pass: `composer test`
-2. Code follows PSR-12 standards
-3. New features include tests
-4. Update README for new features
+**Ready to deploy?** Run `php artisan deploy staging` and watch the magic happen! ✨
 
-## License
-
-This package is open-sourced software licensed under the [MIT license](LICENSE.md).
-
-## Credits
-
-- Built by [Muhammad Shafeeq](https://github.com/hmshafeeq)
-- Uses [Spatie SSH](https://github.com/spatie/ssh)
-- Inspired by [Deployer](https://deployer.org)
-
-## Support
-
-- [GitHub Issues](https://github.com/hmshafeeq/laravel-deployer/issues)
-- [GitHub Discussions](https://github.com/hmshafeeq/laravel-deployer/discussions)
+For more details, see the [documentation](docs/) or [open an issue](https://github.com/yourusername/laravel-deployer/issues).
