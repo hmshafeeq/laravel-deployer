@@ -3,43 +3,35 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Actions\Deployment\BuildAssetsAction;
-use Shaf\LaravelDeployer\Actions\Deployment\CreateReleaseAction;
-use Shaf\LaravelDeployer\Actions\Deployment\LockDeploymentAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SetupDeploymentStructureAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SymlinkReleaseAction;
-use Shaf\LaravelDeployer\Actions\Deployment\SyncFilesAction;
-use Shaf\LaravelDeployer\Actions\Health\CheckEndpointsAction;
-use Shaf\LaravelDeployer\Actions\Health\CheckServerResourcesAction;
-use Shaf\LaravelDeployer\Actions\Notification\SendFailureNotificationAction;
-use Shaf\LaravelDeployer\Actions\Notification\SendSuccessNotificationAction;
-use Shaf\LaravelDeployer\Actions\System\ReloadSupervisorAction;
-use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
-use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
-use Shaf\LaravelDeployer\Services\DeploymentOperationsService;
-use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
+use Shaf\LaravelDeployer\Actions\DeployAction;
+use Shaf\LaravelDeployer\Actions\HealthCheckAction;
+use Shaf\LaravelDeployer\Actions\NotificationAction;
+use Shaf\LaravelDeployer\Actions\OptimizeAction;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\RsyncService;
+use Symfony\Component\Process\Process;
 
 class DeployCommand extends Command
 {
     protected $signature = 'deploy {environment=staging : The deployment environment (local, staging, production)}
-                            {task=deploy : The deployment task to run (deploy, deploy:full, rollback:quick, etc.)}
-                            {--no-confirm : Skip deployment confirmation}';
+                            {--no-confirm : Skip deployment confirmation}
+                            {--skip-health-check : Skip health check before deployment}';
 
-    protected $description = 'Deploy the application using Spatie SSH';
-
-    protected DeploymentServiceFactory $factory;
+    protected $description = 'Deploy the application using simplified action-based deployment';
 
     public function handle(): int
     {
         $environment = $this->argument('environment');
-        $task = $this->argument('task');
         $noConfirm = $this->option('no-confirm');
+        $skipHealthCheck = $this->option('skip-health-check');
 
+        // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
         if (!in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
             $this->info('Valid environments: ' . implode(', ', $validEnvironments));
-
             return self::FAILURE;
         }
 
@@ -50,236 +42,114 @@ class DeployCommand extends Command
             $this->newLine();
             $this->components->warn('Please stop the Vite development server before deploying. 💡 Press Ctrl+C in the terminal where Vite is running to stop it.');
             $this->newLine();
-
             return self::FAILURE;
         }
 
-        // Create factory and initialize for environment
-        $this->factory = new DeploymentServiceFactory(
-            base_path(),
-            $this->output
-        );
-        $this->factory->createForEnvironment($environment);
-
         try {
-            // Run the requested task
-            $this->info("Starting deployment: {$task} to {$environment}");
-            $this->newLine();
+            // Load configuration
+            $config = ConfigService::load($environment, base_path());
 
-            switch ($task) {
-                case 'deploy':
-                    $this->runDeploy($noConfirm);
-                    break;
-                case 'deploy:full':
-                    $this->runFullDeploy($noConfirm);
-                    break;
-                default:
-                    $this->error("Unknown task: {$task}");
-                    return self::FAILURE;
+            // Initialize services
+            $cmdService = new CommandService($config, $this->output);
+            $deployService = new DeploymentService($config, base_path());
+            $rsyncService = new RsyncService($config, base_path());
+
+            // Show deployment confirmation
+            if (!$noConfirm && !$this->confirmDeployment($config)) {
+                $this->newLine();
+                $this->comment('🛑 Deployment cancelled by user');
+                $this->newLine();
+                return self::FAILURE;
             }
 
-            $this->newLine();
-            $this->info('Deployment completed successfully!');
+            // Health check (optional)
+            if (!$skipHealthCheck) {
+                $healthCheck = new HealthCheckAction($cmdService, $config);
+                if (!$healthCheck->check()) {
+                    $this->error('Health check failed!');
+                    $this->newLine();
+                    return self::FAILURE;
+                }
+                $this->newLine();
+            }
 
+            // Execute deployment
+            $deploy = new DeployAction($deployService, $cmdService, $rsyncService, $config);
+            $deploy->execute();
+
+            // Post-deployment optimization
+            $this->newLine();
+            $optimize = new OptimizeAction($cmdService, $config);
+            $optimize->execute();
+
+            // Send success notification
+            $notify = new NotificationAction($config);
+            $notify->success([
+                'environment' => $config->environment->value,
+                'release' => $deploy->getReleaseName(),
+            ]);
+
+            $this->newLine();
             return self::SUCCESS;
+
         } catch (\Exception $e) {
             $this->newLine();
             $this->error('Deployment failed!');
             $this->error($e->getMessage());
+            $this->newLine();
 
             // Send failure notification
-            $failureNotification = new SendFailureNotificationAction(
-                $this->factory->createCommandExecutor(),
-                $this->factory->getOutput(),
-                $this->factory->getConfig(),
-                $e->getMessage()
-            );
-            $failureNotification->execute();
-
-            // Unlock deployment
-            $lockFile = $this->factory->getConfig()->deployPath . '/.dep/deploy.lock';
-            $lockAction = new LockDeploymentAction(
-                $this->factory->createCommandExecutor(),
-                $this->factory->getOutput(),
-                $lockFile
-            );
-            $lockAction->unlock();
+            try {
+                $config = $config ?? ConfigService::load($environment, base_path());
+                $notify = new NotificationAction($config);
+                $notify->failure($e);
+            } catch (\Exception $notifyError) {
+                // Silently fail if notification fails
+            }
 
             return self::FAILURE;
         }
     }
 
-    protected function runDeploy(bool $noConfirm): void
+    /**
+     * Show deployment confirmation prompt
+     */
+    private function confirmDeployment($config): bool
     {
-        // Confirm deployment
-        if (!$this->factory->confirmDeployment($noConfirm)) {
-            throw new \RuntimeException('Deployment cancelled by user');
+        $environment = $config->environment->value;
+        $hostname = $config->hostname;
+        $deployPath = $config->deployPath;
+        $user = $config->remoteUser;
+
+        $this->newLine();
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->line('<fg=yellow>                 DEPLOYMENT CONFIRMATION</>');
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->newLine();
+        $this->line("  <info>Environment:</info>  <fg=cyan>{$environment}</>");
+        $this->line("  <info>Server:</info>       <fg=cyan>{$hostname}</>");
+        $this->line("  <info>User:</info>         <fg=cyan>{$user}</>");
+        $this->line("  <info>Deploy Path:</info>  <fg=cyan>{$deployPath}</>");
+        $this->newLine();
+
+        // Extra warning for production
+        if (strtolower($environment) === 'production' || strtolower($environment) === 'prod') {
+            $this->line('<fg=red>⚠️  WARNING: You are deploying to PRODUCTION!</>');
+            $this->newLine();
         }
 
-        // Generate release name
-        $this->factory->generateReleaseName();
-        $releaseName = $this->factory->getReleaseName();
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->newLine();
 
-        // Create deployment operations service
-        $deployOps = new DeploymentOperationsService(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig(),
-            $releaseName
-        );
-
-        // Get lock file path
-        $lockFile = $this->factory->getConfig()->deployPath . '/.dep/deploy.lock';
-
-        // Display deployment info
-        $deployOps->displayDeploymentInfo();
-
-        // Check server resources
-        $checkResources = new CheckServerResourcesAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput()
-        );
-        $checkResources->execute();
-
-        // Setup deployment structure
-        $setup = new SetupDeploymentStructureAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig()
-        );
-        $setup->execute();
-
-        // Check and create deployment lock
-        $lockAction = new LockDeploymentAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $lockFile
-        );
-        $lockAction->check();
-        $lockAction->lock();
-
-        // Create release directory
-        $createRelease = new CreateReleaseAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig(),
-            $releaseName
-        );
-        $createRelease->execute();
-
-        // Build assets locally
-        $buildAssets = new BuildAssetsAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            base_path()
-        );
-        $buildAssets->execute();
-
-        // Sync files to server
-        $syncFiles = new SyncFilesAction(
-            $this->factory->createRsyncService(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig(),
-            $releaseName
-        );
-        $syncFiles->execute();
-
-        // Create shared links
-        $deployOps->createSharedLinks();
-
-        // Set writable permissions
-        $deployOps->setWritablePermissions();
-
-        // Install composer dependencies
-        $deployOps->installComposerDependencies();
-
-        // Fix module permissions
-        $deployOps->fixModulePermissions();
-
-        // Run artisan commands
-        $artisan = $this->factory->createArtisanTaskRunner();
-
-        $artisan->storageLink();
-        $artisan->configCache();
-        $artisan->viewCache();
-        $artisan->routeCache();
-        $artisan->optimize();
-        $artisan->migrate();
-        $artisan->queueRestart();
-
-        // Restart services (if not local)
-        if (!$this->factory->getConfig()->isLocal) {
-            $restartPhpFpm = new RestartPhpFpmAction(
-                $this->factory->createCommandExecutor(),
-                $this->factory->getOutput()
-            );
-            $restartPhpFpm->execute();
-
-            $restartNginx = new RestartNginxAction(
-                $this->factory->createCommandExecutor(),
-                $this->factory->getOutput()
-            );
-            $restartNginx->execute();
-
-            $reloadSupervisor = new ReloadSupervisorAction(
-                $this->factory->createCommandExecutor(),
-                $this->factory->getOutput()
-            );
-            $reloadSupervisor->execute();
-        }
-
-        // Symlink new release
-        $symlink = new SymlinkReleaseAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig(),
-            $releaseName
-        );
-        $symlink->execute();
-
-        // Cleanup old releases
-        $deployOps->cleanupOldReleases();
-
-        // Log deployment success
-        $deployOps->logDeploymentSuccess();
-
-        // Run post-deployment hooks
-        $deployOps->runPostDeploymentHooks();
-
-        // Check endpoints
-        $checkEndpoints = new CheckEndpointsAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig()
-        );
-        $checkEndpoints->execute();
-
-        // Link .dep directory
-        $deployOps->linkDepDirectory();
-
-        // Send success notification
-        $successNotification = new SendSuccessNotificationAction(
-            $this->factory->createCommandExecutor(),
-            $this->factory->getOutput(),
-            $this->factory->getConfig(),
-            $releaseName
-        );
-        $successNotification->execute();
-
-        // Unlock deployment
-        $lockAction->unlock();
+        return $this->confirm('  Do you want to continue with this deployment?', true);
     }
 
-    protected function runFullDeploy(bool $noConfirm): void
-    {
-        // For now, full deploy is the same as regular deploy
-        // You can add database backup tasks here later
-        $this->runDeploy($noConfirm);
-    }
-
+    /**
+     * Check if Vite is running
+     */
     protected function isViteRunning(): bool
     {
-        $process = \Symfony\Component\Process\Process::fromShellCommandline('ps aux');
+        $process = new Process(['ps', 'aux']);
         $process->run();
 
         if (!$process->isSuccessful()) {
