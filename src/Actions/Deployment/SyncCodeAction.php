@@ -13,14 +13,14 @@ class SyncCodeAction extends DeploymentAction
 
         // Check if release symlink exists
         $this->writeln("run if [ -h {$deployPath}/release ]; then echo +precise; fi");
-        $result = $this->run("if [ -h {$deployPath}/release ]; then echo +precise; fi");
+        $result = $this->cmd("if [ -h {$deployPath}/release ]; then echo +precise; fi");
         if (!empty($result)) {
             $this->writeln($result);
         }
 
         // Read the symlink
         $this->writeln("run readlink {$deployPath}/release");
-        $link = $this->run("readlink {$deployPath}/release");
+        $link = $this->cmd("readlink {$deployPath}/release");
         $this->writeln($link);
 
         // Run rsync

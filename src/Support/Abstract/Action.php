@@ -38,10 +38,85 @@ abstract class Action
 
     /**
      * Run a command on the remote server
+     *
+     * @param string $command Command to run
+     * @return string Command output
      */
-    protected function run(string $command): string
+    protected function cmd(string $command): string
     {
         return $this->deployer->run($command);
+    }
+
+    /**
+     * Run a command quietly without logging
+     *
+     * This method executes a command without writing the command itself
+     * to the output, reducing verbosity for routine operations.
+     *
+     * @param string $command Command to run
+     * @param bool $logResult Whether to log the result (default: false)
+     * @return string Command output
+     */
+    protected function runQuietly(string $command, bool $logResult = false): string
+    {
+        $result = $this->deployer->run($command);
+        
+        if ($logResult && !empty(trim($result))) {
+            $this->writeln($result, 'plain');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Run multiple commands in batch without logging each command
+     *
+     * Useful for setup operations where logging every mkdir/chmod
+     * clutters the output.
+     *
+     * @param array<string> $commands Array of commands to run
+     * @param string|null $label Optional label to display
+     * @return array<string> Array of command outputs
+     */
+    protected function runBatch(array $commands, ?string $label = null): array
+    {
+        if ($label) {
+            $this->writeln($label);
+        }
+
+        $results = [];
+        foreach ($commands as $command) {
+            $results[] = $this->runQuietly($command);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Run a command conditionally if path doesn't exist
+     *
+     * Common pattern for creating directories or files only if needed.
+     *
+     * @param string $path Path to check
+     * @param string $command Command to run if path doesn't exist
+     * @return string Command output or empty string if path exists
+     */
+    protected function runIfNotExists(string $path, string $command): string
+    {
+        $checkCommand = "[ -e {$path} ] || ({$command})";
+        return $this->runQuietly($checkCommand);
+    }
+
+    /**
+     * Test a condition on the remote server
+     *
+     * @param string $condition Shell test condition (e.g., "-d /path" or "-f /file")
+     * @return bool True if condition passes
+     */
+    protected function test(string $condition): bool
+    {
+        $result = $this->runQuietly("[ {$condition} ] && echo 'true' || echo 'false'");
+        return trim($result) === 'true';
     }
 
     /**

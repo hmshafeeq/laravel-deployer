@@ -30,10 +30,10 @@ class DownloadDatabaseBackupAction extends DatabaseAction
 
     protected function getRemoteFileInfo(string $filePath): array
     {
-        $sizeBytes = (int) trim($this->run("stat -c%s {$filePath}"));
-        $sizeHuman = trim($this->run("ls -lh {$filePath} | awk '{print \$5}'"));
+        $sizeBytes = (int) trim($this->cmd("stat -c%s {$filePath}"));
+        $sizeHuman = trim($this->cmd("ls -lh {$filePath} | awk '{print \$5}'"));
 
-        $fileCheck = trim($this->run("test -r {$filePath} && echo 'OK' || echo 'FAIL'"));
+        $fileCheck = trim($this->cmd("test -r {$filePath} && echo 'OK' || echo 'FAIL'"));
         if ($fileCheck !== 'OK') {
             throw new \RuntimeException("Cannot access backup file on remote server: {$filePath}");
         }

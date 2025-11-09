@@ -56,11 +56,11 @@ class RollbackDeploymentAction extends DeploymentAction
 
         // Create release symlink
         $this->writeln("run ln -nfs {$targetPath} {$deployPath}/release");
-        $this->run("ln -nfs {$targetPath} {$deployPath}/release");
+        $this->cmd("ln -nfs {$targetPath} {$deployPath}/release");
 
         // Atomic swap to new release
         $this->writeln("run mv -fT {$deployPath}/release {$currentPath}");
-        $this->run("mv -fT {$deployPath}/release {$currentPath}");
+        $this->cmd("mv -fT {$deployPath}/release {$currentPath}");
 
         $this->writeln("✓ Symlink updated to: {$targetRelease}", 'info');
     }

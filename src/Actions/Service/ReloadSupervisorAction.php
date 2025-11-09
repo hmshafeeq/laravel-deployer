@@ -11,7 +11,7 @@ class ReloadSupervisorAction extends ServiceAction
         $this->writeln("🔄 Reloading Supervisor...");
 
         $this->writeln("run sudo supervisorctl reload");
-        $result = $this->run("sudo supervisorctl reload");
+        $result = $this->cmd("sudo supervisorctl reload");
 
         if (!empty($result)) {
             $this->writeln($result);

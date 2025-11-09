@@ -24,7 +24,7 @@ class RunSmokeTestsAction extends HealthCheckAction
         foreach ($endpoints as $endpoint => $description) {
             $url = rtrim($appUrl, '/') . $endpoint;
             $this->writeln("run curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
-            $response = $this->run("curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
+            $response = $this->cmd("curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
             $this->writeln($response);
 
             if (!in_array($response, array_map('strval', $acceptableStatusCodes))) {

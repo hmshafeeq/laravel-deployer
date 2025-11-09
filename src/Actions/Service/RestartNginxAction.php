@@ -11,7 +11,7 @@ class RestartNginxAction extends ServiceAction
         $this->writeln("🔄 Restarting Nginx...");
 
         $this->writeln("run sudo systemctl restart nginx");
-        $this->run("sudo systemctl restart nginx");
+        $this->cmd("sudo systemctl restart nginx");
 
         $this->writeln("✅ Nginx restarted");
     }
