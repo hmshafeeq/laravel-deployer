@@ -3,9 +3,9 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Actions\Database\BackupDatabaseAction;
-use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
+use Shaf\LaravelDeployer\Actions\DatabaseAction;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
 
 class DatabaseBackupCommand extends Command
 {
@@ -21,7 +21,7 @@ class DatabaseBackupCommand extends Command
         $this->line('');
 
         $serverName = $this->getServerName();
-        if (! $serverName) {
+        if (!$serverName) {
             return self::FAILURE;
         }
 
@@ -29,24 +29,17 @@ class DatabaseBackupCommand extends Command
         $this->line('');
 
         try {
-            // Create factory and initialize for environment
-            $factory = new DeploymentServiceFactory(
-                base_path(),
-                $this->output
-            );
-            $factory->createForEnvironment($serverName);
+            // Load configuration and initialize services
+            $config = ConfigService::load($serverName, base_path());
+            $cmdService = new CommandService($config, $this->output);
 
-            // Create and execute backup action
-            $backupAction = new BackupDatabaseAction(
-                $factory->createCommandExecutor(),
-                $factory->getOutput(),
-                $factory->getConfig()
-            );
-
-            $backupAction->execute();
+            // Execute backup
+            $database = new DatabaseAction($cmdService, $config);
+            $backupFile = $database->backup();
 
             $this->line('');
             $this->info('✅ Database backup completed successfully!');
+            $this->info("📁 Backup file: {$backupFile}");
             $this->info('💡 To download the backup:');
             $this->line("   php artisan database:download {$serverName}");
 
@@ -60,107 +53,28 @@ class DatabaseBackupCommand extends Command
         }
     }
 
-    protected function getServerName(): ?string
+    private function getServerName(): ?string
     {
-        if ($this->option('select')) {
-            return $this->selectServerInteractively();
-        }
-
         $serverName = $this->argument('server');
-        if ($serverName) {
-            if (! $this->validateServer($serverName)) {
-                return null;
-            }
 
+        if ($serverName) {
             return $serverName;
         }
 
-        // If no server provided, show available servers
-        $servers = $this->getAvailableServers();
-        if (empty($servers)) {
-            return null;
-        }
-
-        if (count($servers) === 1) {
-            return $servers[0];
-        }
-
-        return $this->selectServerInteractively();
-    }
-
-    protected function selectServerInteractively(): ?string
-    {
-        $servers = $this->getAvailableServers();
-        if (empty($servers)) {
-            return null;
-        }
-
-        $this->info('📋 Available servers:');
-        foreach ($servers as $index => $server) {
-            $this->line('   '.($index + 1).". {$server}");
-        }
-        $this->line('');
-
-        $choice = $this->ask('Select server', '1');
-        $index = (int) $choice - 1;
-
-        if (! isset($servers[$index])) {
-            $this->error('❌ Invalid server selection');
-
-            return null;
-        }
-
-        return $servers[$index];
-    }
-
-    protected function getAvailableServers(): array
-    {
-        $deployDir = base_path('.deploy');
-        if (! File::exists($deployDir)) {
-            $this->error('❌ .deploy directory not found.');
-            $this->info('💡 Run: php artisan laravel-deployer:install');
-
-            return [];
-        }
-
-        try {
-            $envFiles = File::glob($deployDir.'/.env.*');
-            $servers = [];
-
-            foreach ($envFiles as $file) {
-                $filename = basename($file);
-                if (preg_match('/^\.env\.(.+?)(?:\.example)?$/', $filename, $matches)) {
-                    if (! str_ends_with($filename, '.example')) {
-                        $servers[] = $matches[1];
-                    }
-                }
-            }
+        if ($this->option('select')) {
+            $configService = new ConfigService(base_path());
+            $servers = $configService->getAvailableEnvironments();
 
             if (empty($servers)) {
-                $this->error('❌ No environment files found in .deploy/');
-                $this->info('💡 Create .env files in .deploy/ directory (e.g., .env.production, .env.staging)');
+                $this->error('No servers configured in deploy.yaml');
+                return null;
             }
 
-            return $servers;
-        } catch (\Exception $e) {
-            $this->error("❌ Error reading environment files: {$e->getMessage()}");
-
-            return [];
-        }
-    }
-
-    protected function validateServer(string $serverName): bool
-    {
-        $servers = $this->getAvailableServers();
-        if (! in_array($serverName, $servers)) {
-            $this->error("❌ Server '{$serverName}' not found");
-            if (! empty($servers)) {
-                $this->info('💡 Available servers: '.implode(', ', $servers));
-            }
-
-            return false;
+            $serverName = $this->choice('Select a server', $servers);
+            return $serverName;
         }
 
-        return true;
+        $this->error('Please provide a server name or use --select option');
+        return null;
     }
 }

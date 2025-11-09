@@ -3,190 +3,72 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Actions\Deployment\RollbackReleaseAction;
-use Shaf\LaravelDeployer\Actions\System\RestartNginxAction;
-use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
-use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
+use Shaf\LaravelDeployer\Actions\OptimizeAction;
+use Shaf\LaravelDeployer\Actions\RollbackAction;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\DeploymentService;
 
 class RollbackCommand extends Command
 {
     protected $signature = 'deploy:rollback {environment : The deployment environment}
-                            {--release= : Specific release to rollback to (default: previous)}
                             {--no-confirm : Skip confirmation prompt}';
 
-    protected $description = 'Rollback to a previous release';
+    protected $description = 'Rollback to the previous release';
 
     public function handle(): int
     {
         $environment = $this->argument('environment');
-        $specificRelease = $this->option('release');
         $noConfirm = $this->option('no-confirm');
 
         try {
-            // Create factory and initialize for environment
-            $factory = new DeploymentServiceFactory(
-                base_path(),
-                $this->output
-            );
-            $factory->createForEnvironment($environment);
+            // Load configuration
+            $config = ConfigService::load($environment, base_path());
 
-            // Create rollback action (use dummy release name for now)
-            $rollbackAction = new RollbackReleaseAction(
-                $factory->createCommandExecutor(),
-                $factory->getOutput(),
-                $factory->getConfig(),
-                '' // Will be set after we determine target
-            );
+            // Initialize services
+            $cmdService = new CommandService($config, $this->output);
+            $deployService = new DeploymentService($config, base_path());
 
-            // Get available releases
-            $releases = $rollbackAction->getAvailableReleases();
+            // Get current and previous releases
+            $current = $deployService->getCurrentRelease();
+            $previous = $deployService->getPreviousRelease();
 
-            if (empty($releases)) {
-                $this->error('❌ No releases found to rollback to');
-
-                return self::FAILURE;
-            }
-
-            // Get current release
-            $currentRelease = $rollbackAction->getCurrentRelease();
-
-            if (!$currentRelease) {
+            if (!$current) {
                 $this->error('❌ No current release found');
-
                 return self::FAILURE;
             }
 
-            // Determine target release
-            if ($specificRelease) {
-                if (!in_array($specificRelease, $releases)) {
-                    $this->error("❌ Release '{$specificRelease}' not found");
-                    $this->info('Available releases:');
-                    foreach ($releases as $index => $release) {
-                        $this->line('  '.($index + 1).'. '.$release);
-                    }
-
-                    return self::FAILURE;
-                }
-                $targetRelease = $specificRelease;
-            } else {
-                // Find previous release
-                $currentIndex = array_search($currentRelease, $releases);
-                if ($currentIndex === false || $currentIndex >= count($releases) - 1) {
-                    $this->error('❌ No previous release available');
-
-                    return self::FAILURE;
-                }
-                $targetRelease = $releases[$currentIndex + 1];
+            if (!$previous) {
+                $this->error('❌ No previous release available for rollback');
+                return self::FAILURE;
             }
 
-            // Show rollback information
-            $this->newLine();
-            $this->warn('═══════════════════════════════════════════════════════════');
-            $this->warn('                  ROLLBACK CONFIRMATION');
-            $this->warn('═══════════════════════════════════════════════════════════');
-            $this->newLine();
-            $this->info("  Environment:     {$environment}");
-            $this->info("  Current Release: {$currentRelease}");
-            $this->info("  Target Release:  {$targetRelease}");
-            $this->newLine();
-            $this->warn('═══════════════════════════════════════════════════════════');
-            $this->newLine();
-
-            // Confirm rollback
-            if (!$noConfirm) {
-                if (!$this->confirm('Do you want to rollback to this release?', false)) {
-                    $this->info('Rollback cancelled.');
-
-                    return self::SUCCESS;
-                }
+            // Show rollback confirmation
+            if (!$noConfirm && !$this->confirmRollback($environment, $current, $previous)) {
+                $this->info('Rollback cancelled.');
+                return self::SUCCESS;
             }
 
             $this->newLine();
-            $this->info('🔄 Starting rollback...');
+
+            // Execute rollback
+            $rollback = new RollbackAction($deployService, $cmdService, $config);
+            $rollback->execute();
+
+            // Post-rollback optimization
             $this->newLine();
+            $optimize = new OptimizeAction($cmdService, $config);
+            $optimize->execute();
 
-            // Perform rollback with correct target release
-            $rollbackAction = new RollbackReleaseAction(
-                $factory->createCommandExecutor(),
-                $factory->getOutput(),
-                $factory->getConfig(),
-                $targetRelease
-            );
-            $rollbackAction->execute();
-
-            // Clear caches
+            // Show migration warning
             $this->newLine();
-            $this->info('🗑️  Clearing caches...');
-
-            // Set release name for artisan commands
-            $factory->setReleaseName($targetRelease);
-            $artisan = $factory->createArtisanTaskRunner();
-
-            try {
-                $artisan->run('config:cache');
-                $this->info('  ✓ Config cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Config cache operation failed');
-            }
-
-            try {
-                $artisan->run('view:cache');
-                $this->info('  ✓ View cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ View cache operation failed');
-            }
-
-            try {
-                $artisan->run('route:cache');
-                $this->info('  ✓ Route cache cleared');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Route cache operation failed');
-            }
-
-            // Restart queue workers
-            $this->newLine();
-            $this->info('🔄 Restarting queue workers...');
-            try {
-                $artisan->run('queue:restart');
-                $this->info('  ✓ Queue workers restarted');
-            } catch (\Exception $e) {
-                $this->warn('  ⚠ Queue restart failed');
-            }
-
-            // Restart services
-            if (!$factory->getConfig()->isLocal) {
-                $this->newLine();
-                $this->info('🔄 Restarting services...');
-                try {
-                    $restartPhpFpm = new RestartPhpFpmAction(
-                        $factory->createCommandExecutor(),
-                        $factory->getOutput()
-                    );
-                    $restartPhpFpm->execute();
-
-                    $restartNginx = new RestartNginxAction(
-                        $factory->createCommandExecutor(),
-                        $factory->getOutput()
-                    );
-                    $restartNginx->execute();
-                } catch (\Exception $e) {
-                    $this->warn('  ⚠ Service restart failed: '.$e->getMessage());
-                }
-            }
-
-            $this->newLine();
-            $this->info('✅ Rollback completed successfully!');
-            $this->newLine();
-            $this->info("Current release is now: {$targetRelease}");
-            $this->newLine();
-
-            // Show rollback migration warning
             $this->warn('⚠️  IMPORTANT: Database migrations are NOT automatically rolled back.');
             $this->info('If you need to rollback database changes, you must do so manually:');
             $this->line('  php artisan migrate:rollback --step=N');
             $this->newLine();
 
             return self::SUCCESS;
+
         } catch (\Exception $e) {
             $this->newLine();
             $this->error('❌ Rollback failed!');
@@ -198,5 +80,25 @@ class RollbackCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * Show rollback confirmation prompt
+     */
+    private function confirmRollback(string $environment, string $current, string $previous): bool
+    {
+        $this->newLine();
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->warn('                  ROLLBACK CONFIRMATION');
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->newLine();
+        $this->info("  Environment:     {$environment}");
+        $this->info("  Current Release: {$current}");
+        $this->info("  Target Release:  {$previous}");
+        $this->newLine();
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->newLine();
+
+        return $this->confirm('Do you want to rollback to this release?', false);
     }
 }
