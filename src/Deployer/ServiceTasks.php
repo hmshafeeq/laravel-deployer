@@ -2,70 +2,55 @@
 
 namespace Shaf\LaravelDeployer\Deployer;
 
-class ServiceTasks
-{
-    protected Deployer $deployer;
+use Shaf\LaravelDeployer\Concerns\ExecutesCommands;
 
-    public function __construct(Deployer $deployer)
-    {
-        $this->deployer = $deployer;
-    }
+class ServiceTasks extends BaseTaskRunner
+{
+    use ExecutesCommands;
 
     public function restartPhpFpm(): void
     {
-        $this->deployer->task('php-fpm:restart', function ($deployer) {
-            $deployer->writeln("🔄 Restarting PHP-FPM...");
+        $this->task('php-fpm:restart', function () {
+            $this->output->info("🔄 Restarting PHP-FPM...");
 
             // Detect all running PHP-FPM services
-            $deployer->writeln("run systemctl list-units --type=service --state=running | grep -o \"php[0-9.]*-fpm\" || echo \"\"");
-            $phpFpmServices = $deployer->run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
+            $phpFpmServices = $this->run('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
 
             if (!empty(trim($phpFpmServices))) {
-                $lines = explode("\n", trim($phpFpmServices));
-                foreach ($lines as $line) {
-                    $deployer->writeln($line);
-                }
-
                 $services = array_filter(explode("\n", trim($phpFpmServices)));
 
                 foreach ($services as $service) {
                     $service = trim($service);
                     if (!empty($service)) {
-                        $deployer->writeln("run sudo systemctl restart {$service}");
-                        $deployer->run("sudo systemctl restart {$service}");
-                        $deployer->writeln("✅ Restarted {$service}");
+                        $this->run("sudo systemctl restart {$service}");
+                        $this->output->success("Restarted {$service}");
                     }
                 }
             } else {
-                $deployer->writeln("⚠️  No running PHP-FPM service found", 'comment');
+                $this->output->warning("No running PHP-FPM service found");
             }
         });
     }
 
     public function restartNginx(): void
     {
-        $this->deployer->task('nginx:restart', function ($deployer) {
-            $deployer->writeln("🔄 Restarting Nginx...");
+        $this->task('nginx:restart', function () {
+            $this->output->info("🔄 Restarting Nginx...");
 
-            $deployer->writeln("run sudo systemctl restart nginx");
-            $deployer->run("sudo systemctl restart nginx");
+            $this->run("sudo systemctl restart nginx");
 
-            $deployer->writeln("✅ Nginx restarted");
+            $this->output->success("Nginx restarted");
         });
     }
 
     public function reloadSupervisor(): void
     {
-        $this->deployer->task('supervisor:reload', function ($deployer) {
-            $deployer->writeln("🔄 Reloading Supervisor...");
+        $this->task('supervisor:reload', function () {
+            $this->output->info("🔄 Reloading Supervisor...");
 
-            $deployer->writeln("run sudo supervisorctl reload");
-            $result = $deployer->run("sudo supervisorctl reload");
-            if (!empty($result)) {
-                $deployer->writeln($result);
-            }
+            $this->run("sudo supervisorctl reload");
 
-            $deployer->writeln("✅ Supervisor reloaded");
+            $this->output->success("Supervisor reloaded");
         });
     }
 }
