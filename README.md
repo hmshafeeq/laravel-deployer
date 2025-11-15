@@ -14,6 +14,7 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
 - ❤️ **Health Checks** - Pre-deployment resource and endpoint verification
 - 🔑 **SSH Key Generator** - Interactive key generation and server setup
+- 🖥️ **Server Provisioning** - Automated LEMP stack setup with security hardening
 - 🎨 **Beautiful Output** - Clear, colored progress indicators
 - 📢 **Notifications** - Slack and Discord integration
 
@@ -42,6 +43,141 @@ This creates:
 - `.deploy/deploy.yaml` - Deployment configuration
 - `.deploy/.env.{environment}.example` - Environment templates
 - `.gitignore` entries for credentials
+
+## 🖥️ Server Provisioning
+
+Laravel Deployer includes a comprehensive server provisioning system that automatically sets up a fresh Ubuntu server with everything needed to run Laravel applications.
+
+### Quick Provision
+
+The simplest way to provision a server (interactive mode):
+
+```bash
+php artisan laravel-deployer:provision
+```
+
+This will guide you through:
+1. Server connection details (host, port, SSH credentials)
+2. User creation options (use default ubuntu user or create a deployment user)
+3. Software versions (PHP, Node.js)
+4. Database selection (MySQL, PostgreSQL, Redis)
+5. Additional features (Supervisor, Firewall, Swap)
+
+### Non-Interactive Provisioning
+
+For automation or CI/CD pipelines:
+
+```bash
+php artisan laravel-deployer:provision \
+    --host=your-server.com \
+    --user=ubuntu \
+    --key=/path/to/ssh/key \
+    --create-user \
+    --deploy-user=deployer \
+    --php-version=8.3 \
+    --nodejs-version=20 \
+    --with-mysql \
+    --with-redis \
+    --non-interactive
+```
+
+### What Gets Installed
+
+#### Core Components
+- **Nginx**: Web server with optimized configuration for Laravel
+- **PHP**: With extensions (FPM, CLI, MySQL, PostgreSQL, Redis, cURL, GD, mbstring, XML, Zip, BCMath, SOAP, Intl, OPcache, Imagick)
+- **Node.js**: With npm, Yarn, and PM2
+- **Composer**: Latest version with global configuration
+
+#### Databases (Optional)
+- **MySQL**: With secure installation and performance tuning
+- **PostgreSQL**: With password authentication configured
+- **Redis**: With memory management and LRU eviction policy
+
+#### Security Features
+- **UFW Firewall**: Configured with ports 22 (SSH), 80 (HTTP), 443 (HTTPS)
+- **Fail2Ban**: Protection against brute-force attacks
+- **SSH Hardening**: Strong ciphers, key exchange algorithms, disabled root login
+- **Automatic Security Updates**: Unattended upgrades configured
+
+#### Performance Features
+- **Swap Space**: Configurable size (1G, 2G, 4G) for servers with limited RAM
+- **PHP-FPM**: Optimized pool configuration with proper user permissions
+- **OPcache**: Configured for production performance
+- **Nginx**: Gzip compression, static file caching, security headers
+
+### Provision Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | Server hostname or IP address | (required) |
+| `--port` | SSH port | 22 |
+| `--user` | SSH user | ubuntu |
+| `--password` | SSH password (if not using key) | - |
+| `--key` | Path to SSH private key | ~/.ssh/id_rsa |
+| `--create-user` | Create a new deployment user | false |
+| `--deploy-user` | Name of deployment user to create | deployer |
+| `--php-version` | PHP version to install | 8.3 |
+| `--nodejs-version` | Node.js version to install | 20 |
+| `--with-mysql` | Install MySQL | false |
+| `--with-postgresql` | Install PostgreSQL | false |
+| `--with-redis` | Install Redis | false |
+| `--non-interactive` | Run without prompts | false |
+
+### After Provisioning
+
+Once provisioning is complete:
+
+1. **Download SSH key** (if you created a deployment user):
+   ```bash
+   scp ubuntu@your-server:/home/deployer/.ssh/id_rsa ./deploy_key
+   chmod 600 ./deploy_key
+   ```
+
+2. **Update your `.deploy/deploy.yaml`**:
+   ```yaml
+   hosts:
+     production:
+       hostname: 'your-server.com'
+       remote_user: 'deployer'
+       identity_file: './deploy_key'
+       deploy_path: '/var/www/production'
+   ```
+
+3. **Deploy your application**:
+   ```bash
+   php artisan laravel-deployer:deploy production
+   ```
+
+### Provision Examples
+
+**Basic Setup with Ubuntu User:**
+```bash
+php artisan laravel-deployer:provision \
+    --host=192.168.1.100 \
+    --user=ubuntu \
+    --key=~/.ssh/id_rsa \
+    --php-version=8.3 \
+    --with-redis
+```
+
+**Full Setup with Deployment User:**
+```bash
+php artisan laravel-deployer:provision \
+    --host=production.example.com \
+    --create-user \
+    --deploy-user=deployer \
+    --php-version=8.3 \
+    --nodejs-version=20 \
+    --with-mysql \
+    --with-redis
+```
+
+### Supported Ubuntu Versions
+
+- Ubuntu 24.04 LTS (Noble Numbat)
+- Ubuntu 22.04 LTS (Jammy Jellyfish)
+- Ubuntu 20.04 LTS (Focal Fossa)
 
 ## ⚙️ Configuration
 

@@ -10,6 +10,7 @@ use Shaf\LaravelDeployer\Commands\DatabaseRestoreCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseUploadCommand;
 use Shaf\LaravelDeployer\Commands\DeployCommand;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
+use Shaf\LaravelDeployer\Commands\ProvisionCommand;
 use Shaf\LaravelDeployer\Commands\RollbackCommand;
 use Shaf\LaravelDeployer\Commands\SshKeyGenerateCommand;
 
@@ -26,6 +27,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
             $this->commands([
                 InstallCommand::class,
                 DeployCommand::class,
+                ProvisionCommand::class,
                 RollbackCommand::class,
                 ClearCommand::class,
                 DatabaseRestoreCommand::class,
