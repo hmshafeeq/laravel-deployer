@@ -13,6 +13,7 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 💾 **Database Operations** - Backup, download, upload, and restore
 - 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
 - ❤️ **Health Checks** - Pre-deployment resource and endpoint verification
+- 🔑 **SSH Key Generator** - Interactive key generation and server setup
 - 🎨 **Beautiful Output** - Clear, colored progress indicators
 - 📢 **Notifications** - Slack and Discord integration
 
@@ -90,7 +91,10 @@ DEPLOY_BRANCH=main
 **3. Setup SSH key authentication:**
 
 ```bash
-# Generate SSH key if needed
+# Option 1: Use the built-in key generator (recommended)
+php artisan deploy:key-generate deploy@yourapp.com
+
+# Option 2: Generate SSH key manually
 ssh-keygen -t ed25519 -C "deploy@yourapp.com"
 
 # Copy to server
@@ -263,6 +267,30 @@ sudo systemctl restart your-custom-service
 ```
 
 ## 🔧 Common Tasks
+
+### Generate SSH Keys
+
+Use the built-in SSH key generator to create and configure keys for deployment:
+
+```bash
+# Generate new SSH key
+php artisan deploy:key-generate deploy@yourapp.com
+
+# Generate with custom name
+php artisan deploy:key-generate deploy@yourapp.com --name=deploy_key
+
+# Force generation without prompting
+php artisan deploy:key-generate deploy@yourapp.com --force
+```
+
+**What it does:**
+- ✅ Detects existing SSH keys
+- ✅ Generates new key pairs (RSA 4096-bit)
+- ✅ Shows interactive menu for existing keys
+- ✅ Displays public key for copying
+- ✅ Optionally copies key to server via `ssh-copy-id`
+- ✅ Provides helpful setup instructions
+- ✅ Clipboard support (Linux, macOS, Windows)
 
 ### First Deployment
 

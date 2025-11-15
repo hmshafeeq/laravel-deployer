@@ -11,6 +11,7 @@ use Shaf\LaravelDeployer\Commands\DatabaseUploadCommand;
 use Shaf\LaravelDeployer\Commands\DeployCommand;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
 use Shaf\LaravelDeployer\Commands\RollbackCommand;
+use Shaf\LaravelDeployer\Commands\SshKeyGenerateCommand;
 
 class LaravelDeployerServiceProvider extends ServiceProvider
 {
@@ -31,6 +32,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
                 DatabaseBackupCommand::class,
                 DatabaseDownloadCommand::class,
                 DatabaseUploadCommand::class,
+                SshKeyGenerateCommand::class,
             ]);
         }
     }
