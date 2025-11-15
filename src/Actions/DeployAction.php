@@ -5,6 +5,7 @@ namespace Shaf\LaravelDeployer\Actions;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
+use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 use Shaf\LaravelDeployer\Services\RsyncService;
@@ -17,11 +18,13 @@ class DeployAction
 {
     private string $releaseName;
     private string $releasePath;
+    private ?SyncDiff $syncDiff = null;
 
     public function __construct(
         private DeploymentService $deployment,
         private CommandService $cmd,
         private RsyncService $rsync,
+        private DiffAction $diff,
         private DeploymentConfig $config
     ) {
         $this->deployment->setCommandService($cmd);
@@ -50,37 +53,49 @@ class DeployAction
                 $this->buildAssets();
             }
 
-            // 5. Sync files to server
-            $this->syncFiles();
+            // 5. Show sync differences
+            if ($this->config->showDiff) {
+                $this->syncDiff = $this->diff->show();
+            }
 
-            // 6. Create shared symlinks
+            // 6. Confirm changes
+            if ($this->config->confirmChanges) {
+                if (!$this->confirmDeploymentChanges()) {
+                    throw new \Exception('Deployment cancelled by user');
+                }
+            }
+
+            // 7. Sync files to server
+            $this->syncFilesWithProgress();
+
+            // 8. Create shared symlinks
             $this->createSharedLinks();
 
-            // 7. Set writable permissions
+            // 9. Set writable permissions
             $this->setWritablePermissions();
 
-            // 8. Install composer dependencies
+            // 10. Install composer dependencies
             $this->installComposerDependencies();
 
-            // 9. Fix module permissions
+            // 11. Fix module permissions
             $this->fixModulePermissions();
 
-            // 10. Run database migrations
+            // 12. Run database migrations
             $this->runMigrations();
 
-            // 11. Link .dep directory
+            // 13. Link .dep directory
             $this->linkDepDirectory();
 
-            // 12. Symlink current release
+            // 14. Symlink current release
             $this->symlinkRelease();
 
-            // 13. Cleanup old releases
+            // 15. Cleanup old releases
             $this->cleanupOldReleases();
 
-            // 14. Log deployment success
+            // 16. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 15. Run post-deployment hooks
+            // 17. Run post-deployment hooks
             $this->runPostDeploymentHooks();
 
             $this->cmd->newLine();
@@ -167,6 +182,32 @@ class DeployAction
             $this->cmd->success("Assets built successfully");
         } catch (\Exception $e) {
             $this->cmd->warning("Asset build failed (continuing anyway): " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Confirm deployment changes with user
+     */
+    private function confirmDeploymentChanges(): bool
+    {
+        $diff = $this->syncDiff ?? new SyncDiff();
+        return $this->diff->confirmChanges($diff);
+    }
+
+    /**
+     * Sync files to server with progress indicators
+     */
+    private function syncFilesWithProgress(): void
+    {
+        if ($this->config->showUploadProgress) {
+            $diff = $this->syncDiff ?? new SyncDiff();
+            $this->diff->showUploadProgress($diff);
+        }
+
+        $this->syncFiles();
+
+        if ($this->config->showUploadProgress) {
+            $this->diff->showUploadComplete();
         }
     }
 

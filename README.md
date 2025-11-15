@@ -16,6 +16,8 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 🔑 **SSH Key Generator** - Interactive key generation and server setup
 - 🎨 **Beautiful Output** - Clear, colored progress indicators
 - 📢 **Notifications** - Slack and Discord integration
+- 🔍 **Diff Display** - See exactly what files will be deployed with color-coded changes
+- ✅ **Confirmation Prompts** - Prevent accidents with configurable confirmation before deployment
 
 ## 📋 Requirements
 
@@ -138,15 +140,17 @@ php artisan deploy staging --skip-health-check
 2. 🔒 Lock deployment
 3. 📦 Create new release directory
 4. 🏗️ Build assets locally (`npm run build`)
-5. 📤 Sync files to server via rsync
-6. 🔗 Link shared directories (storage, .env)
-7. 📥 Install composer dependencies
-8. 🗄️ Run database migrations
-9. ⚡ Optimize (cache config, views, routes)
-10. 🔄 Restart services (PHP-FPM, Nginx)
-11. ✨ Symlink to new release
-12. 🧹 Cleanup old releases
-13. 🔓 Unlock deployment
+5. 🔍 **Show sync differences** (new, modified, deleted files)
+6. ✅ **Confirm changes** before uploading
+7. 📤 Sync files to server via rsync
+8. 🔗 Link shared directories (storage, .env)
+9. 📥 Install composer dependencies
+10. 🗄️ Run database migrations
+11. ⚡ Optimize (cache config, views, routes)
+12. 🔄 Restart services (PHP-FPM, Nginx)
+13. ✨ Symlink to new release
+14. 🧹 Cleanup old releases
+15. 🔓 Unlock deployment
 
 ### Rollback
 
@@ -195,6 +199,36 @@ php artisan database:restore --latest
 ```
 
 ## 📖 Advanced Configuration
+
+### Deployment Diff & Confirmation
+
+Control whether to show file differences and require confirmation before deployment:
+
+```yaml
+config:
+  # Diff and confirmation settings
+  show_diff: true                    # Show files that will be synced before deployment
+  confirm_changes: true               # Ask for confirmation before uploading changes
+  show_upload_progress: true          # Show upload progress messages
+  diff_display_limit: 20             # Maximum number of files to display per category
+```
+
+**Features:**
+- **Beautiful Diff Display**: Shows exactly which files will be added, modified, or deleted before deployment
+- **Color-Coded Output**:
+  - 🟢 Green for new files
+  - 🟡 Yellow for modified files
+  - 🔴 Red for deleted files
+- **Smart Categorization**: Groups changes by type with file counts
+- **Confirmation Prompts**: Prevents accidental deployments by requiring user confirmation
+- **Configurable Display Limit**: Control how many files are shown per category to avoid overwhelming output
+- **Production Safety**: Extra warnings when deploying file deletions to production
+
+**Configuration Options:**
+- `show_diff: true|false` - Enable or disable diff display (default: `true`)
+- `confirm_changes: true|false` - Require confirmation after showing diff (default: `true`)
+- `show_upload_progress: true|false` - Show upload progress indicators (default: `true`)
+- `diff_display_limit: N` - Maximum files to show per category (default: `20`)
 
 ### Rsync Exclusions
 
