@@ -52,7 +52,7 @@ class DeployCommand extends Command
             // Initialize services
             $cmdService = new CommandService($config, $this->output);
             $deployService = new DeploymentService($config, base_path());
-            $rsyncService = new RsyncService($config, base_path());
+            $rsyncService = new RsyncService($config, base_path(), $cmdService);
 
             // Show deployment confirmation
             if (!$noConfirm && !$this->confirmDeployment($config)) {

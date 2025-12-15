@@ -14,9 +14,9 @@ class RsyncService
     private array $includes = [];
 
     public function __construct(
-        private OutputService $output,
         private DeploymentConfig $config,
         private string $sourcePath,
+        private ?CommandService $cmdService = null,
     ) {
         $this->excludes = $config->rsyncExcludes;
         $this->includes = $config->rsyncIncludes;
@@ -24,26 +24,26 @@ class RsyncService
 
     public function sync(string $destination): void
     {
-        $this->output->info("Syncing files to release...");
+        $this->cmdService?->info("Syncing files to release...");
 
         $source = rtrim($this->sourcePath, '/') . '/';
         $destinationPath = "{$this->config->remoteUser}@{$this->config->hostname}:{$destination}/";
 
         $command = $this->buildRsyncCommand($source, $destinationPath);
 
-        $this->output->debug("Rsync command: {$command}");
+        $this->cmdService?->debug("Rsync command: {$command}");
 
         $process = Process::fromShellCommandline($command, $this->sourcePath);
         $process->setTimeout(Timeouts::RSYNC);
 
         $process->run(function ($type, $buffer) {
             if (Process::ERR === $type) {
-                $this->output->error($buffer);
+                $this->cmdService?->error($buffer);
             } else {
                 $lines = explode("\n", $buffer);
                 foreach ($lines as $line) {
                     if (!empty(trim($line)) && !$this->isDirectoryLine($line)) {
-                        $this->output->commandOutput($line);
+                        $this->cmdService?->line($line);
                     }
                 }
             }
@@ -53,7 +53,7 @@ class RsyncService
             throw RsyncException::failed($process->getErrorOutput());
         }
 
-        $this->output->success("Files synced successfully");
+        $this->cmdService?->success("Files synced successfully");
     }
 
     public function setExcludes(array $excludes): void
