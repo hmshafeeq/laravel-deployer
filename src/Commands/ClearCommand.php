@@ -7,7 +7,7 @@ use Shaf\LaravelDeployer\Actions\System\ClearCachesAction;
 use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
 
-class ClearCommand extends BaseDeployerCommand
+class ClearCommand extends Command
 {
     protected $signature = 'deployer:clear {environment : The deployment environment}
                             {--no-confirm : Skip confirmation prompt}';
@@ -86,15 +86,16 @@ class ClearCommand extends BaseDeployerCommand
                 }
             }
 
-        // Restart queue workers
-        $this->newLine();
-        RestartQueueWorkersAction::run($deployer);
-
-        // Restart PHP-FPM (if not local)
-        if ($environment !== 'local') {
             $this->newLine();
-            $serviceRestarter = new ServiceRestarter($deployer);
-            $serviceRestarter->restartOnly(['php-fpm'], failSilently: true);
+            $this->info('✅ System clear completed successfully!');
+
+            return self::SUCCESS;
+        } catch (\Exception $e) {
+            $this->newLine();
+            $this->error('❌ System clear failed!');
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         }
     }
 }
