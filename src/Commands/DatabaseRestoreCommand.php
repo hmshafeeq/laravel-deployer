@@ -3,13 +3,15 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use App\Models\User;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Shaf\LaravelDeployer\Commands\Traits\ManagesBackupSelection;
 
-class DatabaseRestoreCommand extends Command
+class DatabaseRestoreCommand extends BaseDeployerCommand
 {
-    protected $signature = 'database:restore 
+    use ManagesBackupSelection;
+
+    protected $signature = 'database:restore
                             {backup? : The backup file to restore (optional - will prompt if not provided)}
                             {--list : List available backups without restoring}
                             {--latest : Restore the latest backup without prompting}
@@ -17,48 +19,42 @@ class DatabaseRestoreCommand extends Command
 
     protected $description = 'Restore database from backup file';
 
-    protected array $backups = [];
-
     public function handle(): int
     {
         $this->info('🗄️  Database Restore');
         $this->line('');
 
         // Check if we're in a Laravel project
-        if (! File::exists(base_path('.env'))) {
+        if (!File::exists(base_path('.env'))) {
             $this->error('❌ No .env file found. Please ensure this command is run from a Laravel project.');
 
             return self::FAILURE;
         }
 
         // Check if backups directory exists
-        $backupsDir = base_path('.deploy/downloads/backups');
-        if (! File::exists($backupsDir)) {
-            $this->error('❌ No backups directory found. Please run \'php artisan database:download\' first.');
+        if (!$this->getBackupManager()->backupsDirectoryExists()) {
+            $this->displayNoBackupsError();
 
             return self::FAILURE;
         }
 
-        // Get available backups
-        $this->backups = $this->getAvailableBackups($backupsDir);
-
-        if (empty($this->backups)) {
-            $this->error('❌ No database backups found in .deploy/downloads/backups/ directory.');
-            $this->info('ℹ️  Run \'php artisan database:download\' to download backups from server.');
+        $backups = $this->getBackupManager()->getAvailableBackups();
+        if (empty($backups)) {
+            $this->displayNoBackupsError();
 
             return self::FAILURE;
         }
 
         // Handle --list option
         if ($this->option('list')) {
-            $this->displayBackups();
+            $this->displayBackups($backups);
 
             return self::SUCCESS;
         }
 
         // Get selected backup
         $selectedBackup = $this->getSelectedBackup();
-        if (! $selectedBackup) {
+        if (!$selectedBackup) {
             $this->info('ℹ️  Restoration cancelled.');
 
             return self::SUCCESS;
@@ -66,24 +62,24 @@ class DatabaseRestoreCommand extends Command
 
         // Get database configuration
         $dbConfig = $this->getDatabaseConfig();
-        if (! $dbConfig) {
+        if (!$dbConfig) {
             return self::FAILURE;
         }
 
         // Confirm restoration
-        if (! $this->confirmRestore($selectedBackup, $dbConfig)) {
+        if (!$this->confirmRestore($selectedBackup, $dbConfig)) {
             $this->info('ℹ️  Restoration cancelled.');
 
             return self::SUCCESS;
         }
 
         // Perform restoration
-        if (! $this->restoreDatabase($selectedBackup, $dbConfig)) {
+        if (!$this->restoreDatabase($selectedBackup, $dbConfig)) {
             return self::FAILURE;
         }
 
         // Run migrations if not skipped
-        if (! $this->option('no-migrate')) {
+        if (!$this->option('no-migrate')) {
             $this->runMigrations();
         }
 
@@ -96,83 +92,11 @@ class DatabaseRestoreCommand extends Command
         return self::SUCCESS;
     }
 
-    protected function getAvailableBackups(string $backupsDir): array
-    {
-        $files = File::glob($backupsDir.'/db_backup_*.sql.gz');
-
-        // Sort by modification time (newest first)
-        usort($files, function ($a, $b) {
-            return filemtime($b) - filemtime($a);
-        });
-
-        return $files;
-    }
-
-    protected function displayBackups(): void
-    {
-        $this->info('📋 Available database backups:');
-        $this->line('');
-
-        foreach ($this->backups as $index => $backup) {
-            $name = basename($backup);
-            $size = $this->formatFileSize(filesize($backup));
-            $date = date('Y-m-d H:i:s', filemtime($backup));
-
-            $this->line(sprintf('   %d. %s (%s) - %s', $index + 1, $name, $size, $date));
-        }
-
-        $this->line('');
-    }
-
-    protected function getSelectedBackup(): ?string
-    {
-        // Handle --latest option
-        if ($this->option('latest')) {
-            return $this->backups[0];
-        }
-
-        // Handle backup argument
-        $backupArg = $this->argument('backup');
-        if ($backupArg) {
-            // If it's a number, treat as index
-            if (is_numeric($backupArg)) {
-                $index = (int) $backupArg - 1;
-                if (isset($this->backups[$index])) {
-                    return $this->backups[$index];
-                }
-                $this->error("❌ Invalid backup selection: {$backupArg}");
-
-                return null;
-            }
-
-            // Treat as filename
-            $backupPath = base_path('.deploy/downloads/backups/'.$backupArg);
-            if (File::exists($backupPath)) {
-                return $backupPath;
-            }
-
-            $this->error("❌ Backup file not found: {$backupArg}");
-
-            return null;
-        }
-
-        // Interactive selection
-        $this->displayBackups();
-
-        $choice = $this->ask(
-            "Enter backup number to restore (1-{$this->count()}) or press Enter for latest",
-            '1'
-        );
-
-        if (! is_numeric($choice) || $choice < 1 || $choice > count($this->backups)) {
-            $this->error("❌ Invalid backup selection: {$choice}");
-
-            return null;
-        }
-
-        return $this->backups[$choice - 1];
-    }
-
+    /**
+     * Get database configuration from Laravel config
+     *
+     * @return array|null Database configuration array or null on error
+     */
     protected function getDatabaseConfig(): ?array
     {
         try {
@@ -213,6 +137,13 @@ class DatabaseRestoreCommand extends Command
         }
     }
 
+    /**
+     * Confirm database restoration with user
+     *
+     * @param string $selectedBackup Path to backup file
+     * @param array $dbConfig Database configuration
+     * @return bool True if user confirms, false otherwise
+     */
     protected function confirmRestore(string $selectedBackup, array $dbConfig): bool
     {
         $backupName = basename($selectedBackup);
@@ -230,6 +161,13 @@ class DatabaseRestoreCommand extends Command
         return $this->confirm('Are you sure you want to continue?', false);
     }
 
+    /**
+     * Restore database from backup file
+     *
+     * @param string $selectedBackup Path to backup file
+     * @param array $dbConfig Database configuration
+     * @return bool True on success, false on failure
+     */
     protected function restoreDatabase(string $selectedBackup, array $dbConfig): bool
     {
         $backupName = basename($selectedBackup);
@@ -237,7 +175,7 @@ class DatabaseRestoreCommand extends Command
 
         // Test database connection first
         $this->info('🔌 Testing database connection...');
-        if (! $this->testDatabaseConnection($dbConfig)) {
+        if (!$this->testDatabaseConnection($dbConfig)) {
             $this->error('❌ Cannot connect to database. Please check your .env configuration.');
 
             return false;
@@ -265,7 +203,7 @@ class DatabaseRestoreCommand extends Command
 
             $result = Process::timeout(3600)->run($command); // 1 hour timeout
 
-            if (! $result->successful()) {
+            if (!$result->successful()) {
                 $this->error('❌ Database restoration failed:');
                 $this->line($result->errorOutput());
 
@@ -286,6 +224,12 @@ class DatabaseRestoreCommand extends Command
         }
     }
 
+    /**
+     * Test database connection
+     *
+     * @param array $dbConfig Database configuration
+     * @return bool True if connection successful, false otherwise
+     */
     protected function testDatabaseConnection(array $dbConfig): bool
     {
         $tempConfig = $this->createTempMysqlConfig($dbConfig);
@@ -307,6 +251,12 @@ class DatabaseRestoreCommand extends Command
         }
     }
 
+    /**
+     * Create temporary MySQL configuration file
+     *
+     * @param array $dbConfig Database configuration
+     * @return string Path to temporary configuration file
+     */
     protected function createTempMysqlConfig(array $dbConfig): string
     {
         $tempConfig = tempnam(sys_get_temp_dir(), 'mysql_restore_');
@@ -324,11 +274,16 @@ class DatabaseRestoreCommand extends Command
         return $tempConfig;
     }
 
+    /**
+     * Run Laravel migrations
+     *
+     * @return void
+     */
     protected function runMigrations(): void
     {
         $this->line('');
 
-        if (! $this->confirm('Run \'php artisan migrate\' to ensure database schema is up to date?', true)) {
+        if (!$this->confirm('Run \'php artisan migrate\' to ensure database schema is up to date?', true)) {
             return;
         }
 
@@ -344,24 +299,11 @@ class DatabaseRestoreCommand extends Command
         }
     }
 
-    protected function formatFileSize(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $unitIndex = 0;
-
-        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
-            $bytes /= 1024;
-            $unitIndex++;
-        }
-
-        return round($bytes, 2).$units[$unitIndex];
-    }
-
-    protected function count(): int
-    {
-        return count($this->backups);
-    }
-
+    /**
+     * Offer to reset a user password
+     *
+     * @return void
+     */
     protected function offerPasswordReset(): void
     {
         // Only offer in non-production environments
@@ -383,7 +325,7 @@ class DatabaseRestoreCommand extends Command
 
             $this->info("👥 Detected {$usersCount} user(s) in the database.");
 
-            if (! $this->confirm('Would you like to reset a user password for testing?', true)) {
+            if (!$this->confirm('Would you like to reset a user password for testing?', true)) {
                 return;
             }
 
@@ -393,7 +335,7 @@ class DatabaseRestoreCommand extends Command
 
             $email = $this->ask('Enter user email', $defaultEmail);
 
-            if (! $email) {
+            if (!$email) {
                 $this->warn('⚠️  No email provided. Skipping password reset.');
 
                 return;
@@ -401,7 +343,7 @@ class DatabaseRestoreCommand extends Command
 
             $user = User::where('email', $email)->first();
 
-            if (! $user) {
+            if (!$user) {
                 $this->error("❌ User with email '{$email}' not found.");
 
                 return;

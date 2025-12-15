@@ -9,7 +9,7 @@ use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 
-class RollbackCommand extends Command
+class RollbackCommand extends BaseDeployerCommand
 {
     protected $signature = 'deploy:rollback {environment : The deployment environment}
                             {--no-confirm : Skip confirmation prompt}';
@@ -74,12 +74,30 @@ class RollbackCommand extends Command
             $this->error('❌ Rollback failed!');
             $this->error($e->getMessage());
 
-            if ($this->getOutput()->isVerbose()) {
-                $this->error($e->getTraceAsString());
-            }
+        return $releases[$currentIndex + 1];
+    }
 
-            return self::FAILURE;
-        }
+    /**
+     * Display rollback information
+     *
+     * @param string $environment
+     * @param string $currentRelease
+     * @param string $targetRelease
+     * @return void
+     */
+    protected function displayRollbackInfo(string $environment, string $currentRelease, string $targetRelease): void
+    {
+        $this->newLine();
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->warn('                  ROLLBACK CONFIRMATION');
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->newLine();
+        $this->info("  Environment:     {$environment}");
+        $this->info("  Current Release: {$currentRelease}");
+        $this->info("  Target Release:  {$targetRelease}");
+        $this->newLine();
+        $this->warn('═══════════════════════════════════════════════════════════');
+        $this->newLine();
     }
 
     /**
