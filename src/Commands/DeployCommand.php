@@ -3,27 +3,36 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
+use Shaf\LaravelDeployer\Actions\DeployAction;
+use Shaf\LaravelDeployer\Actions\DiffAction;
+use Shaf\LaravelDeployer\Actions\HealthCheckAction;
+use Shaf\LaravelDeployer\Actions\NotificationAction;
+use Shaf\LaravelDeployer\Actions\OptimizeAction;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\RsyncService;
 use Symfony\Component\Process\Process;
 
 class DeployCommand extends Command
 {
     protected $signature = 'deploy {environment=staging : The deployment environment (local, staging, production)}
-                            {task=deploy : The deployment task to run (deploy, deploy:full, rollback:quick, rollback:full, etc.)}
-                            {--no-confirm : Skip deployment confirmation}';
+                            {--no-confirm : Skip deployment confirmation}
+                            {--skip-health-check : Skip health check before deployment}';
 
-    protected $description = 'Deploy the application using Deployer';
+    protected $description = 'Deploy the application using simplified action-based deployment';
 
     public function handle(): int
     {
         $environment = $this->argument('environment');
-        $task = $this->argument('task');
         $noConfirm = $this->option('no-confirm');
+        $skipHealthCheck = $this->option('skip-health-check');
 
+        // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
-        if (! in_array($environment, $validEnvironments)) {
+        if (!in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
-            $this->info('Valid environments: '.implode(', ', $validEnvironments));
-
+            $this->info('Valid environments: ' . implode(', ', $validEnvironments));
             return self::FAILURE;
         }
 
@@ -34,60 +43,118 @@ class DeployCommand extends Command
             $this->newLine();
             $this->components->warn('Please stop the Vite development server before deploying. 💡 Press Ctrl+C in the terminal where Vite is running to stop it.');
             $this->newLine();
-
             return self::FAILURE;
         }
 
-        // Build the deployer command
-        $command = [
-            'vendor/bin/dep',
-            $task,
-            $environment,
-        ];
-
-        // Add options
-        $envVars = null;
-        if ($noConfirm) {
-            // Set environment variable to skip confirmation
-            $envVars = ['DEPLOYER_NO_CONFIRM' => '1'];
-        }
-
-        $this->info("Starting deployment: {$task} to {$environment}");
-        $this->newLine();
-
-        // Execute the deployer command
-        $process = new Process($command, base_path(), $envVars, null, null);
-        $process->setTty(Process::isTtySupported());
-
         try {
-            $process->run(function ($type, $buffer) {
-                echo $buffer;
-            });
+            // Load configuration
+            $config = ConfigService::load($environment, base_path());
 
-            if ($process->isSuccessful()) {
+            // Initialize services
+            $cmdService = new CommandService($config, $this->output);
+            $deployService = new DeploymentService($config, base_path());
+            $rsyncService = new RsyncService($config, base_path(), $cmdService);
+            $diffAction = new DiffAction($cmdService, $config, base_path());
+
+            // Show deployment confirmation
+            if (!$noConfirm && !$this->confirmDeployment($config)) {
                 $this->newLine();
-                $this->info('Deployment completed successfully!');
-
-                return self::SUCCESS;
-            } else {
+                $this->comment('🛑 Deployment cancelled by user');
                 $this->newLine();
-                $this->error('Deployment failed!');
-
                 return self::FAILURE;
             }
+
+            // Health check (optional)
+            if (!$skipHealthCheck) {
+                $healthCheck = new HealthCheckAction($cmdService, $config);
+                if (!$healthCheck->check()) {
+                    $this->error('Health check failed!');
+                    $this->newLine();
+                    return self::FAILURE;
+                }
+                $this->newLine();
+            }
+
+            // Execute deployment
+            $deploy = new DeployAction($deployService, $cmdService, $rsyncService, $diffAction, $config);
+            $deploy->execute();
+
+            // Post-deployment optimization
+            $this->newLine();
+            $optimize = new OptimizeAction($cmdService, $config);
+            $optimize->execute();
+
+            // Send success notification
+            $notify = new NotificationAction($config);
+            $notify->success([
+                'environment' => $config->environment->value,
+                'release' => $deploy->getReleaseName(),
+            ]);
+
+            $this->newLine();
+            return self::SUCCESS;
+
         } catch (\Exception $e) {
-            $this->error("Deployment error: {$e->getMessage()}");
+            $this->newLine();
+            $this->error('Deployment failed!');
+            $this->error($e->getMessage());
+            $this->newLine();
+
+            // Send failure notification
+            try {
+                $config = $config ?? ConfigService::load($environment, base_path());
+                $notify = new NotificationAction($config);
+                $notify->failure($e);
+            } catch (\Exception $notifyError) {
+                // Silently fail if notification fails
+            }
 
             return self::FAILURE;
         }
     }
 
+    /**
+     * Show deployment confirmation prompt
+     */
+    private function confirmDeployment($config): bool
+    {
+        $environment = $config->environment->value;
+        $hostname = $config->hostname;
+        $deployPath = $config->deployPath;
+        $user = $config->remoteUser;
+
+        $this->newLine();
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->line('<fg=yellow>                 DEPLOYMENT CONFIRMATION</>');
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->newLine();
+        $this->line("  <info>Environment:</info>  <fg=cyan>{$environment}</>");
+        $this->line("  <info>Server:</info>       <fg=cyan>{$hostname}</>");
+        $this->line("  <info>User:</info>         <fg=cyan>{$user}</>");
+        $this->line("  <info>Deploy Path:</info>  <fg=cyan>{$deployPath}</>");
+        $this->newLine();
+
+        // Extra warning for production
+        if (strtolower($environment) === 'production' || strtolower($environment) === 'prod') {
+            $this->line('<fg=red>⚠️  WARNING: You are deploying to PRODUCTION!</>');
+            $this->newLine();
+        }
+
+        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
+        $this->newLine();
+
+        return $this->confirm('  Do you want to continue with this deployment?', true);
+    }
+
+    /**
+     * Check if Vite is running
+     */
     protected function isViteRunning(): bool
     {
         $process = new Process(['ps', 'aux']);
         $process->run();
 
-        if (! $process->isSuccessful()) {
+        if (!$process->isSuccessful()) {
             return false;
         }
 

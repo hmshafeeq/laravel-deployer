@@ -10,6 +10,13 @@ config:
     log_files: [
         'storage/logs/*.log'
     ]
+
+    # Diff and confirmation settings
+    show_diff: true                    # Show files that will be synced before deployment
+    confirm_changes: true               # Ask for confirmation before uploading changes
+    show_upload_progress: true          # Show upload progress messages
+    diff_display_limit: 20             # Maximum number of files to display per category
+
     rsync:
         exclude:
             - deploy.php

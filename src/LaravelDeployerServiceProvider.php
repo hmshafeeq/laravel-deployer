@@ -10,9 +10,9 @@ use Shaf\LaravelDeployer\Commands\DatabaseRestoreCommand;
 use Shaf\LaravelDeployer\Commands\DatabaseUploadCommand;
 use Shaf\LaravelDeployer\Commands\DeployCommand;
 use Shaf\LaravelDeployer\Commands\InstallCommand;
-use Shaf\LaravelDeployer\Commands\Logs\CheckCommand as LogsCheckCommand;
-use Shaf\LaravelDeployer\Commands\Logs\DownloadCommand as LogsDownloadCommand;
-use Shaf\LaravelDeployer\Commands\Logs\SearchCommand as LogsSearchCommand;
+use Shaf\LaravelDeployer\Commands\ProvisionCommand;
+use Shaf\LaravelDeployer\Commands\RollbackCommand;
+use Shaf\LaravelDeployer\Commands\SshKeyGenerateCommand;
 
 class LaravelDeployerServiceProvider extends ServiceProvider
 {
@@ -27,14 +27,14 @@ class LaravelDeployerServiceProvider extends ServiceProvider
             $this->commands([
                 InstallCommand::class,
                 DeployCommand::class,
+                ProvisionCommand::class,
+                RollbackCommand::class,
                 ClearCommand::class,
                 DatabaseRestoreCommand::class,
                 DatabaseBackupCommand::class,
                 DatabaseDownloadCommand::class,
                 DatabaseUploadCommand::class,
-                LogsCheckCommand::class,
-                LogsSearchCommand::class,
-                LogsDownloadCommand::class,
+                SshKeyGenerateCommand::class,
             ]);
         }
     }
