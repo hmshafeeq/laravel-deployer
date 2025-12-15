@@ -19,6 +19,10 @@ readonly class DeploymentConfig
         public array $rsyncExcludes = [],
         public array $rsyncIncludes = [],
         public ?int $port = null,
+        public bool $showDiff = true,
+        public bool $confirmChanges = true,
+        public bool $showUploadProgress = true,
+        public int $diffDisplayLimit = 20,
     ) {}
 
     public static function fromArray(string $environment, array $config, array $globalConfig = []): self
@@ -36,6 +40,10 @@ readonly class DeploymentConfig
             rsyncExcludes: $globalConfig['rsync']['exclude'] ?? [],
             rsyncIncludes: $globalConfig['rsync']['include'] ?? [],
             port: $config['port'] ?? null,
+            showDiff: $globalConfig['show_diff'] ?? $config['show_diff'] ?? true,
+            confirmChanges: $globalConfig['confirm_changes'] ?? $config['confirm_changes'] ?? true,
+            showUploadProgress: $globalConfig['show_upload_progress'] ?? $config['show_upload_progress'] ?? true,
+            diffDisplayLimit: $globalConfig['diff_display_limit'] ?? $config['diff_display_limit'] ?? 20,
         );
     }
 
