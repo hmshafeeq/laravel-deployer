@@ -7,15 +7,13 @@ use Shaf\LaravelDeployer\Actions\DatabaseAction;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 
-class DatabaseBackupCommand extends BaseDeployerCommand
+class DatabaseBackupCommand extends Command
 {
-    use ManagesEnvironmentSelection;
-
     protected $signature = 'database:backup
-                            {environment? : Environment name (staging, production, etc.)}
-                            {--select : Show available environments and select interactively}';
+                            {server? : Server name (staging, production, etc.)}
+                            {--select : Show available servers and select interactively}';
 
-    protected $description = 'Create database backup on remote environment';
+    protected $description = 'Create database backup on remote server';
 
     public function handle(): int
     {

@@ -2,15 +2,12 @@
 
 namespace Shaf\LaravelDeployer\Commands;
 
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
-use Shaf\LaravelDeployer\Commands\Traits\ManagesBackupSelection;
-use Shaf\LaravelDeployer\Support\FileHelper;
 
-class DatabaseUploadCommand extends BaseDeployerCommand
+class DatabaseUploadCommand extends Command
 {
-    use ManagesBackupSelection;
-
     protected $signature = 'database:upload
                             {backup? : The backup file to upload (optional - will prompt if not provided)}
                             {--target= : Remote server target (e.g., user@host or IP)}
@@ -21,35 +18,42 @@ class DatabaseUploadCommand extends BaseDeployerCommand
 
     protected $description = 'Upload database backup to remote server using rsync';
 
+    protected array $backups = [];
+
     public function handle(): int
     {
         $this->info('📤 Database Upload');
         $this->line('');
 
         // Check if backups directory exists
-        if (!$this->getBackupManager()->backupsDirectoryExists()) {
-            $this->displayNoBackupsError();
+        $backupsDir = base_path('.deploy/downloads/backups');
+        if (! File::exists($backupsDir)) {
+            $this->error('❌ No backups directory found.');
+            $this->info('💡 Run \'php artisan database:download\' first to download backups.');
 
             return self::FAILURE;
         }
 
-        $backups = $this->getBackupManager()->getAvailableBackups();
-        if (empty($backups)) {
-            $this->displayNoBackupsError();
+        // Get available backups
+        $this->backups = $this->getAvailableBackups($backupsDir);
+
+        if (empty($this->backups)) {
+            $this->error('❌ No database backups found in .deploy/downloads/backups/ directory.');
+            $this->info('💡 Run \'php artisan database:download\' to download backups from server.');
 
             return self::FAILURE;
         }
 
         // Handle --list option
         if ($this->option('list')) {
-            $this->displayBackups($backups);
+            $this->displayBackups();
 
             return self::SUCCESS;
         }
 
         // Get selected backup
         $selectedBackup = $this->getSelectedBackup();
-        if (!$selectedBackup) {
+        if (! $selectedBackup) {
             $this->info('ℹ️  Upload cancelled.');
 
             return self::SUCCESS;
@@ -57,19 +61,19 @@ class DatabaseUploadCommand extends BaseDeployerCommand
 
         // Get upload configuration
         $uploadConfig = $this->getUploadConfig();
-        if (!$uploadConfig) {
+        if (! $uploadConfig) {
             return self::FAILURE;
         }
 
         // Confirm upload
-        if (!$this->confirmUpload($selectedBackup, $uploadConfig)) {
+        if (! $this->confirmUpload($selectedBackup, $uploadConfig)) {
             $this->info('ℹ️  Upload cancelled.');
 
             return self::SUCCESS;
         }
 
         // Perform upload
-        if (!$this->uploadBackup($selectedBackup, $uploadConfig)) {
+        if (! $this->uploadBackup($selectedBackup, $uploadConfig)) {
             return self::FAILURE;
         }
 
@@ -88,11 +92,83 @@ class DatabaseUploadCommand extends BaseDeployerCommand
         return self::SUCCESS;
     }
 
-    /**
-     * Get upload configuration from options/prompts
-     *
-     * @return array|null Upload configuration or null on error
-     */
+    protected function getAvailableBackups(string $backupsDir): array
+    {
+        $files = File::glob($backupsDir.'/db_backup_*.sql.gz');
+
+        // Sort by modification time (newest first)
+        usort($files, function ($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+
+        return $files;
+    }
+
+    protected function displayBackups(): void
+    {
+        $this->info('📋 Available database backups:');
+        $this->line('');
+
+        foreach ($this->backups as $index => $backup) {
+            $name = basename($backup);
+            $size = $this->formatFileSize(filesize($backup));
+            $date = date('Y-m-d H:i:s', filemtime($backup));
+
+            $this->line(sprintf('   %d. %s (%s) - %s', $index + 1, $name, $size, $date));
+        }
+
+        $this->line('');
+    }
+
+    protected function getSelectedBackup(): ?string
+    {
+        // Handle --latest option
+        if ($this->option('latest')) {
+            return $this->backups[0];
+        }
+
+        // Handle backup argument
+        $backupArg = $this->argument('backup');
+        if ($backupArg) {
+            // If it's a number, treat as index
+            if (is_numeric($backupArg)) {
+                $index = (int) $backupArg - 1;
+                if (isset($this->backups[$index])) {
+                    return $this->backups[$index];
+                }
+                $this->error("❌ Invalid backup selection: {$backupArg}");
+
+                return null;
+            }
+
+            // Treat as filename
+            $backupPath = base_path('.deploy/downloads/backups/'.$backupArg);
+            if (File::exists($backupPath)) {
+                return $backupPath;
+            }
+
+            $this->error("❌ Backup file not found: {$backupArg}");
+
+            return null;
+        }
+
+        // Interactive selection
+        $this->displayBackups();
+
+        $choice = $this->ask(
+            'Enter backup number to upload (1-'.count($this->backups).') or press Enter for latest',
+            '1'
+        );
+
+        if (! is_numeric($choice) || $choice < 1 || $choice > count($this->backups)) {
+            $this->error("❌ Invalid backup selection: {$choice}");
+
+            return null;
+        }
+
+        return $this->backups[$choice - 1];
+    }
+
     protected function getUploadConfig(): ?array
     {
         $config = [
@@ -102,30 +178,30 @@ class DatabaseUploadCommand extends BaseDeployerCommand
         ];
 
         // Prompt for target if not provided
-        if (!$config['target']) {
+        if (! $config['target']) {
             $config['target'] = $this->ask('Enter remote server target (user@host or IP)');
         }
 
-        if (!$config['target']) {
+        if (! $config['target']) {
             $this->error('❌ Remote server target is required.');
 
             return null;
         }
 
         // Prompt for SSH key if not provided
-        if (!$config['key']) {
+        if (! $config['key']) {
             $defaultKey = $_SERVER['HOME'].'/.ssh/id_rsa';
             $config['key'] = $this->ask('Enter SSH key path', $defaultKey);
         }
 
-        if (!$config['key']) {
+        if (! $config['key']) {
             $this->error('❌ SSH key path is required.');
 
             return null;
         }
 
         // Validate SSH key exists
-        if (!File::exists($config['key'])) {
+        if (! File::exists($config['key'])) {
             $this->error("❌ SSH key not found: {$config['key']}");
 
             return null;
@@ -137,17 +213,10 @@ class DatabaseUploadCommand extends BaseDeployerCommand
         return $config;
     }
 
-    /**
-     * Confirm upload with user
-     *
-     * @param string $selectedBackup Path to backup file
-     * @param array $uploadConfig Upload configuration
-     * @return bool True if user confirms, false otherwise
-     */
     protected function confirmUpload(string $selectedBackup, array $uploadConfig): bool
     {
         $backupName = basename($selectedBackup);
-        $backupSize = FileHelper::formatFileSize(filesize($selectedBackup));
+        $backupSize = $this->formatFileSize(filesize($selectedBackup));
 
         $this->info("📋 Selected backup: {$backupName} ({$backupSize})");
         $this->line('');
@@ -160,13 +229,6 @@ class DatabaseUploadCommand extends BaseDeployerCommand
         return $this->confirm('Upload this backup to the remote server?', true);
     }
 
-    /**
-     * Upload backup to remote server
-     *
-     * @param string $selectedBackup Path to backup file
-     * @param array $uploadConfig Upload configuration
-     * @return bool True on success, false on failure
-     */
     protected function uploadBackup(string $selectedBackup, array $uploadConfig): bool
     {
         $backupName = basename($selectedBackup);
@@ -195,7 +257,7 @@ class DatabaseUploadCommand extends BaseDeployerCommand
                 echo $buffer;
             });
 
-        if (!$result->successful()) {
+        if (! $result->successful()) {
             $this->line('');
             $this->error('❌ Upload failed');
             if ($result->errorOutput()) {
@@ -240,5 +302,18 @@ class DatabaseUploadCommand extends BaseDeployerCommand
         }
 
         return true;
+    }
+
+    protected function formatFileSize(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $unitIndex = 0;
+
+        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
+            $bytes /= 1024;
+            $unitIndex++;
+        }
+
+        return round($bytes, 2).$units[$unitIndex];
     }
 }

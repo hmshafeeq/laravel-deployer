@@ -8,16 +8,14 @@ use Shaf\LaravelDeployer\Actions\DatabaseAction;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 
-class DatabaseDownloadCommand extends BaseDeployerCommand
+class DatabaseDownloadCommand extends Command
 {
-    use ManagesEnvironmentSelection;
-
     protected $signature = 'database:download
                             {server? : Server name (staging, production, etc.)}
                             {--latest : Download the latest backup}
                             {--select : Show available servers and select interactively}';
 
-    protected $description = 'Download database backup from remote environment';
+    protected $description = 'Download database backup from remote server';
 
     public function handle(): int
     {
@@ -29,7 +27,7 @@ class DatabaseDownloadCommand extends BaseDeployerCommand
             return self::FAILURE;
         }
 
-        $this->info("🌐 Target environment: {$environment}");
+        $this->info("🌐 Target server: {$serverName}");
         $this->line('');
 
         // Ensure backups directory exists
