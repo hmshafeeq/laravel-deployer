@@ -27,7 +27,13 @@ class RsyncService
         $this->cmdService?->info("Syncing files to release...");
 
         $source = rtrim($this->sourcePath, '/') . '/';
-        $destinationPath = "{$this->config->remoteUser}@{$this->config->hostname}:{$destination}/";
+
+        // For local deployments, use direct path; for remote, use SSH
+        if ($this->config->isLocal) {
+            $destinationPath = rtrim($destination, '/') . '/';
+        } else {
+            $destinationPath = "{$this->config->remoteUser}@{$this->config->hostname}:{$destination}/";
+        }
 
         $command = $this->buildRsyncCommand($source, $destinationPath);
 
@@ -83,8 +89,10 @@ class RsyncService
         // Add flags
         $parts[] = '-' . Commands::RSYNC_FLAGS;
 
-        // Add SSH options
-        $parts[] = "-e '" . Commands::RSYNC_SSH_OPTIONS . "'";
+        // Add SSH options only for remote deployments
+        if (!$this->config->isLocal) {
+            $parts[] = "-e '" . Commands::RSYNC_SSH_OPTIONS . "'";
+        }
 
         // Add rsync options
         foreach (Commands::RSYNC_OPTIONS as $option) {

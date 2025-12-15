@@ -126,7 +126,7 @@ class CommandService
     public function artisan(string $command, string $releasePath, array $options = [], bool $force = false): string
     {
         $optionsString = $this->buildArtisanOptions($options, $force);
-        $fullCommand = Commands::PHP_BINARY . " {$releasePath}/artisan {$command}{$optionsString}";
+        $fullCommand = "{$this->config->phpBinary} {$releasePath}/artisan {$command}{$optionsString}";
 
         $this->info("Running artisan {$command}");
 
@@ -264,6 +264,36 @@ class CommandService
                 $this->output->writeln('');
             }
         }
+    }
+
+    public function section(string $title): void
+    {
+        if ($this->shouldShowNormal()) {
+            $this->newLine();
+            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->output->writeln("<fg=cyan>  {$title}</>");
+            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->newLine();
+        }
+    }
+
+    public function write(string $message): void
+    {
+        if ($this->shouldShowNormal()) {
+            $this->output->write($message);
+        }
+    }
+
+    public function confirm(string $question, bool $default = false): bool
+    {
+        $helper = new \Symfony\Component\Console\Helper\QuestionHelper();
+        $input = new \Symfony\Component\Console\Input\ArrayInput([]);
+        $confirmQuestion = new \Symfony\Component\Console\Question\ConfirmationQuestion(
+            "{$this->prefix}{$question} " . ($default ? '[Y/n]' : '[y/N]') . ' ',
+            $default
+        );
+
+        return $helper->ask($input, $this->output, $confirmQuestion);
     }
 
     // ============================================================

@@ -4,6 +4,7 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Shaf\LaravelDeployer\Actions\DeployAction;
+use Shaf\LaravelDeployer\Actions\DiffAction;
 use Shaf\LaravelDeployer\Actions\HealthCheckAction;
 use Shaf\LaravelDeployer\Actions\NotificationAction;
 use Shaf\LaravelDeployer\Actions\OptimizeAction;
@@ -53,6 +54,7 @@ class DeployCommand extends Command
             $cmdService = new CommandService($config, $this->output);
             $deployService = new DeploymentService($config, base_path());
             $rsyncService = new RsyncService($config, base_path(), $cmdService);
+            $diffAction = new DiffAction($cmdService, $config, base_path());
 
             // Show deployment confirmation
             if (!$noConfirm && !$this->confirmDeployment($config)) {
@@ -74,7 +76,7 @@ class DeployCommand extends Command
             }
 
             // Execute deployment
-            $deploy = new DeployAction($deployService, $cmdService, $rsyncService, $config);
+            $deploy = new DeployAction($deployService, $cmdService, $rsyncService, $diffAction, $config);
             $deploy->execute();
 
             // Post-deployment optimization

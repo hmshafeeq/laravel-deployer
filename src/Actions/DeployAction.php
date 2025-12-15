@@ -219,9 +219,8 @@ class DeployAction
         $this->cmd->task("files:sync");
         $this->cmd->info("Syncing files to server...");
 
-        $destination = "{$this->config->remoteUser}@{$this->config->hostname}:{$this->releasePath}";
-
-        $this->rsync->sync($destination);
+        // For local deployments, just use the path; RsyncService handles the rest
+        $this->rsync->sync($this->releasePath);
 
         $this->cmd->success("Files synced successfully");
     }
@@ -258,6 +257,8 @@ class DeployAction
         ];
 
         foreach ($writableDirs as $dir) {
+            // Create directory if it doesn't exist (e.g., bootstrap/cache is often gitignored)
+            $this->cmd->remote("mkdir -p {$dir}");
             $this->cmd->remote("chmod -R 775 {$dir} 2>/dev/null || true");
         }
 
@@ -272,7 +273,7 @@ class DeployAction
         $this->cmd->task("composer:install");
         $this->cmd->info("Installing Composer dependencies...");
 
-        $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-dev --optimize-autoloader';
+        $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
 
         $this->cmd->remote("cd {$this->releasePath} && composer install {$composerOptions}");
 
