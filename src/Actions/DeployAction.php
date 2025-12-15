@@ -287,6 +287,10 @@ class DeployAction
     {
         $this->cmd->task("permissions:modules");
 
+        // Fix all file permissions (644 for files, 755 for directories)
+        $this->cmd->remote("find {$this->releasePath} -type f -exec chmod 644 {} \\; 2>/dev/null || true");
+        $this->cmd->remote("find {$this->releasePath} -type d -exec chmod 755 {} \\; 2>/dev/null || true");
+
         // Fix node_modules permissions if exists
         $this->cmd->remote("chmod -R 755 {$this->releasePath}/node_modules 2>/dev/null || true");
 
