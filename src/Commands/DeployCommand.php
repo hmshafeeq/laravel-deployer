@@ -30,27 +30,14 @@ class DeployCommand extends Command
 
         // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
-
         if (!in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
             $this->info('Valid environments: ' . implode(', ', $validEnvironments));
             return self::FAILURE;
         }
 
-        return true;
-    }
-
-    /**
-     * Run pre-deployment checks
-     *
-     * @return bool True if all checks pass, false otherwise
-     */
-    protected function runPreDeploymentChecks(): bool
-    {
-        $viteDetector = new ViteDetector();
-
         // Check if Vite is running
-        if ($viteDetector->isRunning()) {
+        if ($this->isViteRunning()) {
             $this->newLine();
             $this->components->error('Vite bundler is currently running!');
             $this->newLine();
@@ -167,99 +154,20 @@ class DeployCommand extends Command
         $process = new Process(['ps', 'aux']);
         $process->run();
 
-    /**
-     * Run pre-deployment health checks
-     *
-     * @return void
-     */
-    protected function runHealthChecks(): void
-    {
-        $healthCheckService = new HealthCheckService($this->deployer);
-        $healthCheckService->runPreDeployment();
-    }
+        if (!$process->isSuccessful()) {
+            return false;
+        }
 
-    /**
-     * Run main deployment phases
-     *
-     * @return void
-     */
-    protected function runDeploymentPhases(): void
-    {
-        // Prepare deployment (setup, lock, create release)
-        PrepareDeploymentAction::run($this->deployer);
+        $output = $process->getOutput();
+        $projectPath = base_path();
 
-        // Build assets locally
-        BuildAssetsLocallyAction::run($this->deployer);
+        // Look for vite processes running from this project's directory
+        foreach (explode("\n", $output) as $line) {
+            if (str_contains($line, 'node_modules/.bin/vite') && str_contains($line, $projectPath)) {
+                return true;
+            }
+        }
 
-        // Sync code to server
-        SyncCodeAction::run($this->deployer);
-
-        // Configure release (shared resources, vendors, permissions)
-        ConfigureReleaseAction::run($this->deployer);
-
-        // Optimize application (artisan commands, migrations)
-        OptimizeApplicationAction::run($this->deployer);
-
-        // Restart services
-        $this->restartServices();
-
-        // Activate release (symlink, cleanup, unlock)
-        ActivateReleaseAction::run($this->deployer);
-    }
-
-    /**
-     * Restart server services
-     *
-     * @return void
-     */
-    protected function restartServices(): void
-    {
-        $serviceRestarter = new ServiceRestarter($this->deployer);
-        $serviceRestarter->restartAll(failSilently: true);
-    }
-
-    /**
-     * Run post-deployment tasks
-     *
-     * @return void
-     */
-    protected function runPostDeploymentPhases(): void
-    {
-        // Post-deployment scripts
-        RunPostDeploymentScriptsAction::run($this->deployer);
-
-        // Health checks
-        $this->runApplicationHealthChecks();
-
-        // Link deployment metadata
-        $resourceLinker = new SharedResourceLinker($this->deployer);
-        $resourceLinker->linkDeploymentMetadata();
-
-        // Send success notification
-        SendSuccessNotificationAction::run($this->deployer);
-    }
-
-    /**
-     * Run application health checks
-     *
-     * @return void
-     */
-    protected function runApplicationHealthChecks(): void
-    {
-        $healthCheckService = new HealthCheckService($this->deployer);
-        $healthCheckService->runPostDeployment();
-    }
-
-    /**
-     * Run full deployment (with database backup)
-     *
-     * @param bool $noConfirm
-     * @return void
-     */
-    protected function runFullDeploy(bool $noConfirm): void
-    {
-        // For now, full deploy is the same as regular deploy
-        // You can add database backup tasks here later
-        $this->runDeploy($noConfirm);
+        return false;
     }
 }
