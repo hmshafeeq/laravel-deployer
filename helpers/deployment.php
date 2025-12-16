@@ -6,8 +6,7 @@
  * These are simple utility functions for common deployment operations
  * that don't fit into services or actions.
  */
-
-if (!function_exists('deployment_timestamp')) {
+if (! function_exists('deployment_timestamp')) {
     /**
      * Get current deployment timestamp in ISO 8601 format
      */
@@ -17,7 +16,7 @@ if (!function_exists('deployment_timestamp')) {
     }
 }
 
-if (!function_exists('release_name_from_timestamp')) {
+if (! function_exists('release_name_from_timestamp')) {
     /**
      * Generate a release name from a timestamp
      */
@@ -27,7 +26,7 @@ if (!function_exists('release_name_from_timestamp')) {
     }
 }
 
-if (!function_exists('format_bytes')) {
+if (! function_exists('format_bytes')) {
     /**
      * Format bytes into human-readable format
      */
@@ -39,21 +38,21 @@ if (!function_exists('format_bytes')) {
             $bytes /= 1024;
         }
 
-        return round($bytes, $precision) . ' ' . $units[$i];
+        return round($bytes, $precision).' '.$units[$i];
     }
 }
 
-if (!function_exists('deployment_lock_file')) {
+if (! function_exists('deployment_lock_file')) {
     /**
      * Get the deployment lock file path
      */
     function deployment_lock_file(string $deployPath): string
     {
-        return rtrim($deployPath, '/') . '/.dep/deploy.lock';
+        return rtrim($deployPath, '/').'/.dep/deploy.lock';
     }
 }
 
-if (!function_exists('normalize_path')) {
+if (! function_exists('normalize_path')) {
     /**
      * Normalize a path by removing trailing slashes
      */
@@ -63,17 +62,17 @@ if (!function_exists('normalize_path')) {
     }
 }
 
-if (!function_exists('build_remote_path')) {
+if (! function_exists('build_remote_path')) {
     /**
      * Build a remote path from components
      */
     function build_remote_path(string ...$parts): string
     {
-        return implode('/', array_map(fn($part) => trim($part, '/'), array_filter($parts)));
+        return implode('/', array_map(fn ($part) => trim($part, '/'), array_filter($parts)));
     }
 }
 
-if (!function_exists('escape_shell_arg_multiple')) {
+if (! function_exists('escape_shell_arg_multiple')) {
     /**
      * Escape multiple shell arguments
      */
@@ -83,7 +82,7 @@ if (!function_exists('escape_shell_arg_multiple')) {
     }
 }
 
-if (!function_exists('is_valid_release_name')) {
+if (! function_exists('is_valid_release_name')) {
     /**
      * Check if a release name is valid (timestamp format)
      */
@@ -93,13 +92,13 @@ if (!function_exists('is_valid_release_name')) {
     }
 }
 
-if (!function_exists('parse_release_timestamp')) {
+if (! function_exists('parse_release_timestamp')) {
     /**
      * Parse a release name into a timestamp
      */
     function parse_release_timestamp(string $releaseName): ?int
     {
-        if (!is_valid_release_name($releaseName)) {
+        if (! is_valid_release_name($releaseName)) {
             return null;
         }
 
@@ -114,27 +113,59 @@ if (!function_exists('parse_release_timestamp')) {
     }
 }
 
-if (!function_exists('get_release_age')) {
+if (! function_exists('get_release_age')) {
     /**
      * Get the age of a release in human-readable format
      */
     function get_release_age(string $releaseName): string
     {
         $timestamp = parse_release_timestamp($releaseName);
-        if (!$timestamp) {
+        if (! $timestamp) {
             return 'Unknown';
         }
 
         $diff = time() - $timestamp;
 
         if ($diff < 60) {
-            return $diff . ' seconds ago';
+            return $diff.' seconds ago';
         } elseif ($diff < 3600) {
-            return floor($diff / 60) . ' minutes ago';
+            return floor($diff / 60).' minutes ago';
         } elseif ($diff < 86400) {
-            return floor($diff / 3600) . ' hours ago';
+            return floor($diff / 3600).' hours ago';
         } else {
-            return floor($diff / 86400) . ' days ago';
+            return floor($diff / 86400).' days ago';
         }
+    }
+}
+
+if (! function_exists('format_duration')) {
+    /**
+     * Format a duration in seconds to human-readable format
+     */
+    function format_duration(float $seconds): string
+    {
+        if ($seconds < 1) {
+            return round($seconds * 1000).'ms';
+        }
+
+        if ($seconds < 60) {
+            return round($seconds, 1).'s';
+        }
+
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = round($seconds - ($minutes * 60));
+
+        if ($minutes < 60) {
+            return $remainingSeconds > 0
+                ? "{$minutes}m {$remainingSeconds}s"
+                : "{$minutes}m";
+        }
+
+        $hours = floor($minutes / 60);
+        $remainingMinutes = $minutes - ($hours * 60);
+
+        return $remainingMinutes > 0
+            ? "{$hours}h {$remainingMinutes}m"
+            : "{$hours}h";
     }
 }

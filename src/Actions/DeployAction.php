@@ -17,8 +17,12 @@ use Shaf\LaravelDeployer\Services\RsyncService;
 class DeployAction
 {
     private string $releaseName;
+
     private string $releasePath;
+
     private ?SyncDiff $syncDiff = null;
+
+    private float $duration = 0;
 
     public function __construct(
         private DeploymentService $deployment,
@@ -35,6 +39,8 @@ class DeployAction
      */
     public function execute(): void
     {
+        $startTime = microtime(true);
+
         $this->cmd->info("🚀 Starting deployment to {$this->config->environment->value}");
         $this->cmd->newLine();
 
@@ -49,7 +55,7 @@ class DeployAction
             $this->createRelease();
 
             // 4. Build assets locally (if not local deployment)
-            if (!$this->config->isLocal) {
+            if (! $this->config->isLocal) {
                 $this->buildAssets();
             }
 
@@ -60,7 +66,7 @@ class DeployAction
 
             // 6. Confirm changes
             if ($this->config->confirmChanges) {
-                if (!$this->confirmDeploymentChanges()) {
+                if (! $this->confirmDeploymentChanges()) {
                     throw new \Exception('Deployment cancelled by user');
                 }
             }
@@ -98,9 +104,14 @@ class DeployAction
             // 17. Run post-deployment hooks
             $this->runPostDeploymentHooks();
 
+            // Calculate total deployment time
+            $this->duration = microtime(true) - $startTime;
+            $formattedDuration = format_duration($this->duration);
+
             $this->cmd->newLine();
-            $this->cmd->success("✅ Deployment completed successfully!");
+            $this->cmd->success('✅ Deployment completed successfully!');
             $this->cmd->success("🎉 Release {$this->releaseName} is now live on {$this->config->environment->value}");
+            $this->cmd->success("⏱️  Total time: {$formattedDuration}");
 
         } finally {
             // Always unlock deployment, even if there's an error
@@ -113,10 +124,10 @@ class DeployAction
      */
     private function lockDeployment(): void
     {
-        $this->cmd->task("deployment:lock");
+        $this->cmd->task('deployment:lock');
         $this->deployment->check();
         $this->deployment->lock();
-        $this->cmd->success("Deployment locked");
+        $this->cmd->success('Deployment locked');
     }
 
     /**
@@ -124,22 +135,22 @@ class DeployAction
      */
     private function setupDeploymentStructure(): void
     {
-        $this->cmd->task("deployment:setup");
+        $this->cmd->task('deployment:setup');
 
         $deployPath = $this->config->deployPath;
 
         $directories = [
             $deployPath,
-            "{$deployPath}/" . Paths::RELEASES_DIR,
-            "{$deployPath}/" . Paths::SHARED_DIR,
-            "{$deployPath}/" . Paths::DEP_DIR,
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/app",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/framework",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/framework/cache",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/framework/sessions",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/framework/views",
-            "{$deployPath}/" . Paths::SHARED_DIR . "/storage/logs",
+            "{$deployPath}/".Paths::RELEASES_DIR,
+            "{$deployPath}/".Paths::SHARED_DIR,
+            "{$deployPath}/".Paths::DEP_DIR,
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/app',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/framework',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/framework/cache',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/framework/sessions',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/framework/views',
+            "{$deployPath}/".Paths::SHARED_DIR.'/storage/logs',
         ];
 
         foreach ($directories as $dir) {
@@ -147,9 +158,9 @@ class DeployAction
         }
 
         // Ensure .env exists in shared
-        $this->cmd->remote("touch {$deployPath}/" . Paths::SHARED_DIR . "/.env");
+        $this->cmd->remote("touch {$deployPath}/".Paths::SHARED_DIR.'/.env');
 
-        $this->cmd->success("Deployment structure ready");
+        $this->cmd->success('Deployment structure ready');
     }
 
     /**
@@ -157,7 +168,7 @@ class DeployAction
      */
     private function createRelease(): void
     {
-        $this->cmd->task("release:create");
+        $this->cmd->task('release:create');
 
         $this->releaseName = $this->deployment->generateReleaseName();
         $this->deployment->setCurrentReleaseName($this->releaseName);
@@ -174,14 +185,14 @@ class DeployAction
      */
     private function buildAssets(): void
     {
-        $this->cmd->task("assets:build");
-        $this->cmd->info("Building frontend assets...");
+        $this->cmd->task('assets:build');
+        $this->cmd->info('Building frontend assets...');
 
         try {
-            $this->cmd->local("npm run build");
-            $this->cmd->success("Assets built successfully");
+            $this->cmd->local('npm run build');
+            $this->cmd->success('Assets built successfully');
         } catch (\Exception $e) {
-            $this->cmd->warning("Asset build failed (continuing anyway): " . $e->getMessage());
+            $this->cmd->warning('Asset build failed (continuing anyway): '.$e->getMessage());
         }
     }
 
@@ -190,7 +201,8 @@ class DeployAction
      */
     private function confirmDeploymentChanges(): bool
     {
-        $diff = $this->syncDiff ?? new SyncDiff();
+        $diff = $this->syncDiff ?? new SyncDiff;
+
         return $this->diff->confirmChanges($diff);
     }
 
@@ -200,7 +212,7 @@ class DeployAction
     private function syncFilesWithProgress(): void
     {
         if ($this->config->showUploadProgress) {
-            $diff = $this->syncDiff ?? new SyncDiff();
+            $diff = $this->syncDiff ?? new SyncDiff;
             $this->diff->showUploadProgress($diff);
         }
 
@@ -216,13 +228,13 @@ class DeployAction
      */
     private function syncFiles(): void
     {
-        $this->cmd->task("files:sync");
-        $this->cmd->info("Syncing files to server...");
+        $this->cmd->task('files:sync');
+        $this->cmd->info('Syncing files to server...');
 
         // For local deployments, just use the path; RsyncService handles the rest
         $this->rsync->sync($this->releasePath);
 
-        $this->cmd->success("Files synced successfully");
+        $this->cmd->success('Files synced successfully');
     }
 
     /**
@@ -230,7 +242,7 @@ class DeployAction
      */
     private function createSharedLinks(): void
     {
-        $this->cmd->task("shared:link");
+        $this->cmd->task('shared:link');
 
         $sharedPath = $this->deployment->getSharedPath();
 
@@ -241,7 +253,7 @@ class DeployAction
         // Link .env file
         $this->cmd->remote("ln -nfs {$sharedPath}/.env {$this->releasePath}/.env");
 
-        $this->cmd->success("Shared directories linked");
+        $this->cmd->success('Shared directories linked');
     }
 
     /**
@@ -249,7 +261,7 @@ class DeployAction
      */
     private function setWritablePermissions(): void
     {
-        $this->cmd->task("permissions:writable");
+        $this->cmd->task('permissions:writable');
 
         $writableDirs = [
             "{$this->releasePath}/bootstrap/cache",
@@ -262,7 +274,7 @@ class DeployAction
             $this->cmd->remote("chmod -R 775 {$dir} 2>/dev/null || true");
         }
 
-        $this->cmd->success("Writable permissions set");
+        $this->cmd->success('Writable permissions set');
     }
 
     /**
@@ -270,14 +282,14 @@ class DeployAction
      */
     private function installComposerDependencies(): void
     {
-        $this->cmd->task("composer:install");
-        $this->cmd->info("Installing Composer dependencies...");
+        $this->cmd->task('composer:install');
+        $this->cmd->info('Installing Composer dependencies...');
 
         $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
 
         $this->cmd->remote("cd {$this->releasePath} && composer install {$composerOptions}");
 
-        $this->cmd->success("Composer dependencies installed");
+        $this->cmd->success('Composer dependencies installed');
     }
 
     /**
@@ -285,7 +297,7 @@ class DeployAction
      */
     private function fixModulePermissions(): void
     {
-        $this->cmd->task("permissions:modules");
+        $this->cmd->task('permissions:modules');
 
         // Fix all file permissions (644 for files, 755 for directories)
         $this->cmd->remote("find {$this->releasePath} -type f -exec chmod 644 {} \\; 2>/dev/null || true");
@@ -297,7 +309,7 @@ class DeployAction
         // Fix vendor permissions
         $this->cmd->remote("chmod -R 755 {$this->releasePath}/vendor 2>/dev/null || true");
 
-        $this->cmd->success("Module permissions fixed");
+        $this->cmd->success('Module permissions fixed');
     }
 
     /**
@@ -305,12 +317,12 @@ class DeployAction
      */
     private function runMigrations(): void
     {
-        $this->cmd->task("artisan:migrate");
-        $this->cmd->info("Running database migrations...");
+        $this->cmd->task('artisan:migrate');
+        $this->cmd->info('Running database migrations...');
 
         $this->cmd->artisanMigrate($this->releasePath, force: true);
 
-        $this->cmd->success("Migrations completed");
+        $this->cmd->success('Migrations completed');
     }
 
     /**
@@ -328,7 +340,7 @@ class DeployAction
      */
     private function symlinkRelease(): void
     {
-        $this->cmd->task("release:symlink");
+        $this->cmd->task('release:symlink');
 
         $currentPath = $this->deployment->getCurrentPath();
 
@@ -336,7 +348,7 @@ class DeployAction
 
         $this->deployment->writeLatestRelease($this->releaseName);
 
-        $this->cmd->success("Release symlinked as current");
+        $this->cmd->success('Release symlinked as current');
     }
 
     /**
@@ -344,7 +356,7 @@ class DeployAction
      */
     private function cleanupOldReleases(): void
     {
-        $this->cmd->task("cleanup:releases");
+        $this->cmd->task('cleanup:releases');
 
         $keepReleases = $this->config->keepReleases ?? 3;
         $deployPath = $this->config->deployPath;
@@ -353,7 +365,7 @@ class DeployAction
 
         // List releases sorted by time, skip the most recent ones, remove the rest
         $this->cmd->remote(
-            "cd {$deployPath}/releases && ls -t | tail -n +".($keepReleases + 1)." | xargs -r rm -rf"
+            "cd {$deployPath}/releases && ls -t | tail -n +".($keepReleases + 1).' | xargs -r rm -rf'
         );
 
         $remaining = trim($this->cmd->remote("ls -1 {$deployPath}/releases | wc -l"));
@@ -378,7 +390,7 @@ class DeployAction
         // Also log release info
         $releaseInfo = new ReleaseInfo(
             name: $this->releaseName,
-            createdAt: new \DateTimeImmutable(),
+            createdAt: new \DateTimeImmutable,
             user: $user,
             branch: $this->config->branch
         );
@@ -395,12 +407,12 @@ class DeployAction
         $hookScript = "{$deployPath}/.dep/post-deploy.sh";
 
         if ($this->cmd->fileExists($hookScript)) {
-            $this->cmd->task("hooks:post-deploy");
-            $this->cmd->info("Running post-deployment hooks...");
+            $this->cmd->task('hooks:post-deploy');
+            $this->cmd->info('Running post-deployment hooks...');
 
             $this->cmd->remote("bash {$hookScript}");
 
-            $this->cmd->success("Post-deployment hooks completed");
+            $this->cmd->success('Post-deployment hooks completed');
         }
     }
 
@@ -418,5 +430,21 @@ class DeployAction
     public function getReleaseName(): string
     {
         return $this->releaseName;
+    }
+
+    /**
+     * Get the deployment duration in seconds
+     */
+    public function getDuration(): float
+    {
+        return $this->duration;
+    }
+
+    /**
+     * Get the deployment duration formatted as human-readable string
+     */
+    public function getFormattedDuration(): string
+    {
+        return format_duration($this->duration);
     }
 }
