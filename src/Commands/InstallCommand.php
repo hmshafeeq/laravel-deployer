@@ -16,15 +16,15 @@ class InstallCommand extends Command
         $this->info('Installing Laravel Deployer...');
 
         $projectRoot = base_path();
-        $deployYamlPath = $projectRoot.'/deploy.yaml';
+        $deployYamlPath = $projectRoot.'/.deploy/deploy.yaml';
         $deployDirPath = $projectRoot.'/.deploy';
         $gitignorePath = $projectRoot.'/.gitignore';
 
-        // Generate deploy.yaml
-        $this->generateDeployYaml($deployYamlPath);
-
-        // Create .deploy directory structure
+        // Create .deploy directory first
         $this->createDeployDirectory($deployDirPath);
+
+        // Generate deploy.yaml inside .deploy directory
+        $this->generateDeployYaml($deployYamlPath);
 
         // Update .gitignore
         $this->updateGitignore($gitignorePath);
@@ -33,24 +33,29 @@ class InstallCommand extends Command
         $this->info('✅ Laravel Deployer has been installed successfully!');
         $this->newLine();
         $this->info('Generated files:');
-        $this->line('• deploy.yaml - Main deployment configuration (can be committed to git)');
-        $this->line('• .deploy/ - Deployment configuration directory (gitignored for security)');
-        $this->line('  ├── .env.staging.example - Example environment variables for staging');
-        $this->line('  ├── .env.production.example - Example environment variables for production');
-        $this->line('  └── .env.local.example - Example environment variables for local deployments');
+        $this->line('• .deploy/deploy.yaml - Main deployment configuration');
+        $this->line('• .deploy/.env.staging.example - Example environment variables for staging');
+        $this->line('• .deploy/.env.production.example - Example environment variables for production');
+        $this->line('• .deploy/.env.local.example - Example environment variables for local deployments');
+        $this->newLine();
+        $this->info('📌 Note: The .deploy/ directory is gitignored for security');
         $this->newLine();
         $this->info('Next steps:');
         $this->line('1. Copy example files to actual environment files:');
         $this->line('   cp .deploy/.env.staging.example .deploy/.env.staging');
         $this->line('   cp .deploy/.env.production.example .deploy/.env.production');
-        $this->line('2. Edit the .env files with your actual server details');
-        $this->line('3. Run your first deployment:');
-        $this->line('   vendor/bin/dep deploy staging');
+        $this->line('2. Edit .deploy/deploy.yaml with your server details');
+        $this->line('3. Edit the .env files with your actual server credentials');
+        $this->line('4. Run your first deployment:');
+        $this->line('   php artisan deploy staging');
         $this->newLine();
         $this->info('Available commands:');
-        $this->line('• vendor/bin/dep deploy - Full deployment with database backup');
-        $this->line('• vendor/bin/dep deploy:quick - Quick deployment without database backup');
-        $this->line('• vendor/bin/dep rollback - Rollback to previous release');
+        $this->line('• php artisan deploy <env> - Deploy to specified environment');
+        $this->line('• php artisan database:backup <env> - Backup database');
+        $this->line('• php artisan database:download <env> - Download database backup');
+        $this->line('• php artisan database:upload <backup> - Upload database backup');
+        $this->line('• php artisan database:restore <backup> - Restore local database');
+        $this->line('• php artisan deployer:clear <env> - Clear caches on server');
         $this->newLine();
 
         return self::SUCCESS;
@@ -84,7 +89,7 @@ class InstallCommand extends Command
 
         // Write the deploy.yaml file
         File::put($deployYamlPath, $stubContent);
-        $this->info('📝 deploy.yaml generated');
+        $this->info('📝 .deploy/deploy.yaml generated');
     }
 
     private function createDeployDirectory(string $deployDirPath): void
