@@ -23,7 +23,7 @@ class DatabaseDownloadCommand extends Command
         $this->line('');
 
         $serverName = $this->getServerName();
-        if (!$serverName) {
+        if (! $serverName) {
             return self::FAILURE;
         }
 
@@ -32,7 +32,7 @@ class DatabaseDownloadCommand extends Command
 
         // Ensure backups directory exists
         $backupsDir = base_path('.deploy/downloads/backups');
-        if (!File::exists($backupsDir)) {
+        if (! File::exists($backupsDir)) {
             File::makeDirectory($backupsDir, 0755, true);
             $this->info("📁 Created backups directory: {$backupsDir}");
         }
@@ -50,7 +50,7 @@ class DatabaseDownloadCommand extends Command
 
             $this->line('');
             $this->info('Downloading backup...');
-            $localFile = $backupsDir . '/' . basename($remoteFile);
+            $localFile = $backupsDir.'/'.basename($remoteFile);
             $database->download($remoteFile, $localFile);
 
             $this->line('');
@@ -83,14 +83,17 @@ class DatabaseDownloadCommand extends Command
 
             if (empty($servers)) {
                 $this->error('No servers configured in deploy.yaml');
+
                 return null;
             }
 
             $serverName = $this->choice('Select a server', $servers);
+
             return $serverName;
         }
 
         $this->error('Please provide a server name or use --select option');
+
         return null;
     }
 }

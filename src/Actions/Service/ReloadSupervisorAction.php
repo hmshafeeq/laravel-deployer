@@ -8,15 +8,15 @@ class ReloadSupervisorAction extends ServiceAction
 {
     public function execute(): void
     {
-        $this->writeln("🔄 Reloading Supervisor...");
+        $this->writeln('🔄 Reloading Supervisor...');
 
-        $this->writeln("run sudo supervisorctl reload");
-        $result = $this->cmd("sudo supervisorctl reload");
+        $this->writeln('run sudo supervisorctl reload');
+        $result = $this->cmd('sudo supervisorctl reload');
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->writeln($result);
         }
 
-        $this->writeln("✅ Supervisor reloaded");
+        $this->writeln('✅ Supervisor reloaded');
     }
 }

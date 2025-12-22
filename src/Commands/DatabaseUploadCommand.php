@@ -293,7 +293,7 @@ class DatabaseUploadCommand extends Command
             $localSize = filesize($selectedBackup);
 
             if ($remoteSize === $localSize) {
-                $this->info("✓ File size verified: ".number_format($localSize).' bytes');
+                $this->info('✓ File size verified: '.number_format($localSize).' bytes');
             } else {
                 $this->warn("⚠ File size mismatch - Local: {$localSize}, Remote: {$remoteSize}");
             }

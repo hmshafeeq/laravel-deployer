@@ -8,7 +8,7 @@ beforeEach(function () {
     $this->deployPath = base_path('.deploy');
     $this->buildPath = $this->deployPath.'/builds';
 
-    if (!is_dir($this->deployPath)) {
+    if (! is_dir($this->deployPath)) {
         mkdir($this->deployPath, 0755, true);
     }
 
@@ -36,7 +36,7 @@ beforeEach(function () {
     );
 
     // Create test .env file with database config
-    $envContent = <<<ENV
+    $envContent = <<<'ENV'
 APP_NAME=TestApp
 APP_ENV=testing
 DB_CONNECTION=mysql

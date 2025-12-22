@@ -22,6 +22,7 @@ class ConfigService
     public static function load(string $environment, string $basePath): DeploymentConfig
     {
         $service = new self($basePath);
+
         return $service->loadConfig($environment);
     }
 
@@ -65,8 +66,8 @@ class ConfigService
     private function findConfigFile(): string
     {
         $locations = [
-            $this->basePath . '/.deploy/deploy.yaml',
-            $this->basePath . '/deploy.yaml',
+            $this->basePath.'/.deploy/deploy.yaml',
+            $this->basePath.'/deploy.yaml',
         ];
 
         foreach ($locations as $path) {
@@ -97,7 +98,7 @@ class ConfigService
      */
     private function validateEnvironment(string $environment, array $yaml): void
     {
-        if (!isset($yaml['hosts'][$environment])) {
+        if (! isset($yaml['hosts'][$environment])) {
             $available = array_keys($yaml['hosts'] ?? []);
             throw ConfigurationException::environmentNotFound($environment, $available);
         }

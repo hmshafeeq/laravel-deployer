@@ -28,10 +28,10 @@ class ClearCommand extends Command
             $factory->createForEnvironment($environment);
 
             // Show confirmation for non-local environments
-            if (!$factory->getConfig()->isLocal && !$noConfirm) {
+            if (! $factory->getConfig()->isLocal && ! $noConfirm) {
                 $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
 
-                if (!$this->confirm('Do you want to continue?', false)) {
+                if (! $this->confirm('Do you want to continue?', false)) {
                     $this->info('Operation cancelled.');
 
                     return self::SUCCESS;
@@ -69,7 +69,7 @@ class ClearCommand extends Command
             $this->info($results['queue'] ? '  ✓ Queue workers restarted' : '  ⚠ Queue restart failed');
 
             // Restart PHP-FPM (if not local)
-            if (!$factory->getConfig()->isLocal) {
+            if (! $factory->getConfig()->isLocal) {
                 $this->newLine();
                 $this->info('🔄 Restarting PHP-FPM...');
 

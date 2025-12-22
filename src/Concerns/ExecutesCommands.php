@@ -41,7 +41,7 @@ trait ExecutesCommands
      */
     protected function directoryIsEmpty(string $path): bool
     {
-        return !$this->test("[ -d {$path} ] && [ \"\$(ls -A {$path})\" ]");
+        return ! $this->test("[ -d {$path} ] && [ \"\$(ls -A {$path})\" ]");
     }
 
     /**

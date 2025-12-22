@@ -19,9 +19,9 @@ abstract class HealthCheckAction extends Action
     /**
      * Check if a value exceeds a threshold
      *
-     * @param float $value Current value
-     * @param float $threshold Threshold value
-     * @param bool $higherIsBad If true, values above threshold are bad
+     * @param  float  $value  Current value
+     * @param  float  $threshold  Threshold value
+     * @param  bool  $higherIsBad  If true, values above threshold are bad
      * @return bool True if threshold is exceeded
      */
     protected function exceedsThreshold(float $value, float $threshold, bool $higherIsBad = true): bool
@@ -32,10 +32,10 @@ abstract class HealthCheckAction extends Action
     /**
      * Determine health status based on thresholds
      *
-     * @param float $value Current value
-     * @param float $warningThreshold Warning threshold
-     * @param float $criticalThreshold Critical threshold
-     * @param bool $higherIsBad If true, higher values are worse
+     * @param  float  $value  Current value
+     * @param  float  $warningThreshold  Warning threshold
+     * @param  float  $criticalThreshold  Critical threshold
+     * @param  bool  $higherIsBad  If true, higher values are worse
      * @return string 'ok', 'warning', or 'critical'
      */
     protected function determineStatus(
@@ -58,21 +58,20 @@ abstract class HealthCheckAction extends Action
     /**
      * Write health check result with appropriate styling
      *
-     * @param string $check Name of the check
-     * @param string $status Status ('ok', 'warning', 'critical')
-     * @param string $details Additional details
-     * @return void
+     * @param  string  $check  Name of the check
+     * @param  string  $status  Status ('ok', 'warning', 'critical')
+     * @param  string  $details  Additional details
      */
     protected function writeHealthCheckResult(string $check, string $status, string $details = ''): void
     {
-        $icon = match($status) {
+        $icon = match ($status) {
             'ok' => '✓',
             'warning' => '⚠',
             'critical' => '✗',
             default => '•',
         };
 
-        $style = match($status) {
+        $style = match ($status) {
             'ok' => 'info',
             'warning' => 'comment',
             'critical' => 'error',
@@ -92,19 +91,20 @@ abstract class HealthCheckAction extends Action
      *
      * Extracts numeric percentage value from strings like "85%" or "85.5%"
      *
-     * @param string $value String containing percentage
+     * @param  string  $value  String containing percentage
      * @return float Percentage as float
      */
     protected function parsePercentage(string $value): float
     {
         preg_match('/(\d+\.?\d*)/', $value, $matches);
-        return isset($matches[1]) ? (float)$matches[1] : 0.0;
+
+        return isset($matches[1]) ? (float) $matches[1] : 0.0;
     }
 
     /**
      * Get configured health check thresholds from config
      *
-     * @param string $type Type of check (disk, memory, etc.)
+     * @param  string  $type  Type of check (disk, memory, etc.)
      * @return array{warning: int, critical: int}
      */
     protected function getThresholds(string $type): array
@@ -120,18 +120,18 @@ abstract class HealthCheckAction extends Action
     /**
      * Format bytes to human-readable format
      *
-     * @param int $bytes Number of bytes
-     * @param int $precision Decimal places
+     * @param  int  $bytes  Number of bytes
+     * @param  int  $precision  Decimal places
      * @return string Formatted string (e.g., "1.5 GB")
      */
     protected function formatBytes(int $bytes, int $precision = 2): string
     {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        
+
         for ($i = 0; $bytes >= 1024 && $i < count($units) - 1; $i++) {
             $bytes /= 1024;
         }
 
-        return round($bytes, $precision) . ' ' . $units[$i];
+        return round($bytes, $precision).' '.$units[$i];
     }
 }

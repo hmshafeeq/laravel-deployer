@@ -14,6 +14,7 @@ class ConfigurationException extends Exception
     public static function environmentNotFound(string $environment, array $available): self
     {
         $availableList = implode(', ', $available);
+
         return new self(
             "Environment '{$environment}' not found in deploy.yaml. Available: {$availableList}"
         );

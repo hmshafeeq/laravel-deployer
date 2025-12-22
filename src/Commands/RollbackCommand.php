@@ -33,19 +33,22 @@ class RollbackCommand extends Command
             $current = $deployService->getCurrentRelease();
             $previous = $deployService->getPreviousRelease();
 
-            if (!$current) {
+            if (! $current) {
                 $this->error('❌ No current release found');
+
                 return self::FAILURE;
             }
 
-            if (!$previous) {
+            if (! $previous) {
                 $this->error('❌ No previous release available for rollback');
+
                 return self::FAILURE;
             }
 
             // Show rollback confirmation
-            if (!$noConfirm && !$this->confirmRollback($environment, $current, $previous)) {
+            if (! $noConfirm && ! $this->confirmRollback($environment, $current, $previous)) {
                 $this->info('Rollback cancelled.');
+
                 return self::SUCCESS;
             }
 

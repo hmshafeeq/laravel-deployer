@@ -15,8 +15,6 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
 {
     /**
      * Create a new RunPostDeploymentScriptsAction instance
-     *
-     * @param Deployer $deployer
      */
     public function __construct(
         protected Deployer $deployer
@@ -26,8 +24,6 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
 
     /**
      * Execute post-deployment scripts
-     *
-     * @return void
      */
     public function execute(): void
     {
@@ -40,10 +36,6 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
 
     /**
      * Publish log viewer assets
-     *
-     * @param string $currentPath
-     * @param string $phpPath
-     * @return void
      */
     protected function publishLogViewerAssets(string $currentPath, string $phpPath): void
     {
@@ -54,22 +46,19 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
         try {
             $result = $this->cmd($command);
 
-            if (!empty($result)) {
+            if (! empty($result)) {
                 $lines = explode("\n", trim($result));
                 foreach ($lines as $line) {
                     $this->writeln($line);
                 }
             }
         } catch (\Exception $e) {
-            $this->writeln("⚠ Failed to publish log viewer assets", 'comment');
+            $this->writeln('⚠ Failed to publish log viewer assets', 'comment');
         }
     }
 
     /**
      * Run custom post-deployment script
-     *
-     * @param string $currentPath
-     * @return void
      */
     protected function runCustomPostDeploymentScript(string $currentPath): void
     {
@@ -78,7 +67,7 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
         // Check if script exists
         $exists = $this->deployer->test("[ -f {$scriptPath} ]");
 
-        if (!$exists) {
+        if (! $exists) {
             return;
         }
 
@@ -88,14 +77,14 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
         try {
             $result = $this->cmd($command);
 
-            if (!empty($result)) {
+            if (! empty($result)) {
                 $lines = explode("\n", trim($result));
                 foreach ($lines as $line) {
                     $this->writeln($line);
                 }
             }
         } catch (\Exception $e) {
-            $this->writeln("⚠ Post-deployment script failed", 'comment');
+            $this->writeln('⚠ Post-deployment script failed', 'comment');
         }
     }
 }

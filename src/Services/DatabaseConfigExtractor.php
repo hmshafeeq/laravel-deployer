@@ -16,7 +16,7 @@ class DatabaseConfigExtractor
      */
     public function extract(string $currentPath): DatabaseConfig
     {
-        $this->deployer->writeln("🔍 Getting database configuration...");
+        $this->deployer->writeln('🔍 Getting database configuration...');
 
         $connection = $this->getConfigValue($currentPath, 'database.default');
 
@@ -56,15 +56,15 @@ class DatabaseConfigExtractor
      */
     private function validate(array $config): void
     {
-        if (empty($config['host']) || !preg_match('/^[a-zA-Z0-9.-]+$/', $config['host'])) {
+        if (empty($config['host']) || ! preg_match('/^[a-zA-Z0-9.-]+$/', $config['host'])) {
             throw new \RuntimeException("Invalid database host: {$config['host']}");
         }
 
-        if (empty($config['database']) || !preg_match('/^[a-zA-Z0-9_]+$/', $config['database'])) {
+        if (empty($config['database']) || ! preg_match('/^[a-zA-Z0-9_]+$/', $config['database'])) {
             throw new \RuntimeException("Invalid database name: {$config['database']}");
         }
 
-        if (empty($config['username']) || !preg_match('/^[a-zA-Z0-9_@.-]+$/', $config['username'])) {
+        if (empty($config['username']) || ! preg_match('/^[a-zA-Z0-9_@.-]+$/', $config['username'])) {
             throw new \RuntimeException("Invalid database user: {$config['username']}");
         }
 

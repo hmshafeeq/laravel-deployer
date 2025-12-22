@@ -15,8 +15,6 @@ class RestartQueueWorkersAction extends Action
 {
     /**
      * Create a new RestartQueueWorkersAction instance
-     *
-     * @param Deployer $deployer
      */
     public function __construct(
         protected Deployer $deployer
@@ -24,8 +22,6 @@ class RestartQueueWorkersAction extends Action
 
     /**
      * Execute the queue restart operation
-     *
-     * @return void
      */
     public function execute(): void
     {

@@ -24,13 +24,14 @@ class DiffAction
      */
     public function show(): SyncDiff
     {
-        $this->cmd->section("SYNC DIFFERENCE - FILES TO DEPLOY");
+        $this->cmd->section('SYNC DIFFERENCE - FILES TO DEPLOY');
 
         $diff = $this->calculateDiff();
 
         if ($diff->isEmpty()) {
-            $this->cmd->info("  ✨ No changes detected - everything is already in sync!");
+            $this->cmd->info('  ✨ No changes detected - everything is already in sync!');
             $this->cmd->newLine();
+
             return $diff;
         }
 
@@ -65,9 +66,9 @@ class DiffAction
      */
     public function showUploadProgress(SyncDiff $diff): void
     {
-        $this->cmd->section("UPLOADING FILES TO SERVER");
+        $this->cmd->section('UPLOADING FILES TO SERVER');
 
-        if (!$diff->isEmpty()) {
+        if (! $diff->isEmpty()) {
             $this->cmd->info("  Uploading {$diff->totalCount()} file(s)...");
             $this->cmd->newLine();
         }
@@ -79,7 +80,7 @@ class DiffAction
     public function showUploadComplete(): void
     {
         $this->cmd->newLine();
-        $this->cmd->success("  Files uploaded successfully!");
+        $this->cmd->success('  Files uploaded successfully!');
         $this->cmd->newLine();
     }
 
@@ -88,7 +89,7 @@ class DiffAction
      */
     private function calculateDiff(): SyncDiff
     {
-        $source = rtrim($this->sourcePath, '/') . '/';
+        $source = rtrim($this->sourcePath, '/').'/';
         $tempDir = trim($this->cmd->local('mktemp -d'));
 
         try {
@@ -125,7 +126,7 @@ class DiffAction
         $parts[] = "'{$source}/'";
         $parts[] = "'{$destination}/'";
 
-        return implode(' ', $parts) . " 2>&1 | grep -E '^(deleting |>f|>d|cd)' || echo ''";
+        return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |>f|>d|cd)' || echo ''";
     }
 
     /**
@@ -141,11 +142,13 @@ class DiffAction
 
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
 
             if (str_starts_with($line, 'deleting ')) {
                 $file = substr($line, 9);
-                if (!str_ends_with($file, '/')) {
+                if (! str_ends_with($file, '/')) {
                     $deletedFiles[] = $file;
                 }
             } elseif (preg_match('/^>f\+{9}\s+(.+)$/', $line, $matches)) {

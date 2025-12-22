@@ -24,7 +24,7 @@ class ViteDetector
         $process = Process::fromShellCommandline('ps aux');
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             return false;
         }
 
@@ -44,9 +44,8 @@ class ViteDetector
     /**
      * Check if a process line represents a Vite process for this project
      *
-     * @param string $processLine A line from ps aux output
-     * @param string $projectPath The project base path
-     * @return bool
+     * @param  string  $processLine  A line from ps aux output
+     * @param  string  $projectPath  The project base path
      */
     protected function isViteProcess(string $processLine, string $projectPath): bool
     {

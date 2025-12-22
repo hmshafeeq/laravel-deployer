@@ -10,7 +10,7 @@ class FileHelper
      * Converts bytes to the most appropriate unit (B, KB, MB, GB)
      * and returns a formatted string with 2 decimal places.
      *
-     * @param int $bytes File size in bytes
+     * @param  int  $bytes  File size in bytes
      * @return string Formatted file size (e.g., "1.23 MB")
      */
     public static function formatFileSize(int $bytes): string

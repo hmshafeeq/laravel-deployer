@@ -22,18 +22,19 @@ class HealthCheckAction
      */
     public function check(): bool
     {
-        $this->cmd->task("health:check");
+        $this->cmd->task('health:check');
 
         $resourcesOk = $this->checkServerResources();
         $endpointsOk = true;
 
         // Check endpoints if configured
-        if (!empty($this->config->healthCheckEndpoints)) {
+        if (! empty($this->config->healthCheckEndpoints)) {
             $endpointsOk = $this->checkEndpoints($this->config->healthCheckEndpoints);
         }
 
         if ($resourcesOk && $endpointsOk) {
-            $this->cmd->success("All health checks passed");
+            $this->cmd->success('All health checks passed');
+
             return true;
         }
 
@@ -45,7 +46,7 @@ class HealthCheckAction
      */
     public function checkServerResources(): bool
     {
-        $this->cmd->info("Checking server resources...");
+        $this->cmd->info('Checking server resources...');
 
         try {
             // Check disk space
@@ -73,11 +74,13 @@ class HealthCheckAction
                 $this->cmd->warning("⚠️  Memory usage is very high: {$memUsage}%");
             }
 
-            $this->cmd->success("Server resources check passed");
+            $this->cmd->success('Server resources check passed');
+
             return true;
 
         } catch (\Exception $e) {
-            $this->cmd->error("Server resources check failed: " . $e->getMessage());
+            $this->cmd->error('Server resources check failed: '.$e->getMessage());
+
             return false;
         }
     }
@@ -87,7 +90,7 @@ class HealthCheckAction
      */
     public function checkEndpoints(array $endpoints): bool
     {
-        $this->cmd->info("Checking HTTP endpoints...");
+        $this->cmd->info('Checking HTTP endpoints...');
 
         $allPassed = true;
 
@@ -107,15 +110,15 @@ class HealthCheckAction
                 }
 
             } catch (\Exception $e) {
-                $this->cmd->error("✗ Failed to check {$url}: " . $e->getMessage());
+                $this->cmd->error("✗ Failed to check {$url}: ".$e->getMessage());
                 $allPassed = false;
             }
         }
 
         if ($allPassed) {
-            $this->cmd->success("All endpoint checks passed");
+            $this->cmd->success('All endpoint checks passed');
         } else {
-            $this->cmd->error("Some endpoint checks failed");
+            $this->cmd->error('Some endpoint checks failed');
         }
 
         return $allPassed;

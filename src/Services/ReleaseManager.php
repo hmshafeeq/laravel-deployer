@@ -50,7 +50,7 @@ class ReleaseManager
             'created_at' => $timestamp,
             'release_name' => $releaseName,
             'user' => $user,
-            'target' => $branch
+            'target' => $branch,
         ]);
 
         $this->deployer->writeln("run cd {$deployPath} && (echo '{$logEntry}' >> .dep/releases_log)");
@@ -67,7 +67,7 @@ class ReleaseManager
 
         // Check if releases directory exists
         $exists = $this->deployer->test("[ -d {$releasesPath} ]");
-        if (!$exists) {
+        if (! $exists) {
             return [];
         }
 
@@ -93,7 +93,7 @@ class ReleaseManager
 
         // Check if current symlink exists
         $exists = $this->deployer->test("[ -L {$currentPath} ]");
-        if (!$exists) {
+        if (! $exists) {
             return null;
         }
 
@@ -117,20 +117,20 @@ class ReleaseManager
         // Check if release symlink exists
         $this->deployer->writeln("run cd {$deployPath} && (if [ -h release ]; then echo +yes; fi)");
         $result = $this->deployer->run("cd {$deployPath} && (if [ -h release ]; then echo +yes; fi)");
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
         }
 
         // Check if releases directory has content
         $this->deployer->writeln("run cd {$deployPath} && (if [ -d releases ] && [ \"$(ls -A releases)\" ]; then echo +true; fi)");
         $hasReleases = $this->deployer->run("cd {$deployPath} && (if [ -d releases ] && [ \"$(ls -A releases)\" ]; then echo +true; fi)");
-        if (!empty($hasReleases)) {
+        if (! empty($hasReleases)) {
             $this->deployer->writeln($hasReleases);
 
             // List existing releases
             $this->deployer->writeln("run cd {$deployPath} && (cd releases && ls -t -1 -d */)");
             $releases = $this->deployer->run("cd {$deployPath} && (cd releases && ls -t -1 -d */)");
-            if (!empty($releases)) {
+            if (! empty($releases)) {
                 $lines = explode("\n", trim($releases));
                 foreach ($lines as $line) {
                     $this->deployer->writeln($line);
@@ -141,13 +141,13 @@ class ReleaseManager
         // Check if releases_log exists
         $this->deployer->writeln("run cd {$deployPath} && (if [ -f .dep/releases_log ]; then echo +true; fi)");
         $hasLog = $this->deployer->run("cd {$deployPath} && (if [ -f .dep/releases_log ]; then echo +true; fi)");
-        if (!empty($hasLog)) {
+        if (! empty($hasLog)) {
             $this->deployer->writeln($hasLog);
 
             // Show last releases from log
             $this->deployer->writeln("run cd {$deployPath} && (tail -n 300 .dep/releases_log)");
             $log = $this->deployer->run("cd {$deployPath} && (tail -n 300 .dep/releases_log)");
-            if (!empty($log)) {
+            if (! empty($log)) {
                 $lines = explode("\n", trim($log));
                 foreach ($lines as $line) {
                     $this->deployer->writeln($line);
@@ -169,7 +169,7 @@ class ReleaseManager
 
         // Get list of releases sorted by time, keep only the specified number
         $releases = $this->deployer->run("cd {$deployPath}/releases && ls -t -1 -d */ | tail -n +".($keepCount + 1));
-        if (!empty($releases)) {
+        if (! empty($releases)) {
             $releasesToDelete = explode("\n", trim($releases));
             foreach ($releasesToDelete as $release) {
                 $release = trim($release, '/');

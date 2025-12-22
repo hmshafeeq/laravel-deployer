@@ -44,8 +44,9 @@ class SystemCommandDetector
         $this->deployer->writeln("run {$command}");
         $result = $this->deployer->run($command);
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
+
             return trim($result);
         }
 
@@ -62,8 +63,9 @@ class SystemCommandDetector
 
         $result = $this->deployer->run($command);
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
+
             return true;
         }
 
@@ -75,11 +77,12 @@ class SystemCommandDetector
      */
     public function hasUnzip(): bool
     {
-        $result = $this->deployer->run("if hash unzip 2>/dev/null; then echo +accurate; fi");
-        $this->deployer->writeln("run if hash unzip 2>/dev/null; then echo +accurate; fi");
+        $result = $this->deployer->run('if hash unzip 2>/dev/null; then echo +accurate; fi');
+        $this->deployer->writeln('run if hash unzip 2>/dev/null; then echo +accurate; fi');
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
+
             return true;
         }
 
@@ -91,11 +94,12 @@ class SystemCommandDetector
      */
     public function hasComposer(): bool
     {
-        $result = $this->deployer->run("if hash composer 2>/dev/null; then echo +indeed; fi");
-        $this->deployer->writeln("run if hash composer 2>/dev/null; then echo +indeed; fi");
+        $result = $this->deployer->run('if hash composer 2>/dev/null; then echo +indeed; fi');
+        $this->deployer->writeln('run if hash composer 2>/dev/null; then echo +indeed; fi');
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
+
             return true;
         }
 

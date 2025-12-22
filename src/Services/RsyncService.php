@@ -11,6 +11,7 @@ use Symfony\Component\Process\Process;
 class RsyncService
 {
     private array $excludes = [];
+
     private array $includes = [];
 
     public function __construct(
@@ -24,13 +25,13 @@ class RsyncService
 
     public function sync(string $destination): void
     {
-        $this->cmdService?->info("Syncing files to release...");
+        $this->cmdService?->info('Syncing files to release...');
 
-        $source = rtrim($this->sourcePath, '/') . '/';
+        $source = rtrim($this->sourcePath, '/').'/';
 
         // For local deployments, use direct path; for remote, use SSH
         if ($this->config->isLocal) {
-            $destinationPath = rtrim($destination, '/') . '/';
+            $destinationPath = rtrim($destination, '/').'/';
         } else {
             $destinationPath = "{$this->config->remoteUser}@{$this->config->hostname}:{$destination}/";
         }
@@ -43,23 +44,23 @@ class RsyncService
         $process->setTimeout(Timeouts::RSYNC);
 
         $process->run(function ($type, $buffer) {
-            if (Process::ERR === $type) {
+            if ($type === Process::ERR) {
                 $this->cmdService?->error($buffer);
             } else {
                 $lines = explode("\n", $buffer);
                 foreach ($lines as $line) {
-                    if (!empty(trim($line)) && !$this->isDirectoryLine($line)) {
+                    if (! empty(trim($line)) && ! $this->isDirectoryLine($line)) {
                         $this->cmdService?->line($line);
                     }
                 }
             }
         });
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             throw RsyncException::failed($process->getErrorOutput());
         }
 
-        $this->cmdService?->success("Files synced successfully");
+        $this->cmdService?->success('Files synced successfully');
     }
 
     public function setExcludes(array $excludes): void
@@ -87,11 +88,11 @@ class RsyncService
         $parts = ['rsync'];
 
         // Add flags
-        $parts[] = '-' . Commands::RSYNC_FLAGS;
+        $parts[] = '-'.Commands::RSYNC_FLAGS;
 
         // Add SSH options only for remote deployments
-        if (!$this->config->isLocal) {
-            $parts[] = "-e '" . Commands::RSYNC_SSH_OPTIONS . "'";
+        if (! $this->config->isLocal) {
+            $parts[] = "-e '".Commands::RSYNC_SSH_OPTIONS."'";
         }
 
         // Add rsync options

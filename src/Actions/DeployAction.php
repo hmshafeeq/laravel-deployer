@@ -106,7 +106,7 @@ class DeployAction
 
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
-            $formattedDuration = $this->formatDuration($this->duration);
+            $formattedDuration = \format_duration($this->duration);
 
             $this->cmd->newLine();
             $this->cmd->success('✅ Deployment completed successfully!');
@@ -445,21 +445,6 @@ class DeployAction
      */
     public function getFormattedDuration(): string
     {
-        return $this->formatDuration($this->duration);
-    }
-
-    /**
-     * Format duration in seconds to human-readable string
-     */
-    private function formatDuration(float $seconds): string
-    {
-        if ($seconds < 60) {
-            return sprintf('%.1fs', $seconds);
-        }
-
-        $minutes = (int) floor($seconds / 60);
-        $remainingSeconds = $seconds - ($minutes * 60);
-
-        return sprintf('%dm %.1fs', $minutes, $remainingSeconds);
+        return \format_duration($this->duration);
     }
 }

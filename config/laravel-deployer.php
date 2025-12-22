@@ -145,7 +145,7 @@ return [
             'info' => "\033[32m",    // green
             'comment' => "\033[33m", // yellow
             'error' => "\033[31m",   // red
-            'plain' => "",
+            'plain' => '',
         ],
         'reset' => "\033[0m",
     ],

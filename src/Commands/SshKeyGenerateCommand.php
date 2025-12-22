@@ -16,14 +16,15 @@ class SshKeyGenerateCommand extends Command
     protected $description = 'Generate SSH key pair for deployment and optionally copy to server';
 
     private string $sshDir;
+
     private string $defaultKeyPath;
 
     public function __construct()
     {
         parent::__construct();
 
-        $this->sshDir = $_SERVER['HOME'] . '/.ssh';
-        $this->defaultKeyPath = $this->sshDir . '/id_rsa';
+        $this->sshDir = $_SERVER['HOME'].'/.ssh';
+        $this->defaultKeyPath = $this->sshDir.'/id_rsa';
     }
 
     public function handle(): int
@@ -36,17 +37,18 @@ class SshKeyGenerateCommand extends Command
 
         // Get email (required for key generation)
         $email = $this->argument('email');
-        if (!$email) {
+        if (! $email) {
             $email = $this->ask('Enter your email address for the SSH key', config('mail.from.address'));
         }
 
-        if (!$email) {
+        if (! $email) {
             $this->error('❌ Email address is required for SSH key generation.');
+
             return self::FAILURE;
         }
 
         // Check if default key already exists
-        if (!$this->option('force') && File::exists($this->defaultKeyPath . '.pub')) {
+        if (! $this->option('force') && File::exists($this->defaultKeyPath.'.pub')) {
             return $this->handleExistingKey($email);
         }
 
@@ -56,7 +58,7 @@ class SshKeyGenerateCommand extends Command
 
     protected function ensureSshDirectory(): void
     {
-        if (!File::exists($this->sshDir)) {
+        if (! File::exists($this->sshDir)) {
             File::makeDirectory($this->sshDir, 0700, true);
             $this->info("✅ Created .ssh directory: {$this->sshDir}");
             $this->line('');
@@ -80,9 +82,9 @@ class SshKeyGenerateCommand extends Command
         );
 
         return match ($choice) {
-            'show' => $this->showPublicKey($this->defaultKeyPath . '.pub'),
+            'show' => $this->showPublicKey($this->defaultKeyPath.'.pub'),
             'generate' => $this->generateNewKey($email),
-            'copy' => $this->copyKeyToServer($this->defaultKeyPath . '.pub'),
+            'copy' => $this->copyKeyToServer($this->defaultKeyPath.'.pub'),
             default => self::SUCCESS,
         };
     }
@@ -94,16 +96,17 @@ class SshKeyGenerateCommand extends Command
 
         // Get custom key name if provided
         $keyName = $this->option('name');
-        if (!$keyName) {
+        if (! $keyName) {
             $keyName = $this->ask('Enter a name for the new key pair (default is id_rsa)', 'id_rsa');
         }
 
-        $keyPath = $this->sshDir . '/' . $keyName;
+        $keyPath = $this->sshDir.'/'.$keyName;
 
         // Check if custom key already exists
         if (File::exists($keyPath)) {
-            if (!$this->confirm("Key {$keyName} already exists. Overwrite?", false)) {
+            if (! $this->confirm("Key {$keyName} already exists. Overwrite?", false)) {
                 $this->info('ℹ️  Key generation cancelled.');
+
                 return self::SUCCESS;
             }
         }
@@ -119,9 +122,10 @@ class SshKeyGenerateCommand extends Command
 
         $result = Process::run($command);
 
-        if (!$result->successful()) {
+        if (! $result->successful()) {
             $this->error('❌ Failed to generate SSH key pair:');
             $this->line($result->errorOutput());
+
             return self::FAILURE;
         }
 
@@ -130,11 +134,11 @@ class SshKeyGenerateCommand extends Command
         $this->line('');
 
         // Display the public key
-        $this->showPublicKey($keyPath . '.pub');
+        $this->showPublicKey($keyPath.'.pub');
 
         // Offer to copy to server
         if ($this->confirm('Would you like to copy this key to a deployment server?', false)) {
-            return $this->copyKeyToServer($keyPath . '.pub');
+            return $this->copyKeyToServer($keyPath.'.pub');
         }
 
         return self::SUCCESS;
@@ -142,8 +146,9 @@ class SshKeyGenerateCommand extends Command
 
     protected function showPublicKey(string $publicKeyPath): int
     {
-        if (!File::exists($publicKeyPath)) {
+        if (! File::exists($publicKeyPath)) {
             $this->error("❌ Public key not found: {$publicKeyPath}");
+
             return self::FAILURE;
         }
 
@@ -160,7 +165,7 @@ class SshKeyGenerateCommand extends Command
         $this->line('');
         $this->line('   1. Copy the key above to your deployment server');
         $this->line('   2. Add it to ~/.ssh/authorized_keys on the server');
-        $this->line('   3. Or use: ssh-copy-id -i ' . $publicKeyPath . ' user@server');
+        $this->line('   3. Or use: ssh-copy-id -i '.$publicKeyPath.' user@server');
         $this->line('');
         $this->comment('   For GitHub/GitLab/Bitbucket:');
         $this->line('   • Add this key to your repository deploy keys');
@@ -183,7 +188,7 @@ class SshKeyGenerateCommand extends Command
         // Load deploy configurations to suggest servers
         $suggestedServers = $this->getSuggestedServers();
 
-        if (!empty($suggestedServers)) {
+        if (! empty($suggestedServers)) {
             $this->info('💡 Available deployment servers from your configuration:');
             foreach ($suggestedServers as $env => $server) {
                 $this->line("   • {$env}: {$server['user']}@{$server['hostname']}");
@@ -193,14 +198,16 @@ class SshKeyGenerateCommand extends Command
 
         // Get server details
         $hostname = $this->ask('Enter server hostname or IP address');
-        if (!$hostname) {
+        if (! $hostname) {
             $this->info('ℹ️  Cancelled.');
+
             return self::SUCCESS;
         }
 
         $username = $this->ask('Enter username for the server', 'deploy');
-        if (!$username) {
+        if (! $username) {
             $this->info('ℹ️  Cancelled.');
+
             return self::SUCCESS;
         }
 
@@ -223,6 +230,7 @@ class SshKeyGenerateCommand extends Command
             $this->info('You can now deploy without password authentication:');
             $this->line("   ssh {$username}@{$hostname}");
             $this->line('');
+
             return self::SUCCESS;
         }
 
@@ -251,7 +259,7 @@ class SshKeyGenerateCommand extends Command
         $servers = [];
         $deployConfigPath = base_path('.deploy/deploy.yaml');
 
-        if (!File::exists($deployConfigPath)) {
+        if (! File::exists($deployConfigPath)) {
             return $servers;
         }
 
@@ -300,7 +308,7 @@ class SshKeyGenerateCommand extends Command
         }
 
         if ($clipboardCmd && $this->confirm('Copy public key to clipboard?', false)) {
-            $result = Process::run("echo " . escapeshellarg($publicKey) . " | {$clipboardCmd}");
+            $result = Process::run('echo '.escapeshellarg($publicKey)." | {$clipboardCmd}");
 
             if ($result->successful()) {
                 $this->info('✅ Public key copied to clipboard!');

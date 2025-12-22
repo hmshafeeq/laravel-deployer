@@ -22,7 +22,7 @@ class DatabaseConfig
             return $this->configFile;
         }
 
-        $this->configFile = '/tmp/mysql_backup_' . uniqid() . '.cnf';
+        $this->configFile = '/tmp/mysql_backup_'.uniqid().'.cnf';
 
         $content = "[client]\n";
         $content .= "host={$this->host}\n";

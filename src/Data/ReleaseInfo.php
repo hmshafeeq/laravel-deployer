@@ -21,7 +21,7 @@ readonly class ReleaseInfo
     {
         return new self(
             name: $name,
-            createdAt: new DateTimeImmutable(),
+            createdAt: new DateTimeImmutable,
             user: $user,
             branch: $branch,
         );
@@ -49,7 +49,7 @@ readonly class ReleaseInfo
 
     private function validateName(string $name): void
     {
-        if (!preg_match(self::PATTERN, $name)) {
+        if (! preg_match(self::PATTERN, $name)) {
             throw new \InvalidArgumentException(
                 "Invalid release name format: {$name}. Expected format: YYYYMM.N (e.g., 202501.1)"
             );

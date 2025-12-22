@@ -30,7 +30,7 @@ class SharedResourceLinker
         // Check if shared storage exists
         $this->deployer->writeln("run if [ -d {$sharedPath}/storage ]; then echo +indeed; fi");
         $storageExists = $this->deployer->run("if [ -d {$sharedPath}/storage ]; then echo +indeed; fi");
-        if (!empty($storageExists)) {
+        if (! empty($storageExists)) {
             $this->deployer->writeln($storageExists);
         }
 
@@ -58,14 +58,14 @@ class SharedResourceLinker
         // Check if shared path exists
         $this->deployer->writeln("run if [ -d {$sharedPath}/. ]; then echo +correct; fi");
         $result = $this->deployer->run("if [ -d {$sharedPath}/. ]; then echo +correct; fi");
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
         }
 
         // Check if .env exists in shared
         $this->deployer->writeln("run if [ -f {$sharedPath}/.env ]; then echo +accurate; fi");
         $envExists = $this->deployer->run("if [ -f {$sharedPath}/.env ]; then echo +accurate; fi");
-        if (!empty($envExists)) {
+        if (! empty($envExists)) {
             $this->deployer->writeln($envExists);
         }
 

@@ -11,11 +11,11 @@ class CleanupOldBackupsAction extends DatabaseAction
         $backupPath = $this->getFullBackupPath();
         $keepCount = config('laravel-deployer.backup.keep', 3);
 
-        $this->writeln("");
+        $this->writeln('');
         $this->writeln("🧹 Cleaning up old backups (keeping {$keepCount} most recent)...");
 
-        $this->writeln("run cd {$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepCount + 1)." | xargs -r rm -f");
-        $this->cmd("cd {$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepCount + 1)." | xargs -r rm -f");
+        $this->writeln("run cd {$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepCount + 1).' | xargs -r rm -f');
+        $this->cmd("cd {$backupPath} && ls -t db_backup_*.sql.gz | tail -n +".($keepCount + 1).' | xargs -r rm -f');
 
         $remaining = $this->countRemainingBackups($backupPath);
 

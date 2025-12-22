@@ -41,11 +41,11 @@ class BackupDatabaseAction extends DatabaseAction
 
     protected function performBackup(string $backupFile, DatabaseConfig $config): void
     {
-        $this->writeln("💾 Starting database backup...");
+        $this->writeln('💾 Starting database backup...');
         $this->writeln("📊 Database: {$config->database}");
         $this->writeln("🏠 Host: {$config->host}");
-        $this->writeln("");
-        $this->writeln("⏳ This may take a while for large databases...");
+        $this->writeln('');
+        $this->writeln('⏳ This may take a while for large databases...');
 
         $timeout = config('laravel-deployer.backup.timeout', 1800);
         $compression = config('laravel-deployer.backup.compression_level', 8);
@@ -65,13 +65,13 @@ class BackupDatabaseAction extends DatabaseAction
 
     protected function handleFailure(string $backupFile, \Exception $e): void
     {
-        $this->writeln("");
-        $this->writeln("❌ Backup failed: " . $e->getMessage(), 'error');
+        $this->writeln('');
+        $this->writeln('❌ Backup failed: '.$e->getMessage(), 'error');
 
         $fileExists = trim($this->cmd("test -f {$backupFile} && echo 'OK' || echo 'FAIL'"));
         if ($fileExists === 'OK') {
             $this->cmd("rm -f {$backupFile}");
-            $this->writeln("🧹 Cleaned up failed backup file");
+            $this->writeln('🧹 Cleaned up failed backup file');
         }
     }
 }

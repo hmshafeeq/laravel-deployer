@@ -2,7 +2,6 @@
 
 namespace Shaf\LaravelDeployer\Services;
 
-use Shaf\LaravelDeployer\Constants\Commands;
 use Shaf\LaravelDeployer\Constants\Timeouts;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
@@ -18,7 +17,9 @@ use Symfony\Component\Process\Process;
 class CommandService
 {
     private ?Ssh $ssh = null;
+
     private int $timeout = Timeouts::DEFAULT_COMMAND;
+
     private string $prefix = '';
 
     public function __construct(
@@ -26,7 +27,7 @@ class CommandService
         private OutputInterface $output,
         private string $workingDirectory = ''
     ) {
-        if (!$config->isLocal) {
+        if (! $config->isLocal) {
             $this->initializeSsh();
         }
 
@@ -52,7 +53,7 @@ class CommandService
             $process = $this->ssh->execute($command);
             $output = trim($process->getOutput());
 
-            if (!$process->isSuccessful()) {
+            if (! $process->isSuccessful()) {
                 throw SSHConnectionException::commandFailed(
                     $command,
                     $process->getErrorOutput()
@@ -84,7 +85,7 @@ class CommandService
         $process->setTimeout($this->timeout);
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             throw TaskExecutionException::commandFailed($command, $process->getErrorOutput());
         }
 
@@ -106,10 +107,12 @@ class CommandService
                     $this->workingDirectory ?: base_path()
                 );
                 $process->run();
+
                 return $process->isSuccessful();
             }
 
-            $process = $this->ssh->execute($condition . ' && echo "true" || echo "false"');
+            $process = $this->ssh->execute($condition.' && echo "true" || echo "false"');
+
             return trim($process->getOutput()) === 'true';
         } catch (\Exception $e) {
             return false;
@@ -253,7 +256,7 @@ class CommandService
     public function line(string $message): void
     {
         if ($this->shouldShowNormal()) {
-            $this->output->writeln($this->prefix . $message);
+            $this->output->writeln($this->prefix.$message);
         }
     }
 
@@ -270,9 +273,9 @@ class CommandService
     {
         if ($this->shouldShowNormal()) {
             $this->newLine();
-            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->output->writeln("<fg=cyan>  {$title}</>");
-            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->newLine();
         }
     }
@@ -286,10 +289,10 @@ class CommandService
 
     public function confirm(string $question, bool $default = false): bool
     {
-        $helper = new \Symfony\Component\Console\Helper\QuestionHelper();
+        $helper = new \Symfony\Component\Console\Helper\QuestionHelper;
         $input = new \Symfony\Component\Console\Input\ArrayInput([]);
         $confirmQuestion = new \Symfony\Component\Console\Question\ConfirmationQuestion(
-            "{$this->prefix}{$question} " . ($default ? '[Y/n]' : '[y/N]') . ' ',
+            "{$this->prefix}{$question} ".($default ? '[Y/n]' : '[y/N]').' ',
             $default
         );
 
@@ -378,7 +381,7 @@ class CommandService
             }
         }
 
-        return empty($parts) ? '' : ' ' . implode(' ', $parts);
+        return empty($parts) ? '' : ' '.implode(' ', $parts);
     }
 
     private function logCommand(string $command): void
@@ -390,10 +393,10 @@ class CommandService
 
     private function logCommandOutput(string $output): void
     {
-        if ($this->output->isVeryVerbose() && !empty(trim($output))) {
+        if ($this->output->isVeryVerbose() && ! empty(trim($output))) {
             $lines = explode("\n", trim($output));
             foreach ($lines as $line) {
-                if (!empty(trim($line))) {
+                if (! empty(trim($line))) {
                     $this->output->writeln("{$this->prefix}{$line}");
                 }
             }

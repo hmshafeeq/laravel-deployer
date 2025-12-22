@@ -18,7 +18,7 @@ class VerifyBackupAction extends DatabaseAction
         $this->writeln("run test -f {$file} && echo 'OK' || echo 'FAIL'");
         $exists = trim($this->cmd("test -f {$file} && echo 'OK' || echo 'FAIL'"));
 
-        if (!empty($exists)) {
+        if (! empty($exists)) {
             $this->writeln($exists);
         }
 
@@ -40,8 +40,8 @@ class VerifyBackupAction extends DatabaseAction
 
     protected function displaySuccess(string $file): void
     {
-        $this->writeln("");
-        $this->writeln("✅ Database backup completed successfully!");
+        $this->writeln('');
+        $this->writeln('✅ Database backup completed successfully!');
 
         $this->writeln("run ls -lh {$file} | awk '{print \$5}'");
         $fileSizeHuman = trim($this->cmd("ls -lh {$file} | awk '{print \$5}'"));

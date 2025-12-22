@@ -22,9 +22,9 @@ class LockManager
         $this->deployer->writeln("run if [ -f {$lockFile} ]; then echo +legitimate; fi");
         $exists = $this->deployer->run("if [ -f {$lockFile} ]; then echo +legitimate; fi");
 
-        if (!empty($exists)) {
+        if (! empty($exists)) {
             $this->deployer->writeln($exists);
-            throw new \RuntimeException("Deployment is locked");
+            throw new \RuntimeException('Deployment is locked');
         }
     }
 
@@ -36,7 +36,7 @@ class LockManager
         $lockFile = $this->getLockFilePath();
         $exists = $this->deployer->run("if [ -f {$lockFile} ]; then echo +legitimate; fi");
 
-        return !empty($exists);
+        return ! empty($exists);
     }
 
     /**
@@ -45,13 +45,13 @@ class LockManager
     public function lock(): void
     {
         $user = $this->deployer->runLocally('git config --get user.name');
-        $this->deployer->writeln("run git config --get user.name");
+        $this->deployer->writeln('run git config --get user.name');
         $this->deployer->writeln($user);
 
         $lockFile = $this->getLockFilePath();
         $this->deployer->writeln("run [ -f {$lockFile} ] && echo +locked || echo '{$user}' > {$lockFile}");
         $result = $this->deployer->run("[ -f {$lockFile} ] && echo +locked || echo '{$user}' > {$lockFile}");
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
         }
     }
@@ -71,6 +71,6 @@ class LockManager
      */
     protected function getLockFilePath(): string
     {
-        return $this->deployer->getDeployPath() . '/.dep/deploy.lock';
+        return $this->deployer->getDeployPath().'/.dep/deploy.lock';
     }
 }

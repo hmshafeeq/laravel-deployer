@@ -8,11 +8,12 @@ class CheckMemoryUsageAction extends HealthCheckAction
 {
     public function execute(): array
     {
-        $this->writeln("run free -h | grep -E \"^Mem:|^Swap:\" || echo \"Memory info unavailable\"");
+        $this->writeln('run free -h | grep -E "^Mem:|^Swap:" || echo "Memory info unavailable"');
         $memInfo = $this->cmd('free -h | grep -E "^Mem:|^Swap:" || echo "Memory info unavailable"');
 
         if (str_contains($memInfo, 'unavailable')) {
-            $this->writeln("⚠️  Memory information unavailable on this system", 'comment');
+            $this->writeln('⚠️  Memory information unavailable on this system', 'comment');
+
             return ['status' => 'unavailable'];
         }
 

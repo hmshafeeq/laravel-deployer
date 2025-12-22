@@ -14,7 +14,7 @@ class SyncCodeAction extends DeploymentAction
         // Check if release symlink exists
         $this->writeln("run if [ -h {$deployPath}/release ]; then echo +precise; fi");
         $result = $this->cmd("if [ -h {$deployPath}/release ]; then echo +precise; fi");
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->writeln($result);
         }
 

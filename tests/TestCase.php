@@ -56,11 +56,11 @@ abstract class TestCase extends Orchestra
         $buildPath = "{$deployPath}/builds";
 
         // Create directories
-        if (!is_dir($deployPath)) {
+        if (! is_dir($deployPath)) {
             mkdir($deployPath, 0755, true);
         }
 
-        if (!is_dir($buildPath)) {
+        if (! is_dir($buildPath)) {
             mkdir($buildPath, 0755, true);
         }
 

@@ -18,8 +18,7 @@ class BuildAssetsLocallyAction extends DeploymentAction
     /**
      * Create a new BuildAssetsLocallyAction instance
      *
-     * @param Deployer $deployer
-     * @param string $buildCommand Build command to run (default: npm run build)
+     * @param  string  $buildCommand  Build command to run (default: npm run build)
      */
     public function __construct(
         protected Deployer $deployer,
@@ -31,18 +30,16 @@ class BuildAssetsLocallyAction extends DeploymentAction
 
     /**
      * Execute the asset build operation
-     *
-     * @return void
      */
     public function execute(): void
     {
-        $this->writeln("🏗️  Building frontend assets locally...", 'info');
+        $this->writeln('🏗️  Building frontend assets locally...', 'info');
 
         try {
             $this->deployer->runLocalCommand($this->buildCommand);
-            $this->writeln("✅ Frontend assets built successfully", 'info');
+            $this->writeln('✅ Frontend assets built successfully', 'info');
         } catch (\Exception $e) {
-            $this->writeln("❌ Failed to build frontend assets", 'error');
+            $this->writeln('❌ Failed to build frontend assets', 'error');
             throw $e;
         }
     }
