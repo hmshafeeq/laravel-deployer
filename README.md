@@ -605,3 +605,7 @@ The MIT License (MIT). Please see [License File](LICENSE.md) for more informatio
 **Ready to deploy?** Run `php artisan deploy staging` and watch the magic happen! ✨
 
 For more details, see the [documentation](docs/) or [open an issue](https://github.com/yourusername/laravel-deployer/issues).
+
+---
+
+*Last synced from westwindsupplies monorepo - testing bi-directional sync workflow*
