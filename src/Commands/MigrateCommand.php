@@ -89,6 +89,11 @@ class MigrateCommand extends Command
                 return self::FAILURE;
             }
 
+            // Step 6: Cleanup leftover files
+            if (! $this->cleanupLeftoverFiles()) {
+                return self::FAILURE;
+            }
+
             // Show success summary
             $this->showSuccessSummary();
 
@@ -145,7 +150,7 @@ class MigrateCommand extends Command
 
     private function preflightChecks(): bool
     {
-        $this->components->info('Step 1/5: Running pre-flight checks...');
+        $this->components->info('Step 1/6: Running pre-flight checks...');
 
         // Check SSH connection - exit immediately if this fails
         $sshConnected = false;
@@ -278,7 +283,7 @@ class MigrateCommand extends Command
 
     private function backupProject(): bool
     {
-        $this->components->info('Step 2/5: Backing up project files...');
+        $this->components->info('Step 2/6: Backing up project files...');
 
         $sitePath = $this->config->deployPath;
         $domain = basename($sitePath);
@@ -334,7 +339,7 @@ class MigrateCommand extends Command
 
     private function backupDatabase(): bool
     {
-        $this->components->info('Step 3/5: Backing up database...');
+        $this->components->info('Step 3/6: Backing up database...');
 
         if ($this->skipDbBackup) {
             $this->components->warn('Database backup skipped');
@@ -383,7 +388,7 @@ class MigrateCommand extends Command
 
     private function migrateStructure(): bool
     {
-        $this->components->info('Step 4/5: Migrating directory structure...');
+        $this->components->info('Step 4/6: Migrating directory structure...');
 
         $sitePath = $this->config->deployPath;
         $releasePath = "{$sitePath}/releases/{$this->releaseName}";
@@ -474,7 +479,7 @@ class MigrateCommand extends Command
 
     private function setPermissions(): bool
     {
-        $this->components->info('Step 5/5: Setting permissions...');
+        $this->components->info('Step 5/6: Setting permissions...');
 
         $sitePath = $this->config->deployPath;
         $deployUser = $this->config->remoteUser;
@@ -497,6 +502,52 @@ class MigrateCommand extends Command
 
             return true;
         });
+
+        $this->newLine();
+
+        return true;
+    }
+
+    // =========================================================================
+    // Step 6: Cleanup Leftover Files
+    // =========================================================================
+
+    private function cleanupLeftoverFiles(): bool
+    {
+        $this->components->info('Step 6/6: Cleaning up leftover files...');
+
+        $sitePath = $this->config->deployPath;
+
+        // These are the only directories/files that should remain
+        $keepItems = ['current', 'releases', 'shared', '.dep'];
+
+        $this->components->task('Removing leftover files and directories', function () use ($sitePath, $keepItems) {
+            if ($this->dryRun) {
+                return true;
+            }
+
+            // Build find command to exclude the items we want to keep
+            // This finds all items in the root of sitePath except the ones we want to keep
+            $excludes = implode(' ', array_map(fn ($item) => "-not -name '{$item}'", $keepItems));
+
+            // Find and remove files/directories in site root (not recursively into subdirs)
+            // -maxdepth 1 ensures we only look at the root level
+            $this->cmd->remote(
+                "cd {$sitePath} && find . -maxdepth 1 {$excludes} -not -name '.' -exec sudo rm -rf {} \\; 2>/dev/null || true"
+            );
+
+            return true;
+        });
+
+        // Show what remains
+        if (! $this->dryRun) {
+            try {
+                $remaining = trim($this->cmd->remote("ls -la {$sitePath} | tail -n +4 | awk '{print \$NF}' | tr '\\n' ' '"));
+                $this->line("    <fg=gray>Remaining: {$remaining}</>");
+            } catch (\Exception $e) {
+                // Ignore
+            }
+        }
 
         $this->newLine();
 
