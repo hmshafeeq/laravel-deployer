@@ -15,16 +15,32 @@ class SshKeyGenerateCommand extends Command
 
     protected $description = 'Generate SSH key pair for deployment and optionally copy to server';
 
-    private string $sshDir;
+    private ?string $sshDir = null;
 
-    private string $defaultKeyPath;
+    private ?string $defaultKeyPath = null;
 
-    public function __construct()
+    private function getSshDir(): string
     {
-        parent::__construct();
+        if ($this->sshDir === null) {
+            $home = $_SERVER['HOME'] ?? $_ENV['HOME'] ?? getenv('HOME') ?: null;
 
-        $this->sshDir = $_SERVER['HOME'].'/.ssh';
-        $this->defaultKeyPath = $this->sshDir.'/id_rsa';
+            if ($home === null) {
+                throw new \RuntimeException('Could not determine home directory. Please set the HOME environment variable.');
+            }
+
+            $this->sshDir = $home.'/.ssh';
+        }
+
+        return $this->sshDir;
+    }
+
+    private function getDefaultKeyPath(): string
+    {
+        if ($this->defaultKeyPath === null) {
+            $this->defaultKeyPath = $this->getSshDir().'/id_rsa';
+        }
+
+        return $this->defaultKeyPath;
     }
 
     public function handle(): int
@@ -48,7 +64,7 @@ class SshKeyGenerateCommand extends Command
         }
 
         // Check if default key already exists
-        if (! $this->option('force') && File::exists($this->defaultKeyPath.'.pub')) {
+        if (! $this->option('force') && File::exists($this->getDefaultKeyPath().'.pub')) {
             return $this->handleExistingKey($email);
         }
 
@@ -58,16 +74,20 @@ class SshKeyGenerateCommand extends Command
 
     protected function ensureSshDirectory(): void
     {
-        if (! File::exists($this->sshDir)) {
-            File::makeDirectory($this->sshDir, 0700, true);
-            $this->info("✅ Created .ssh directory: {$this->sshDir}");
+        $sshDir = $this->getSshDir();
+
+        if (! File::exists($sshDir)) {
+            File::makeDirectory($sshDir, 0700, true);
+            $this->info("✅ Created .ssh directory: {$sshDir}");
             $this->line('');
         }
     }
 
     protected function handleExistingKey(string $email): int
     {
-        $this->info("SSH key pair ({$this->defaultKeyPath}.pub) already exists.");
+        $defaultKeyPath = $this->getDefaultKeyPath();
+
+        $this->info("SSH key pair ({$defaultKeyPath}.pub) already exists.");
         $this->line('');
 
         $choice = $this->choice(
@@ -82,9 +102,9 @@ class SshKeyGenerateCommand extends Command
         );
 
         return match ($choice) {
-            'show' => $this->showPublicKey($this->defaultKeyPath.'.pub'),
+            'show' => $this->showPublicKey($defaultKeyPath.'.pub'),
             'generate' => $this->generateNewKey($email),
-            'copy' => $this->copyKeyToServer($this->defaultKeyPath.'.pub'),
+            'copy' => $this->copyKeyToServer($defaultKeyPath.'.pub'),
             default => self::SUCCESS,
         };
     }
@@ -100,7 +120,7 @@ class SshKeyGenerateCommand extends Command
             $keyName = $this->ask('Enter a name for the new key pair (default is id_rsa)', 'id_rsa');
         }
 
-        $keyPath = $this->sshDir.'/'.$keyName;
+        $keyPath = $this->getSshDir().'/'.$keyName;
 
         // Check if custom key already exists
         if (File::exists($keyPath)) {
