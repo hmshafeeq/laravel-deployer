@@ -439,7 +439,10 @@ class MigrateCommand extends Command
             $this->cmd->remote("if [ -d '{$releasePath}/storage' ]; then sudo cp -an '{$releasePath}/storage/'* '{$sitePath}/shared/storage/' 2>/dev/null || true; fi");
             $this->cmd->remote("sudo rm -rf '{$releasePath}/storage'");
 
-            // Move .env to shared
+            // Copy .env from site root to shared (primary location for traditional deployments)
+            $this->cmd->remote("if [ -f '{$sitePath}/.env' ]; then sudo cp '{$sitePath}/.env' '{$sitePath}/shared/.env'; fi");
+
+            // Also check release path as fallback
             $this->cmd->remote("if [ -f '{$releasePath}/.env' ]; then sudo mv '{$releasePath}/.env' '{$sitePath}/shared/.env'; fi");
 
             // Create symlinks
