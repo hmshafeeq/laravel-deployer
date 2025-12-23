@@ -12,6 +12,7 @@ class MigrateCommand extends Command
                             {--dry-run : Show what would be done without executing}
                             {--skip-db-backup : Skip database backup}
                             {--skip-project-backup : Skip project files backup}
+                            {--cleanup-only : Only run cleanup on already migrated site}
                             {--force : Skip confirmation prompts}';
 
     protected $description = 'Migrate an existing Laravel deployment to laravel-deployer directory structure';
@@ -30,6 +31,8 @@ class MigrateCommand extends Command
 
     private bool $skipProjectBackup = false;
 
+    private bool $cleanupOnly = false;
+
     private string $backupPath = '/var/www/backups';
 
     private array $dbCredentials = [];
@@ -40,6 +43,7 @@ class MigrateCommand extends Command
         $this->dryRun = $this->option('dry-run');
         $this->skipDbBackup = $this->option('skip-db-backup');
         $this->skipProjectBackup = $this->option('skip-project-backup');
+        $this->cleanupOnly = $this->option('cleanup-only');
         $force = $this->option('force');
 
         $this->timestamp = date('Ymd-His');
@@ -63,6 +67,22 @@ class MigrateCommand extends Command
 
             // Execute migration steps
             $this->newLine();
+
+            // Cleanup-only mode: just run cleanup on already migrated site
+            if ($this->cleanupOnly) {
+                if (! $this->preflightChecksForCleanup()) {
+                    return self::FAILURE;
+                }
+
+                if (! $this->cleanupLeftoverFiles()) {
+                    return self::FAILURE;
+                }
+
+                $this->newLine();
+                $this->components->info('Cleanup completed successfully!');
+
+                return self::SUCCESS;
+            }
 
             // Step 1: Pre-flight checks
             if (! $this->preflightChecks()) {
@@ -270,6 +290,83 @@ class MigrateCommand extends Command
                 $this->components->warn('Could not detect database credentials. Database backup will be skipped.');
                 $this->skipDbBackup = true;
             }
+        }
+
+        $this->newLine();
+
+        return true;
+    }
+
+    // =========================================================================
+    // Pre-flight Checks for Cleanup-Only Mode
+    // =========================================================================
+
+    private function preflightChecksForCleanup(): bool
+    {
+        $this->components->info('Running pre-flight checks for cleanup...');
+
+        // Check SSH connection
+        $sshConnected = false;
+        $this->components->task('Testing SSH connection', function () use (&$sshConnected) {
+            if ($this->dryRun) {
+                $sshConnected = true;
+
+                return true;
+            }
+
+            $sshConnected = $this->cmd->test('echo "connected"');
+
+            return $sshConnected;
+        });
+
+        if (! $sshConnected) {
+            $this->newLine();
+            $this->components->error('SSH connection failed.');
+
+            return false;
+        }
+
+        // Check site path exists
+        $sitePath = $this->config->deployPath;
+        $siteExists = false;
+        $this->components->task("Checking site path exists: {$sitePath}", function () use ($sitePath, &$siteExists) {
+            if ($this->dryRun) {
+                $siteExists = true;
+
+                return true;
+            }
+
+            $siteExists = $this->cmd->directoryExists($sitePath);
+
+            return $siteExists;
+        });
+
+        if (! $siteExists) {
+            $this->newLine();
+            $this->components->error("Site path does not exist: {$sitePath}");
+
+            return false;
+        }
+
+        // Check site IS migrated (releases directory must exist for cleanup)
+        $isMigrated = false;
+        $this->components->task('Checking site is migrated', function () use ($sitePath, &$isMigrated) {
+            if ($this->dryRun) {
+                $isMigrated = true;
+
+                return true;
+            }
+
+            $isMigrated = $this->cmd->directoryExists("{$sitePath}/releases");
+
+            return $isMigrated;
+        });
+
+        if (! $isMigrated) {
+            $this->newLine();
+            $this->components->error('Site is not migrated yet. Run without --cleanup-only first.');
+
+            return false;
         }
 
         $this->newLine();
