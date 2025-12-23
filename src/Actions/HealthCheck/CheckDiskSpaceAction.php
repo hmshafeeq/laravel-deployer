@@ -26,8 +26,8 @@ class CheckDiskSpaceAction extends HealthCheckAction
         $usedPercentIndex = count($diskInfo) === 6 ? 4 : 3;
         $availableIndex = count($diskInfo) === 6 ? 3 : 2;
 
-        if (!isset($diskInfo[$usedPercentIndex])) {
-            throw new \RuntimeException("Unable to parse disk usage information");
+        if (! isset($diskInfo[$usedPercentIndex])) {
+            throw new \RuntimeException('Unable to parse disk usage information');
         }
 
         $usedPercent = rtrim($diskInfo[$usedPercentIndex], '%');
@@ -48,7 +48,7 @@ class CheckDiskSpaceAction extends HealthCheckAction
             $this->writeln("⚠️  Warning: Disk usage is high ({$usedPercent}%). Consider cleaning up old releases.", 'comment');
             $status = 'warning';
         } else {
-            $this->writeln("✅ Disk space OK");
+            $this->writeln('✅ Disk space OK');
             $status = 'ok';
         }
 

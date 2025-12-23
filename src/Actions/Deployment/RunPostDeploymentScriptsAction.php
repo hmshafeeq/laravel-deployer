@@ -6,17 +6,15 @@ use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
 
 /**
- * Run post-deployment scripts and tasks
+ * Run post-deployment artisan commands
  *
- * This action handles post-deployment tasks such as publishing vendor assets
- * and running custom post-deployment scripts.
+ * This action executes artisan commands defined in the config
+ * after all other deployment steps have finished.
  */
 class RunPostDeploymentScriptsAction extends DeploymentAction
 {
     /**
      * Create a new RunPostDeploymentScriptsAction instance
-     *
-     * @param Deployer $deployer
      */
     public function __construct(
         protected Deployer $deployer
@@ -25,77 +23,36 @@ class RunPostDeploymentScriptsAction extends DeploymentAction
     }
 
     /**
-     * Execute post-deployment scripts
-     *
-     * @return void
+     * Execute post-deployment commands
      */
     public function execute(): void
     {
-        $currentPath = $this->getCurrentPath();
-        $phpPath = config('laravel-deployer.php.executable', 'php');
+        $commands = config('laravel-deployer.post_deploy_commands', []);
 
-        $this->publishLogViewerAssets($currentPath, $phpPath);
-        $this->runCustomPostDeploymentScript($currentPath);
-    }
-
-    /**
-     * Publish log viewer assets
-     *
-     * @param string $currentPath
-     * @param string $phpPath
-     * @return void
-     */
-    protected function publishLogViewerAssets(string $currentPath, string $phpPath): void
-    {
-        $command = "cd {$currentPath} && {$phpPath} artisan vendor:publish --tag=log-viewer-assets --force";
-
-        $this->writeln("run {$command}");
-
-        try {
-            $result = $this->cmd($command);
-
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $this->writeln($line);
-                }
-            }
-        } catch (\Exception $e) {
-            $this->writeln("⚠ Failed to publish log viewer assets", 'comment');
-        }
-    }
-
-    /**
-     * Run custom post-deployment script
-     *
-     * @param string $currentPath
-     * @return void
-     */
-    protected function runCustomPostDeploymentScript(string $currentPath): void
-    {
-        $scriptPath = "{$currentPath}/post-deployment.sh";
-
-        // Check if script exists
-        $exists = $this->deployer->test("[ -f {$scriptPath} ]");
-
-        if (!$exists) {
+        if (empty($commands)) {
             return;
         }
 
-        $command = "cd {$currentPath} && ./post-deployment.sh";
-        $this->writeln("run {$command}");
+        $currentPath = $this->getCurrentPath();
+        $phpPath = config('laravel-deployer.php.executable', 'php');
 
-        try {
-            $result = $this->cmd($command);
+        foreach ($commands as $artisanCommand) {
+            $command = "cd {$currentPath} && {$phpPath} artisan {$artisanCommand}";
 
-            if (!empty($result)) {
-                $lines = explode("\n", trim($result));
-                foreach ($lines as $line) {
-                    $this->writeln($line);
+            $this->writeln("run {$command}");
+
+            try {
+                $result = $this->cmd($command);
+
+                if (! empty($result)) {
+                    $lines = explode("\n", trim($result));
+                    foreach ($lines as $line) {
+                        $this->writeln($line);
+                    }
                 }
+            } catch (\Exception $e) {
+                $this->writeln("⚠ Failed to run: artisan {$artisanCommand}", 'comment');
             }
-        } catch (\Exception $e) {
-            $this->writeln("⚠ Post-deployment script failed", 'comment');
         }
     }
 }

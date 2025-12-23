@@ -18,7 +18,7 @@ class ServerManager
     {
         $deployDir = $this->getDeployDirectory();
 
-        if (!File::exists($deployDir)) {
+        if (! File::exists($deployDir)) {
             return [];
         }
 
@@ -29,7 +29,7 @@ class ServerManager
             foreach ($envFiles as $file) {
                 $filename = basename($file);
                 if (preg_match('/^\.env\.(.+?)(?:\.example)?$/', $filename, $matches)) {
-                    if (!str_ends_with($filename, '.example')) {
+                    if (! str_ends_with($filename, '.example')) {
                         $servers[] = $matches[1];
                     }
                 }
@@ -44,7 +44,7 @@ class ServerManager
     /**
      * Check if a server exists in available servers
      *
-     * @param string $serverName The server name to check
+     * @param  string  $serverName  The server name to check
      * @return bool True if server exists, false otherwise
      */
     public function serverExists(string $serverName): bool

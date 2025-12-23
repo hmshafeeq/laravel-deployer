@@ -21,7 +21,7 @@ class DatabaseBackupCommand extends Command
         $this->line('');
 
         $serverName = $this->getServerName();
-        if (!$serverName) {
+        if (! $serverName) {
             return self::FAILURE;
         }
 
@@ -67,14 +67,17 @@ class DatabaseBackupCommand extends Command
 
             if (empty($servers)) {
                 $this->error('No servers configured in deploy.yaml');
+
                 return null;
             }
 
             $serverName = $this->choice('Select a server', $servers);
+
             return $serverName;
         }
 
         $this->error('Please provide a server name or use --select option');
+
         return null;
     }
 }

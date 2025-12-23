@@ -26,7 +26,7 @@ class ArtisanCommandRunner
 
         $result = $this->deployer->run($fullCommand);
 
-        if ($showOutput && !empty($result)) {
+        if ($showOutput && ! empty($result)) {
             foreach (explode("\n", trim($result)) as $line) {
                 $this->deployer->writeln($line);
             }
@@ -50,8 +50,9 @@ class ArtisanCommandRunner
     {
         $result = $this->deployer->run("if [ -s {$path}/.env ]; then echo +accurate; fi");
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->deployer->writeln($result);
+
             return true;
         }
 

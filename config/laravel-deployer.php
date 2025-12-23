@@ -1,6 +1,35 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| Laravel Deployer Configuration
+|--------------------------------------------------------------------------
+|
+| This package is designed to be a DEV DEPENDENCY (composer require --dev).
+| It runs locally on your development machine or CI/CD environment and
+| deploys to remote servers via SSH. The package is NOT required on the
+| production server - only standard Laravel is needed there.
+|
+| All configuration is read locally during deployment orchestration.
+| The server only receives shell commands via SSH.
+|
+*/
+
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | SSH Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure SSH connection security settings. Strict host key checking
+    | is enabled by default for security. Only disable if you understand
+    | the MITM attack risks.
+    |
+    */
+    'ssh' => [
+        'strict_host_key_checking' => env('DEPLOY_SSH_STRICT_HOST_KEY', true),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | PHP Configuration
@@ -57,6 +86,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Assets Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure frontend asset building settings. By default, deployment
+    | will fail if asset build fails (fail_on_error = true). Set to false
+    | to continue deployment even if asset build fails.
+    |
+    */
+    'assets' => [
+        'fail_on_error' => env('DEPLOY_ASSETS_FAIL_ON_ERROR', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rsync Configuration
     |--------------------------------------------------------------------------
     |
@@ -73,6 +116,18 @@ return [
             '.env',
             'tests',
             '.deploy',
+            'packages/laravel-deployer',  // This package (dev-only)
+            'phpunit.xml',
+            'phpstan.neon',
+            'pint.json',
+            '.php-cs-fixer.php',
+            '.github',
+            'docker-compose*.yml',
+            'Dockerfile',
+            '.editorconfig',
+            '.styleci.yml',
+            'CHANGELOG.md',
+            'CONTRIBUTING.md',
         ],
     ],
 
@@ -108,9 +163,6 @@ return [
         'timeout' => env('DEPLOY_HEALTH_CHECK_TIMEOUT', 30),
         'connect_timeout' => env('DEPLOY_HEALTH_CHECK_CONNECT_TIMEOUT', 5),
         'endpoints' => [
-            '/' => 'Home page',
-            '/admin/login' => 'Admin login',
-            '/user/login' => 'User login',
             '/health' => 'Health check',
         ],
         'acceptable_status_codes' => [200, 302, 401],
@@ -145,7 +197,7 @@ return [
             'info' => "\033[32m",    // green
             'comment' => "\033[33m", // yellow
             'error' => "\033[31m",   // red
-            'plain' => "",
+            'plain' => '',
         ],
         'reset' => "\033[0m",
     ],
@@ -189,5 +241,23 @@ return [
         'php-fpm' => env('DEPLOY_RESTART_PHP_FPM', true),
         'nginx' => env('DEPLOY_RESTART_NGINX', true),
         'supervisor' => env('DEPLOY_RESTART_SUPERVISOR', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Post-Deployment Commands
+    |--------------------------------------------------------------------------
+    |
+    | Artisan commands to run after deployment is complete. These commands
+    | are executed in order after all other deployment steps have finished.
+    |
+    | Example:
+    |   'vendor:publish --tag=log-viewer-assets --force',
+    |   'storage:link',
+    |   'icons:cache',
+    |
+    */
+    'post_deploy_commands' => [
+        'vendor:publish --tag=log-viewer-assets --force',
     ],
 ];

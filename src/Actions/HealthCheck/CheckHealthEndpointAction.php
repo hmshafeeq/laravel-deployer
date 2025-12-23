@@ -2,9 +2,9 @@
 
 namespace Shaf\LaravelDeployer\Actions\HealthCheck;
 
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Services\CommandRetryService;
 use Shaf\LaravelDeployer\Support\Abstract\HealthCheckAction;
-use Shaf\LaravelDeployer\Deployer;
 
 class CheckHealthEndpointAction extends HealthCheckAction
 {
@@ -13,12 +13,12 @@ class CheckHealthEndpointAction extends HealthCheckAction
         protected ?CommandRetryService $retry = null
     ) {
         parent::__construct($deployer);
-        $this->retry = $retry ?? new CommandRetryService();
+        $this->retry = $retry ?? new CommandRetryService;
     }
 
     public function execute(string $appUrl): string
     {
-        $healthUrl = rtrim($appUrl, '/') . '/health';
+        $healthUrl = rtrim($appUrl, '/').'/health';
         $maxRetries = config('laravel-deployer.health_check.max_retries', 3);
         $retryDelay = config('laravel-deployer.health_check.retry_delay', 5);
         $timeout = config('laravel-deployer.health_check.timeout', 30);
@@ -28,13 +28,16 @@ class CheckHealthEndpointAction extends HealthCheckAction
             callback: function ($attempt) use ($healthUrl, $timeout, $connectTimeout, $maxRetries) {
                 $this->writeln("🔄 Health check attempt {$attempt}/{$maxRetries}...");
 
-                $this->writeln("run timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} {$healthUrl}");
-                $response = $this->cmd("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} {$healthUrl}");
-                $this->writeln($response);
+                // Single curl request that returns body + status code (status on last line)
+                $command = "curl -s --max-time {$timeout} --connect-timeout {$connectTimeout} -w '\\n%{http_code}' {$healthUrl}";
+                $this->writeln("run {$command}");
 
-                $this->writeln("run timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} -o /dev/null -w '%{http_code}' {$healthUrl}");
-                $statusCode = $this->cmd("timeout {$timeout} curl -s --max-time 10 --connect-timeout {$connectTimeout} -o /dev/null -w '%{http_code}' {$healthUrl}");
-                $this->writeln($statusCode);
+                $output = $this->cmd($command);
+                $lines = explode("\n", trim($output));
+                $statusCode = array_pop($lines);
+                $response = implode("\n", $lines);
+
+                $this->writeln("HTTP {$statusCode}");
 
                 if ($statusCode !== '200') {
                     throw new \RuntimeException("Health check failed with HTTP {$statusCode}");
@@ -45,7 +48,7 @@ class CheckHealthEndpointAction extends HealthCheckAction
             maxRetries: $maxRetries,
             delaySeconds: $retryDelay,
             onRetry: function ($attempt) {
-                $this->writeln("⚠️  Health check failed, retrying in 5 seconds...", 'comment');
+                $this->writeln('⚠️  Health check failed, retrying in 5 seconds...', 'comment');
             }
         );
 
@@ -59,16 +62,21 @@ class CheckHealthEndpointAction extends HealthCheckAction
      */
     protected function displayHealthStatus(string $healthResponse): void
     {
-        $this->writeln("📊 Health Status:");
-        $this->writeln("run echo '{$healthResponse}' | python3 -m json.tool 2>/dev/null || echo '{$healthResponse}'");
-        $prettyHealth = $this->cmd("echo '{$healthResponse}' | python3 -m json.tool 2>/dev/null || echo '{$healthResponse}'");
+        $this->writeln('📊 Health Status:');
+
+        // Format JSON locally instead of remote python call
+        $decoded = json_decode($healthResponse, true);
+        if ($decoded !== null) {
+            $prettyHealth = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        } else {
+            $prettyHealth = $healthResponse;
+        }
 
         $lines = explode("\n", trim($prettyHealth));
         foreach ($lines as $line) {
             $this->writeln($line);
         }
-        echo $prettyHealth . "\n";
 
-        $this->writeln("");
+        $this->writeln('');
     }
 }

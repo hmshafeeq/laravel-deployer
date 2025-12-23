@@ -62,12 +62,14 @@ class SelectDatabaseBackupAction extends DatabaseAction
                 $filename = basename($parts[8]);
                 $this->writeln("📋 Using latest backup: {$filename}");
             }
+
             return 0;
         }
 
         if (is_numeric($selection)) {
             $choiceIndex = (int) $selection - 1;
-            $this->writeln("📋 Using backup #{$selection}: " . basename($backups[$choiceIndex]));
+            $this->writeln("📋 Using backup #{$selection}: ".basename($backups[$choiceIndex]));
+
             return $choiceIndex;
         }
 
@@ -76,18 +78,18 @@ class SelectDatabaseBackupAction extends DatabaseAction
 
     protected function displayInteractiveSelection(array $backups): int
     {
-        $this->writeln("📋 Available database backups:");
-        $this->writeln("");
+        $this->writeln('📋 Available database backups:');
+        $this->writeln('');
 
         foreach ($backups as $index => $line) {
             $parts = preg_split('/\s+/', $line);
             $size = $parts[4];
             $filename = basename($parts[8]);
-            $this->writeln("   " . ($index + 1) . ". {$filename} ({$size})");
+            $this->writeln('   '.($index + 1).". {$filename} ({$size})");
         }
 
-        $this->writeln("");
-        $this->writeln("Using latest backup (automatic selection)");
+        $this->writeln('');
+        $this->writeln('Using latest backup (automatic selection)');
 
         return 0;
     }

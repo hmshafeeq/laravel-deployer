@@ -8,14 +8,15 @@ class RestartPhpFpmAction extends ServiceAction
 {
     public function execute(): void
     {
-        $this->writeln("🔄 Restarting PHP-FPM...");
+        $this->writeln('🔄 Restarting PHP-FPM...');
 
         // Detect all running PHP-FPM services
-        $this->writeln("run systemctl list-units --type=service --state=running | grep -o \"php[0-9.]*-fpm\" || echo \"\"");
+        $this->writeln('run systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
         $phpFpmServices = $this->cmd('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
 
         if (empty(trim($phpFpmServices))) {
-            $this->writeln("⚠️  No running PHP-FPM service found", 'comment');
+            $this->writeln('⚠️  No running PHP-FPM service found', 'comment');
+
             return;
         }
 
@@ -36,7 +37,7 @@ class RestartPhpFpmAction extends ServiceAction
 
         foreach ($services as $service) {
             $service = trim($service);
-            if (!empty($service)) {
+            if (! empty($service)) {
                 $this->writeln("run sudo systemctl restart {$service}");
                 $this->cmd("sudo systemctl restart {$service}");
                 $this->writeln("✅ Restarted {$service}");

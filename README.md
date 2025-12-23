@@ -32,8 +32,10 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 ### 1. Install via Composer
 
 ```bash
-composer require shaf/laravel-deployer
+composer require shaf/laravel-deployer --dev
 ```
+
+> **Note:** This package is designed as a **dev dependency**. It runs on your local machine (or CI/CD) and deploys to servers via SSH. The package is NOT needed on the production server.
 
 ### 2. Run Installation Command
 
@@ -180,6 +182,83 @@ php artisan laravel-deployer:provision \
 - Ubuntu 24.04 LTS (Noble Numbat)
 - Ubuntu 22.04 LTS (Jammy Jellyfish)
 - Ubuntu 20.04 LTS (Focal Fossa)
+
+## 🔄 Migrating Existing Sites
+
+If you have an existing Laravel deployment and want to use laravel-deployer, use the `deployer:migrate` command to convert your directory structure.
+
+> **Prerequisites**: Your site must be using a **traditional flat deployment** (`/var/www/domain.com/public`) with nginx config pointing directly to the public folder. Sites already using `releases/` and `current` symlinks are already migrated.
+
+### Quick Migration
+
+```bash
+# Migrate staging environment (uses deploy.yaml configuration)
+php artisan deployer:migrate staging
+
+# Migrate production
+php artisan deployer:migrate production
+
+# Dry run first (see what would happen)
+php artisan deployer:migrate staging --dry-run
+
+# Skip confirmation prompts
+php artisan deployer:migrate staging --force
+```
+
+### Alternative: Shell Script
+
+For advanced use cases, you can also use the shell script directly:
+
+```bash
+./vendor/shaf/laravel-deployer/scripts/migrate-to-deployer.sh ubuntu@server.com example.com
+```
+
+### What It Does
+
+1. **Backs up project files** to `/var/www/backups/{domain}-files-{timestamp}.tar.gz`
+   - Includes hidden files (`.env`, `.htaccess`, etc.)
+   - Excludes `vendor/`, `node_modules/`, `.git/`
+2. **Backs up database** to `/var/www/backups/{domain}-database-{timestamp}.sql.gz` (auto-detects credentials from .env)
+3. **Only proceeds** after both backups succeed
+4. **Creates** the releases/shared directory structure
+5. **Moves** files to first release (named `YYYYMM.1`, e.g., `202512.1`)
+6. **Sets** proper permissions for deploy and web users
+
+### Usage Options
+
+```bash
+./migrate-to-deployer.sh <host> <domain> [options]
+
+# Options:
+#   --user=USER        SSH user (default: ubuntu)
+#   --key=PATH         SSH private key path
+#   --base-path=PATH   Site base path (default: /var/www)
+#   --skip-db-backup   Skip database backup
+#   --dry-run          Show what would happen
+
+# Examples:
+./migrate-to-deployer.sh ubuntu@192.168.1.100 thepayrollapp.com
+./migrate-to-deployer.sh server.com dev.example.com --key=~/.ssh/deploy_key
+```
+
+### Post-Migration
+
+Update your nginx config to use the `current` symlink:
+
+```nginx
+# Change from:
+root /var/www/example.com/public;
+
+# To:
+root /var/www/example.com/current/public;
+```
+
+Then reload nginx:
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+📖 See [docs/migration-script.md](docs/migration-script.md) for detailed documentation.
 
 ## ⚙️ Configuration
 
@@ -605,3 +684,7 @@ The MIT License (MIT). Please see [License File](LICENSE.md) for more informatio
 **Ready to deploy?** Run `php artisan deploy staging` and watch the magic happen! ✨
 
 For more details, see the [documentation](docs/) or [open an issue](https://github.com/yourusername/laravel-deployer/issues).
+
+---
+
+*Last synced from timebox monorepo - testing bi-directional sync workflow*

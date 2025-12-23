@@ -2,11 +2,11 @@
 
 namespace Shaf\LaravelDeployer\Actions\Deployment;
 
-use Shaf\LaravelDeployer\Services\ReleaseManager;
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Services\LockManager;
+use Shaf\LaravelDeployer\Services\ReleaseManager;
 use Shaf\LaravelDeployer\Services\SharedResourceLinker;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer;
 
 class ActivateReleaseAction extends DeploymentAction
 {
@@ -40,7 +40,7 @@ class ActivateReleaseAction extends DeploymentAction
         $this->lockManager->unlock();
 
         // Display success message
-        $this->writeln("info successfully deployed!");
+        $this->writeln('info successfully deployed!');
     }
 
     /**
@@ -48,10 +48,10 @@ class ActivateReleaseAction extends DeploymentAction
      */
     protected function activateRelease(string $deployPath): void
     {
-        $this->writeln("run (man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true");
-        $supportsNoTarget = $this->cmd("(man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true");
-        if (!empty($supportsNoTarget)) {
-            $this->writeln("       -T, --no-target-directory");
+        $this->writeln('run (man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true');
+        $supportsNoTarget = $this->cmd('(man mv 2>&1 || mv -h 2>&1 || mv --help 2>&1) | grep -- --no-target-directory || true');
+        if (! empty($supportsNoTarget)) {
+            $this->writeln('       -T, --no-target-directory');
         }
 
         $this->writeln("run mv -T {$deployPath}/release {$deployPath}/current");

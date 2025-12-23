@@ -37,7 +37,7 @@ class RollbackAction
             $current = $this->deployment->getCurrentRelease();
             $previous = $this->deployment->getPreviousRelease();
 
-            if (!$previous) {
+            if (! $previous) {
                 throw DeploymentException::releaseNotFound('No previous release available for rollback');
             }
 
@@ -47,7 +47,7 @@ class RollbackAction
 
             // 3. Verify previous release exists
             $previousPath = $this->deployment->getReleasePath($previous);
-            if (!$this->cmd->directoryExists($previousPath)) {
+            if (! $this->cmd->directoryExists($previousPath)) {
                 throw DeploymentException::releaseNotFound("Previous release directory not found: {$previousPath}");
             }
 
@@ -61,7 +61,7 @@ class RollbackAction
             $this->logRollback($current, $previous);
 
             $this->cmd->newLine();
-            $this->cmd->success("✅ Rollback completed successfully!");
+            $this->cmd->success('✅ Rollback completed successfully!');
             $this->cmd->success("🔙 Now running release: {$previous}");
 
         } finally {
@@ -75,10 +75,10 @@ class RollbackAction
      */
     private function lockDeployment(): void
     {
-        $this->cmd->task("deployment:lock");
+        $this->cmd->task('deployment:lock');
         $this->deployment->check();
         $this->deployment->lock();
-        $this->cmd->success("Deployment locked");
+        $this->cmd->success('Deployment locked');
     }
 
     /**
@@ -86,7 +86,7 @@ class RollbackAction
      */
     private function symlinkPreviousRelease(string $previous, string $previousPath): void
     {
-        $this->cmd->task("release:symlink");
+        $this->cmd->task('release:symlink');
 
         $currentPath = $this->deployment->getCurrentPath();
 

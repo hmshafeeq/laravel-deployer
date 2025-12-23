@@ -23,8 +23,7 @@ class ClearCachesAction extends Action
     /**
      * Create a new ClearCachesAction instance
      *
-     * @param Deployer $deployer
-     * @param array<string> $caches List of caches to clear (default: all)
+     * @param  array<string>  $caches  List of caches to clear (default: all)
      */
     public function __construct(
         protected Deployer $deployer,
@@ -35,8 +34,6 @@ class ClearCachesAction extends Action
 
     /**
      * Execute the cache clearing operation
-     *
-     * @return void
      */
     public function execute(): void
     {
@@ -50,8 +47,7 @@ class ClearCachesAction extends Action
     /**
      * Clear a specific cache
      *
-     * @param string $cache Cache name (config, view, route, cache)
-     * @return void
+     * @param  string  $cache  Cache name (config, view, route, cache)
      */
     protected function clearCache(string $cache): void
     {

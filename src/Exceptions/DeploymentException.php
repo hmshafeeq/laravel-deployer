@@ -23,18 +23,18 @@ class DeploymentException extends Exception
 
     public static function noPreviousRelease(): self
     {
-        return new self("No previous release available for rollback");
+        return new self('No previous release available for rollback');
     }
 
     public static function noReleases(): self
     {
-        return new self("No releases found");
+        return new self('No releases found');
     }
 
     public static function viteRunning(): self
     {
         return new self(
-            "Vite bundler is currently running. Please stop the Vite development server before deploying."
+            'Vite bundler is currently running. Please stop the Vite development server before deploying.'
         );
     }
 }

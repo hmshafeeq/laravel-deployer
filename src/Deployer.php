@@ -2,19 +2,30 @@
 
 namespace Shaf\LaravelDeployer;
 
-use Illuminate\Support\Facades\File;
 use Spatie\Ssh\Ssh;
 use Symfony\Component\Process\Process;
 
+/**
+ * @deprecated Use CommandService, DeploymentService, and RsyncService instead.
+ *             This class will be removed in a future major version.
+ *             Migration: Replace Deployer with the modular services in src/Services/.
+ */
 class Deployer
 {
     protected string $environment;
+
     protected array $config;
+
     protected ?Ssh $ssh = null;
+
     protected array $output = [];
+
     protected array $rsyncExcludes = [];
+
     protected array $rsyncIncludes = [];
+
     protected string $releaseName;
+
     protected bool $isLocal = false;
 
     public function __construct(string $environment, array $config)
@@ -23,7 +34,7 @@ class Deployer
         $this->config = $config;
         $this->isLocal = $config['local'] ?? false;
 
-        if (!$this->isLocal) {
+        if (! $this->isLocal) {
             $this->ssh = Ssh::create($config['remote_user'], $config['hostname'])
                 ->disableStrictHostKeyChecking()
                 ->disablePasswordAuthentication();
@@ -40,8 +51,8 @@ class Deployer
      * This is a convenience factory method that creates a Deployer instance
      * and loads the environment variables automatically.
      *
-     * @param string $environment Environment name (e.g., staging, production)
-     * @param array $config Configuration array for the environment
+     * @param  string  $environment  Environment name (e.g., staging, production)
+     * @param  array  $config  Configuration array for the environment
      * @return self Initialized deployer instance
      */
     public static function init(string $environment, array $config): self
@@ -69,7 +80,7 @@ class Deployer
         $process->setTimeout(config('laravel-deployer.php.timeout', 900));
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             throw new \RuntimeException("Command failed: {$command}\n{$process->getErrorOutput()}");
         }
 
@@ -81,10 +92,12 @@ class Deployer
         if ($this->isLocal) {
             $process = Process::fromShellCommandline($condition, base_path());
             $process->run();
+
             return $process->isSuccessful();
         }
 
-        $result = $this->ssh->execute($condition . ' && echo "true" || echo "false"');
+        $result = $this->ssh->execute($condition.' && echo "true" || echo "false"');
+
         return trim($result) === 'true';
     }
 
@@ -97,7 +110,7 @@ class Deployer
             'info' => "\033[32m",
             'comment' => "\033[33m",
             'error' => "\033[31m",
-            'plain' => "",
+            'plain' => '',
         ]);
 
         $color = $colors[$style] ?? $colors['info'];
@@ -154,7 +167,7 @@ class Deployer
             }
 
             // Recreate SSH connection with updated config
-            if (!$this->isLocal) {
+            if (! $this->isLocal) {
                 $this->ssh = Ssh::create($this->config['remote_user'], $this->config['hostname'])
                     ->disableStrictHostKeyChecking()
                     ->disablePasswordAuthentication();
@@ -169,8 +182,9 @@ class Deployer
     public function confirmDeployment(bool $skipConfirm = false): bool
     {
         if ($skipConfirm) {
-            $this->writeln("⏭️  Skipping deployment confirmation (--no-confirm flag used)", 'comment');
+            $this->writeln('⏭️  Skipping deployment confirmation (--no-confirm flag used)', 'comment');
             echo "\n";
+
             return true;
         }
 
@@ -193,16 +207,17 @@ class Deployer
         echo "\033[33m═══════════════════════════════════════════════════════════\033[0m\n";
         echo "\n";
 
-        echo "  Do you want to continue with this deployment? [Y/n] ";
-        $handle = fopen("php://stdin", "r");
+        echo '  Do you want to continue with this deployment? [Y/n] ';
+        $handle = fopen('php://stdin', 'r');
         $line = fgets($handle);
         $confirmed = trim(strtolower($line)) !== 'n';
         fclose($handle);
 
-        if (!$confirmed) {
+        if (! $confirmed) {
             echo "\n";
             echo "\033[33m🛑 Deployment cancelled by user\033[0m\n";
             echo "\n";
+
             return false;
         }
 
@@ -246,17 +261,17 @@ class Deployer
 
     public function getCurrentPath(): string
     {
-        return $this->config['deploy_path'] . '/current';
+        return $this->config['deploy_path'].'/current';
     }
 
     public function getReleasePath(): string
     {
-        return $this->config['deploy_path'] . '/releases/' . $this->releaseName;
+        return $this->config['deploy_path'].'/releases/'.$this->releaseName;
     }
 
     public function getSharedPath(): string
     {
-        return $this->config['deploy_path'] . '/shared';
+        return $this->config['deploy_path'].'/shared';
     }
 
     public function setRsyncExcludes(array $excludes): void
@@ -271,7 +286,7 @@ class Deployer
 
     public function runRsync(): void
     {
-        $source = base_path() . '/';
+        $source = base_path().'/';
         $destination = "{$this->config['remote_user']}@{$this->config['hostname']}:{$this->getReleasePath()}/";
 
         $excludeArgs = [];
@@ -297,26 +312,26 @@ class Deployer
             $destination
         );
 
-        $this->writeln("run " . str_replace([base_path(), $this->config['remote_user'] . '@' . $this->config['hostname']], ['', ''], $rsyncCommand));
+        $this->writeln('run '.str_replace([base_path(), $this->config['remote_user'].'@'.$this->config['hostname']], ['', ''], $rsyncCommand));
 
         $process = Process::fromShellCommandline($rsyncCommand, base_path());
         $process->setTimeout(config('laravel-deployer.rsync.timeout', 900));
         $process->run(function ($type, $buffer) {
-            if (Process::ERR === $type) {
+            if ($type === Process::ERR) {
                 echo $buffer;
             } else {
                 // Only show non-directory messages
                 $lines = explode("\n", $buffer);
                 foreach ($lines as $line) {
-                    if (!empty(trim($line))) {
+                    if (! empty(trim($line))) {
                         $this->writeln($line);
                     }
                 }
             }
         });
 
-        if (!$process->isSuccessful()) {
-            throw new \RuntimeException("Rsync failed: " . $process->getErrorOutput());
+        if (! $process->isSuccessful()) {
+            throw new \RuntimeException('Rsync failed: '.$process->getErrorOutput());
         }
     }
 
@@ -334,14 +349,14 @@ class Deployer
                 // Split by lines and output each line with prefix
                 $lines = explode("\n", rtrim($buffer, "\n"));
                 foreach ($lines as $line) {
-                    if (!empty($line)) {
+                    if (! empty($line)) {
                         $this->writeln($line);
                     }
                 }
             }
         });
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             throw new \RuntimeException("Command failed: {$command}\n{$process->getErrorOutput()}");
         }
 

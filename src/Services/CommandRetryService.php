@@ -7,11 +7,11 @@ class CommandRetryService
     /**
      * Retry a callback with exponential backoff
      *
-     * @param callable $callback The callback to execute
-     * @param int $maxRetries Maximum number of retry attempts
-     * @param int $delaySeconds Initial delay between retries in seconds
-     * @param callable|null $onRetry Callback to execute before each retry
-     * @return mixed
+     * @param  callable  $callback  The callback to execute
+     * @param  int  $maxRetries  Maximum number of retry attempts
+     * @param  int  $delaySeconds  Initial delay between retries in seconds
+     * @param  callable|null  $onRetry  Callback to execute before each retry
+     *
      * @throws \Exception
      */
     public function retry(
@@ -43,11 +43,10 @@ class CommandRetryService
     /**
      * Retry with exponential backoff
      *
-     * @param callable $callback The callback to execute
-     * @param int $maxRetries Maximum number of retry attempts
-     * @param int $initialDelay Initial delay in seconds
-     * @param callable|null $onRetry Callback to execute before each retry
-     * @return mixed
+     * @param  callable  $callback  The callback to execute
+     * @param  int  $maxRetries  Maximum number of retry attempts
+     * @param  int  $initialDelay  Initial delay in seconds
+     * @param  callable|null  $onRetry  Callback to execute before each retry
      */
     public function retryWithBackoff(
         callable $callback,

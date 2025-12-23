@@ -26,7 +26,7 @@ class PermissionManager
             'storage/framework/cache/data',
             'storage/framework/sessions',
             'storage/framework/views',
-            'storage/logs'
+            'storage/logs',
         ]);
 
         $dirList = implode(' ', $dirs);
@@ -43,11 +43,11 @@ class PermissionManager
         $httpUser = $this->systemDetector->getWebServerUser($releasePath);
 
         // Check if setfacl is available
-        if (!$this->systemDetector->hasSetfacl($releasePath)) {
+        if (! $this->systemDetector->hasSetfacl($releasePath)) {
             return;
         }
 
-        if (!$httpUser) {
+        if (! $httpUser) {
             return;
         }
 
@@ -56,7 +56,7 @@ class PermissionManager
         // Verify current user exists
         $this->deployer->writeln("run cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
         $userExists = $this->deployer->run("cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
-        if (!empty($userExists)) {
+        if (! empty($userExists)) {
             $this->deployer->writeln($userExists);
         }
 
@@ -80,7 +80,7 @@ class PermissionManager
         $this->deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
         $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
 
-        if (!empty($aclCount) && trim($aclCount) !== '0') {
+        if (! empty($aclCount) && trim($aclCount) !== '0') {
             $this->deployer->writeln($aclCount);
         } else {
             $this->deployer->writeln("run cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
@@ -98,7 +98,7 @@ class PermissionManager
     {
         $this->deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
         $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-        if (!empty($aclCount)) {
+        if (! empty($aclCount)) {
             $this->deployer->writeln($aclCount);
         }
     }
@@ -108,7 +108,7 @@ class PermissionManager
      */
     public function fixModulePermissions(string $releasePath): void
     {
-        $this->deployer->writeln("🔒 Fixing permissions for modular structure...");
+        $this->deployer->writeln('🔒 Fixing permissions for modular structure...');
 
         $this->deployer->writeln("run chmod -R 755 {$releasePath}/app-modules || true");
         $this->deployer->run("chmod -R 755 {$releasePath}/app-modules || true");
@@ -119,6 +119,6 @@ class PermissionManager
         $this->deployer->writeln("run find {$releasePath}/app-modules -type d -exec chmod 755 {} \\; || true");
         $this->deployer->run("find {$releasePath}/app-modules -type d -exec chmod 755 {} \\; || true");
 
-        $this->deployer->writeln("✅ Module permissions fixed");
+        $this->deployer->writeln('✅ Module permissions fixed');
     }
 }

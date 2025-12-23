@@ -13,6 +13,6 @@ class RsyncException extends Exception
 
     public static function timeout(): self
     {
-        return new self("Rsync operation timed out");
+        return new self('Rsync operation timed out');
     }
 }

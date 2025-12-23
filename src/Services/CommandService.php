@@ -2,7 +2,6 @@
 
 namespace Shaf\LaravelDeployer\Services;
 
-use Shaf\LaravelDeployer\Constants\Commands;
 use Shaf\LaravelDeployer\Constants\Timeouts;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
@@ -18,15 +17,19 @@ use Symfony\Component\Process\Process;
 class CommandService
 {
     private ?Ssh $ssh = null;
+
     private int $timeout = Timeouts::DEFAULT_COMMAND;
+
     private string $prefix = '';
+
+    private ?string $lastError = null;
 
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
         private string $workingDirectory = ''
     ) {
-        if (!$config->isLocal) {
+        if (! $config->isLocal) {
             $this->initializeSsh();
         }
 
@@ -52,7 +55,7 @@ class CommandService
             $process = $this->ssh->execute($command);
             $output = trim($process->getOutput());
 
-            if (!$process->isSuccessful()) {
+            if (! $process->isSuccessful()) {
                 throw SSHConnectionException::commandFailed(
                     $command,
                     $process->getErrorOutput()
@@ -84,7 +87,7 @@ class CommandService
         $process->setTimeout($this->timeout);
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             throw TaskExecutionException::commandFailed($command, $process->getErrorOutput());
         }
 
@@ -97,8 +100,15 @@ class CommandService
     /**
      * Test a condition (returns true/false)
      */
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
+    }
+
     public function test(string $condition): bool
     {
+        $this->lastError = null;
+
         try {
             if ($this->config->isLocal) {
                 $process = Process::fromShellCommandline(
@@ -106,12 +116,24 @@ class CommandService
                     $this->workingDirectory ?: base_path()
                 );
                 $process->run();
+
                 return $process->isSuccessful();
             }
 
-            $process = $this->ssh->execute($condition . ' && echo "true" || echo "false"');
-            return trim($process->getOutput()) === 'true';
+            $process = $this->ssh->execute($condition.' && echo "true" || echo "false"');
+
+            // Capture any error output
+            $errorOutput = trim($process->getErrorOutput());
+            $stdout = trim($process->getOutput());
+
+            if (! $process->isSuccessful() || $errorOutput) {
+                $this->lastError = $errorOutput ?: "Exit code: {$process->getExitCode()}, stdout: {$stdout}";
+            }
+
+            return $stdout === 'true' || str_contains($stdout, 'true');
         } catch (\Exception $e) {
+            $this->lastError = $e->getMessage();
+
             return false;
         }
     }
@@ -181,22 +203,30 @@ class CommandService
 
     public function fileExists(string $path): bool
     {
-        return $this->test("[ -f {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -f {$escapedPath} ]");
     }
 
     public function directoryExists(string $path): bool
     {
-        return $this->test("[ -d {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -d {$escapedPath} ]");
     }
 
     public function symlinkExists(string $path): bool
     {
-        return $this->test("[ -L {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -L {$escapedPath} ]");
     }
 
     public function pathExists(string $path): bool
     {
-        return $this->test("[ -e {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -e {$escapedPath} ]");
     }
 
     // ============================================================
@@ -253,7 +283,7 @@ class CommandService
     public function line(string $message): void
     {
         if ($this->shouldShowNormal()) {
-            $this->output->writeln($this->prefix . $message);
+            $this->output->writeln($this->prefix.$message);
         }
     }
 
@@ -270,9 +300,9 @@ class CommandService
     {
         if ($this->shouldShowNormal()) {
             $this->newLine();
-            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->output->writeln("<fg=cyan>  {$title}</>");
-            $this->output->writeln("<fg=cyan>═══════════════════════════════════════════════════════════</>");
+            $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->newLine();
         }
     }
@@ -286,10 +316,10 @@ class CommandService
 
     public function confirm(string $question, bool $default = false): bool
     {
-        $helper = new \Symfony\Component\Console\Helper\QuestionHelper();
+        $helper = new \Symfony\Component\Console\Helper\QuestionHelper;
         $input = new \Symfony\Component\Console\Input\ArrayInput([]);
         $confirmQuestion = new \Symfony\Component\Console\Question\ConfirmationQuestion(
-            "{$this->prefix}{$question} " . ($default ? '[Y/n]' : '[y/N]') . ' ',
+            "{$this->prefix}{$question} ".($default ? '[Y/n]' : '[y/N]').' ',
             $default
         );
 
@@ -355,9 +385,42 @@ class CommandService
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
-        $this->ssh->disableStrictHostKeyChecking();
+        // Only disable strict host key checking if explicitly configured to do so
+        // Default is true (enabled) for security - disabling allows MITM attacks
+        $strictHostKeyChecking = true;
+        if (function_exists('config')) {
+            $strictHostKeyChecking = config('laravel-deployer.ssh.strict_host_key_checking', true);
+        }
+        if (! $strictHostKeyChecking) {
+            $this->ssh->disableStrictHostKeyChecking();
+        }
+
+        // Use identity file if configured
+        if ($this->config->identityFile) {
+            $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
+            $identityPath = str_starts_with($this->config->identityFile, '~')
+                ? str_replace('~', $home, $this->config->identityFile)
+                : $this->config->identityFile;
+
+            // Verify file exists
+            if (! file_exists($identityPath)) {
+                throw new \RuntimeException("SSH identity file not found: {$identityPath}");
+            }
+
+            $this->ssh->usePrivateKey($identityPath);
+        }
+
         $this->ssh->disablePasswordAuthentication();
         $this->ssh->setTimeout($this->timeout);
+    }
+
+    /**
+     * Escape a path for safe use in shell commands.
+     * Prevents command injection vulnerabilities.
+     */
+    public static function escapePath(string $path): string
+    {
+        return escapeshellarg($path);
     }
 
     private function buildArtisanOptions(array $options, bool $force): string
@@ -378,7 +441,7 @@ class CommandService
             }
         }
 
-        return empty($parts) ? '' : ' ' . implode(' ', $parts);
+        return empty($parts) ? '' : ' '.implode(' ', $parts);
     }
 
     private function logCommand(string $command): void
@@ -390,10 +453,10 @@ class CommandService
 
     private function logCommandOutput(string $output): void
     {
-        if ($this->output->isVeryVerbose() && !empty(trim($output))) {
+        if ($this->output->isVeryVerbose() && ! empty(trim($output))) {
             $lines = explode("\n", trim($output));
             foreach ($lines as $line) {
-                if (!empty(trim($line))) {
+                if (! empty(trim($line))) {
                     $this->output->writeln("{$this->prefix}{$line}");
                 }
             }

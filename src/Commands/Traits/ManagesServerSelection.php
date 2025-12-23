@@ -17,12 +17,10 @@ trait ManagesServerSelection
 
     /**
      * Get server manager instance
-     *
-     * @return ServerManager
      */
     protected function getServerManager(): ServerManager
     {
-        return $this->serverManager ??= new ServerManager();
+        return $this->serverManager ??= new ServerManager;
     }
 
     /**
@@ -44,7 +42,7 @@ trait ManagesServerSelection
 
         $serverName = $this->argument('server');
         if ($serverName) {
-            if (!$this->validateServerWithFeedback($serverName)) {
+            if (! $this->validateServerWithFeedback($serverName)) {
                 return null;
             }
 
@@ -93,7 +91,7 @@ trait ManagesServerSelection
         $choice = $this->ask('Select server', '1');
         $index = (int) $choice - 1;
 
-        if (!isset($servers[$index])) {
+        if (! isset($servers[$index])) {
             $this->error('❌ Invalid server selection');
 
             return null;
@@ -108,18 +106,18 @@ trait ManagesServerSelection
      * Checks if the server exists and displays appropriate error
      * messages if not found.
      *
-     * @param string $serverName Server name to validate
+     * @param  string  $serverName  Server name to validate
      * @return bool True if server exists, false otherwise
      */
     protected function validateServerWithFeedback(string $serverName): bool
     {
         $serverManager = $this->getServerManager();
 
-        if (!$serverManager->serverExists($serverName)) {
+        if (! $serverManager->serverExists($serverName)) {
             $this->error("❌ Server '{$serverName}' not found");
 
             $availableServers = $serverManager->getAvailableServers();
-            if (!empty($availableServers)) {
+            if (! empty($availableServers)) {
                 $this->info('💡 Available servers: '.implode(', ', $availableServers));
             }
 
@@ -134,12 +132,10 @@ trait ManagesServerSelection
      *
      * Shows contextual error message based on whether the .deploy
      * directory exists or not.
-     *
-     * @return void
      */
     protected function displayNoServersError(): void
     {
-        if (!$this->getServerManager()->deployDirectoryExists()) {
+        if (! $this->getServerManager()->deployDirectoryExists()) {
             $this->error('❌ .deploy directory not found.');
         } else {
             $this->error('❌ No environment files found in .deploy/');

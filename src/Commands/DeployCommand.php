@@ -30,9 +30,10 @@ class DeployCommand extends Command
 
         // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
-        if (!in_array($environment, $validEnvironments)) {
+        if (! in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
-            $this->info('Valid environments: ' . implode(', ', $validEnvironments));
+            $this->info('Valid environments: '.implode(', ', $validEnvironments));
+
             return self::FAILURE;
         }
 
@@ -43,6 +44,7 @@ class DeployCommand extends Command
             $this->newLine();
             $this->components->warn('Please stop the Vite development server before deploying. 💡 Press Ctrl+C in the terminal where Vite is running to stop it.');
             $this->newLine();
+
             return self::FAILURE;
         }
 
@@ -57,19 +59,21 @@ class DeployCommand extends Command
             $diffAction = new DiffAction($cmdService, $config, base_path());
 
             // Show deployment confirmation
-            if (!$noConfirm && !$this->confirmDeployment($config)) {
+            if (! $noConfirm && ! $this->confirmDeployment($config)) {
                 $this->newLine();
                 $this->comment('🛑 Deployment cancelled by user');
                 $this->newLine();
+
                 return self::FAILURE;
             }
 
             // Health check (optional)
-            if (!$skipHealthCheck) {
+            if (! $skipHealthCheck) {
                 $healthCheck = new HealthCheckAction($cmdService, $config);
-                if (!$healthCheck->check()) {
+                if (! $healthCheck->check()) {
                     $this->error('Health check failed!');
                     $this->newLine();
+
                     return self::FAILURE;
                 }
                 $this->newLine();
@@ -92,6 +96,7 @@ class DeployCommand extends Command
             ]);
 
             $this->newLine();
+
             return self::SUCCESS;
 
         } catch (\Exception $e) {
@@ -154,7 +159,7 @@ class DeployCommand extends Command
         $process = new Process(['ps', 'aux']);
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        if (! $process->isSuccessful()) {
             return false;
         }
 

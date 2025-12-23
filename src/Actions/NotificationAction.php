@@ -23,9 +23,9 @@ class NotificationAction
         $release = $data['release'] ?? 'unknown';
         $timestamp = date('Y-m-d H:i:s');
 
-        $message = "✅ Deployment successful!\n" .
-                   "Environment: {$environment}\n" .
-                   "Release: {$release}\n" .
+        $message = "✅ Deployment successful!\n".
+                   "Environment: {$environment}\n".
+                   "Release: {$release}\n".
                    "Time: {$timestamp}";
 
         $this->sendNotification($message, 'success');
@@ -39,9 +39,9 @@ class NotificationAction
         $environment = $this->config->environment->value;
         $timestamp = date('Y-m-d H:i:s');
 
-        $message = "❌ Deployment failed!\n" .
-                   "Environment: {$environment}\n" .
-                   "Error: {$exception->getMessage()}\n" .
+        $message = "❌ Deployment failed!\n".
+                   "Environment: {$environment}\n".
+                   "Error: {$exception->getMessage()}\n".
                    "Time: {$timestamp}";
 
         $this->sendNotification($message, 'failure');
@@ -81,9 +81,9 @@ class NotificationAction
                         'color' => $color,
                         'text' => $message,
                         'footer' => 'Laravel Deployer',
-                        'ts' => time()
-                    ]
-                ]
+                        'ts' => time(),
+                    ],
+                ],
             ]);
 
             $ch = curl_init($webhook);
@@ -112,11 +112,11 @@ class NotificationAction
                         'description' => $message,
                         'color' => $color,
                         'footer' => [
-                            'text' => 'Laravel Deployer'
+                            'text' => 'Laravel Deployer',
                         ],
-                        'timestamp' => date('c')
-                    ]
-                ]
+                        'timestamp' => date('c'),
+                    ],
+                ],
             ]);
 
             $ch = curl_init($webhook);

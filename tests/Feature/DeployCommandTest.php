@@ -8,7 +8,7 @@ beforeEach(function () {
     $this->deployPath = base_path('.deploy');
     $this->buildPath = $this->deployPath.'/builds';
 
-    if (!is_dir($this->deployPath)) {
+    if (! is_dir($this->deployPath)) {
         mkdir($this->deployPath, 0755, true);
     }
 
@@ -65,13 +65,13 @@ test('deploy command is registered', function () {
 
 test('deploy command can be instantiated', function () {
     $result = $this->artisan('deploy --help');
-    
+
     expect($result->run())->toBe(0);
 });
 
 test('deploy command requires environment argument', function () {
     $result = $this->artisan('deploy');
-    
+
     // Should fail without environment argument
     expect($result->run())->not->toBe(0);
 })->skip('Command validation varies by Laravel version');

@@ -2,9 +2,9 @@
 
 namespace Shaf\LaravelDeployer\Actions\Deployment;
 
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Services\ReleaseManager;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer;
 
 class RollbackDeploymentAction extends DeploymentAction
 {
@@ -20,14 +20,14 @@ class RollbackDeploymentAction extends DeploymentAction
     {
         $rollbackInfo = $this->releaseManager->getRollbackInfo();
 
-        if (!$rollbackInfo['can_rollback']) {
+        if (! $rollbackInfo['can_rollback']) {
             throw new \RuntimeException('No previous release available for rollback');
         }
 
         // Use specified target or previous release
         $target = $targetRelease ?? $rollbackInfo['previous'];
 
-        if (!$target) {
+        if (! $target) {
             throw new \RuntimeException('No target release specified for rollback');
         }
 
@@ -50,7 +50,7 @@ class RollbackDeploymentAction extends DeploymentAction
 
         // Verify target release exists
         $exists = $this->deployer->test("[ -d {$targetPath} ]");
-        if (!$exists) {
+        if (! $exists) {
             throw new \RuntimeException("Release {$targetRelease} does not exist");
         }
 

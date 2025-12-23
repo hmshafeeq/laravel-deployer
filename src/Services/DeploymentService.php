@@ -15,14 +15,16 @@ use Symfony\Component\Process\Process;
 class DeploymentService
 {
     private CommandService $cmd;
+
     private string $lockFile;
+
     private string $currentReleaseName = '';
 
     public function __construct(
         private DeploymentConfig $config,
         private string $basePath
     ) {
-        $this->lockFile = "{$config->deployPath}/" . Paths::LOCK_FILE;
+        $this->lockFile = "{$config->deployPath}/".Paths::LOCK_FILE;
     }
 
     /**
@@ -43,7 +45,7 @@ class DeploymentService
     public function generateReleaseName(): string
     {
         $yearMonth = date('Ym');
-        $counterDir = "{$this->config->deployPath}/" . Paths::COUNTER_DIR;
+        $counterDir = "{$this->config->deployPath}/".Paths::COUNTER_DIR;
         $counterFile = "{$counterDir}/{$yearMonth}.txt";
 
         // Ensure the folder exists
@@ -69,9 +71,9 @@ class DeploymentService
      */
     public function getReleases(): array
     {
-        $releasesPath = "{$this->config->deployPath}/" . Paths::RELEASES_DIR;
+        $releasesPath = "{$this->config->deployPath}/".Paths::RELEASES_DIR;
 
-        if (!$this->cmd->directoryExists($releasesPath)) {
+        if (! $this->cmd->directoryExists($releasesPath)) {
             return [];
         }
 
@@ -91,9 +93,9 @@ class DeploymentService
      */
     public function getCurrentRelease(): ?string
     {
-        $currentPath = "{$this->config->deployPath}/" . Paths::CURRENT_SYMLINK;
+        $currentPath = "{$this->config->deployPath}/".Paths::CURRENT_SYMLINK;
 
-        if (!$this->cmd->symlinkExists($currentPath)) {
+        if (! $this->cmd->symlinkExists($currentPath)) {
             return null;
         }
 
@@ -132,7 +134,7 @@ class DeploymentService
      */
     public function logRelease(ReleaseInfo $release): void
     {
-        $logFile = "{$this->config->deployPath}/" . Paths::RELEASES_LOG;
+        $logFile = "{$this->config->deployPath}/".Paths::RELEASES_LOG;
         $logEntry = json_encode($release->toLogEntry());
 
         $this->cmd->remote("echo '{$logEntry}' >> {$logFile}");
@@ -143,7 +145,7 @@ class DeploymentService
      */
     public function writeLatestRelease(string $releaseName): void
     {
-        $latestReleaseFile = "{$this->config->deployPath}/" . Paths::LATEST_RELEASE;
+        $latestReleaseFile = "{$this->config->deployPath}/".Paths::LATEST_RELEASE;
         $this->cmd->remote("echo {$releaseName} > {$latestReleaseFile}");
     }
 
@@ -155,6 +157,7 @@ class DeploymentService
         if ($this->config->isLocal) {
             $process = Process::fromShellCommandline('git config --get user.name');
             $process->run();
+
             return trim($process->getOutput()) ?: 'unknown';
         }
 
@@ -170,13 +173,13 @@ class DeploymentService
      */
     public function check(): void
     {
-        $this->cmd->debug("Checking for deployment lock...");
+        $this->cmd->debug('Checking for deployment lock...');
 
         if ($this->isLocked()) {
             throw DeploymentException::locked($this->lockFile);
         }
 
-        $this->cmd->debug("No deployment lock found");
+        $this->cmd->debug('No deployment lock found');
     }
 
     /**
@@ -184,7 +187,7 @@ class DeploymentService
      */
     public function lock(): void
     {
-        $this->cmd->debug("Creating deployment lock...");
+        $this->cmd->debug('Creating deployment lock...');
 
         $user = $this->getUser();
         $this->cmd->remote("echo '{$user}' > {$this->lockFile}");
@@ -197,11 +200,11 @@ class DeploymentService
      */
     public function unlock(): void
     {
-        $this->cmd->debug("Removing deployment lock...");
+        $this->cmd->debug('Removing deployment lock...');
 
         $this->cmd->remote("rm -f {$this->lockFile}");
 
-        $this->cmd->debug("Deployment unlocked");
+        $this->cmd->debug('Deployment unlocked');
     }
 
     /**
@@ -217,7 +220,7 @@ class DeploymentService
      */
     public function getLockedBy(): ?string
     {
-        if (!$this->isLocked()) {
+        if (! $this->isLocked()) {
             return null;
         }
 
@@ -237,17 +240,17 @@ class DeploymentService
 
     public function getReleasePath(string $releaseName): string
     {
-        return "{$this->config->deployPath}/" . Paths::RELEASES_DIR . "/{$releaseName}";
+        return "{$this->config->deployPath}/".Paths::RELEASES_DIR."/{$releaseName}";
     }
 
     public function getSharedPath(): string
     {
-        return "{$this->config->deployPath}/" . Paths::SHARED_DIR;
+        return "{$this->config->deployPath}/".Paths::SHARED_DIR;
     }
 
     public function getCurrentPath(): string
     {
-        return "{$this->config->deployPath}/" . Paths::CURRENT_SYMLINK;
+        return "{$this->config->deployPath}/".Paths::CURRENT_SYMLINK;
     }
 
     public function getCurrentReleaseName(): string

@@ -17,12 +17,10 @@ trait ManagesEnvironmentSelection
 
     /**
      * Get server manager instance
-     *
-     * @return ServerManager
      */
     protected function getServerManager(): ServerManager
     {
-        return $this->serverManager ??= new ServerManager();
+        return $this->serverManager ??= new ServerManager;
     }
 
     /**
@@ -44,7 +42,7 @@ trait ManagesEnvironmentSelection
 
         $environment = $this->argument('environment');
         if ($environment) {
-            if (!$this->validateEnvironmentWithFeedback($environment)) {
+            if (! $this->validateEnvironmentWithFeedback($environment)) {
                 return null;
             }
 
@@ -93,7 +91,7 @@ trait ManagesEnvironmentSelection
         $choice = $this->ask('Select environment', '1');
         $index = (int) $choice - 1;
 
-        if (!isset($environments[$index])) {
+        if (! isset($environments[$index])) {
             $this->error('❌ Invalid environment selection');
 
             return null;
@@ -108,18 +106,18 @@ trait ManagesEnvironmentSelection
      * Checks if the environment exists and displays appropriate error
      * messages if not found.
      *
-     * @param string $environment Environment name to validate
+     * @param  string  $environment  Environment name to validate
      * @return bool True if environment exists, false otherwise
      */
     protected function validateEnvironmentWithFeedback(string $environment): bool
     {
         $serverManager = $this->getServerManager();
 
-        if (!$serverManager->serverExists($environment)) {
+        if (! $serverManager->serverExists($environment)) {
             $this->error("❌ Environment '{$environment}' not found");
 
             $availableEnvironments = $serverManager->getAvailableServers();
-            if (!empty($availableEnvironments)) {
+            if (! empty($availableEnvironments)) {
                 $this->info('💡 Available environments: '.implode(', ', $availableEnvironments));
             }
 
@@ -134,12 +132,10 @@ trait ManagesEnvironmentSelection
      *
      * Shows contextual error message based on whether the .deploy
      * directory exists or not.
-     *
-     * @return void
      */
     protected function displayNoEnvironmentsError(): void
     {
-        if (!$this->getServerManager()->deployDirectoryExists()) {
+        if (! $this->getServerManager()->deployDirectoryExists()) {
             $this->error('❌ .deploy directory not found.');
         } else {
             $this->error('❌ No environment files found in .deploy/');

@@ -23,19 +23,17 @@ class HealthCheckService
      *
      * Checks server resources (disk space, memory) before deployment
      * to ensure the server can handle the deployment.
-     *
-     * @return void
      */
     public function runPreDeployment(): void
     {
-        if (!$this->isEnabled()) {
+        if (! $this->isEnabled()) {
             return;
         }
 
-        $this->deployer->writeln("🔍 Checking server resources...");
+        $this->deployer->writeln('🔍 Checking server resources...');
         CheckDiskSpaceAction::run($this->deployer);
         CheckMemoryUsageAction::run($this->deployer);
-        $this->deployer->writeln("");
+        $this->deployer->writeln('');
     }
 
     /**
@@ -44,25 +42,24 @@ class HealthCheckService
      * Verifies the deployed application is working correctly by checking
      * health endpoints and running smoke tests.
      *
-     * @param string|null $appUrl Optional application URL to check
-     * @return void
+     * @param  string|null  $appUrl  Optional application URL to check
      */
     public function runPostDeployment(?string $appUrl = null): void
     {
-        if (!$this->isEnabled()) {
+        if (! $this->isEnabled()) {
             return;
         }
 
         $appUrl = $appUrl ?? $this->detectApplicationUrl();
 
-        $this->deployer->writeln("🔍 Running deployment health checks...");
-        $this->deployer->writeln("");
+        $this->deployer->writeln('🔍 Running deployment health checks...');
+        $this->deployer->writeln('');
 
         CheckHealthEndpointAction::run($this->deployer, null, $appUrl);
         RunSmokeTestsAction::run($this->deployer, $appUrl);
 
-        $this->deployer->writeln("");
-        $this->deployer->writeln("✅ All health checks passed!");
+        $this->deployer->writeln('');
+        $this->deployer->writeln('✅ All health checks passed!');
     }
 
     /**
@@ -70,8 +67,6 @@ class HealthCheckService
      *
      * Reads the APP_URL from the .env file instead of using tinker
      * for better performance.
-     *
-     * @return string
      */
     public function detectApplicationUrl(): string
     {
@@ -95,8 +90,6 @@ class HealthCheckService
 
     /**
      * Check if health checks are enabled in configuration
-     *
-     * @return bool
      */
     protected function isEnabled(): bool
     {

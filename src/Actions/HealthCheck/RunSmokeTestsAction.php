@@ -8,7 +8,7 @@ class RunSmokeTestsAction extends HealthCheckAction
 {
     public function execute(string $appUrl): array
     {
-        $this->writeln("🧪 Testing critical endpoints:");
+        $this->writeln('🧪 Testing critical endpoints:');
 
         $endpoints = config('laravel-deployer.health_check.endpoints', [
             '/' => 'Home page',
@@ -22,12 +22,12 @@ class RunSmokeTestsAction extends HealthCheckAction
         $results = [];
 
         foreach ($endpoints as $endpoint => $description) {
-            $url = rtrim($appUrl, '/') . $endpoint;
+            $url = rtrim($appUrl, '/').$endpoint;
             $this->writeln("run curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
             $response = $this->cmd("curl -s -o /dev/null -w '%{http_code}' {$url} || echo 'FAILED'");
             $this->writeln($response);
 
-            if (!in_array($response, array_map('strval', $acceptableStatusCodes))) {
+            if (! in_array($response, array_map('strval', $acceptableStatusCodes))) {
                 throw new \RuntimeException("Smoke test failed for {$endpoint} ({$description}). HTTP: {$response}");
             }
 

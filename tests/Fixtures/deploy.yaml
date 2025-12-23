@@ -1,81 +1,51 @@
-hosts:
-  test:
-    hostname: localhost
-    remote_user: root
-    deploy_path: .deploy/builds
-    repository: .
-    branch: main
-    local: true
-    shared_dirs:
-      - storage/app
-      - storage/framework
-      - storage/logs
-    shared_files:
-      - .env
-    writable_dirs:
-      - bootstrap/cache
-      - storage
-      - storage/app
-      - storage/framework
-      - storage/logs
-    keep_releases: 3
-    rsync:
-      - src
-      - tests
-      - composer.json
-      - phpunit.xml
-    health_checks:
-      endpoints: []
-
-  local:
-    hostname: localhost
-    remote_user: root
-    deploy_path: .deploy/builds/local
-    repository: .
-    branch: main
-    local: true
-    shared_dirs:
-      - storage/app
-      - storage/framework
-      - storage/logs
-    shared_files:
-      - .env
-    writable_dirs:
-      - bootstrap/cache
-      - storage
-    keep_releases: 2
-    rsync:
-      - src
-      - tests
-      - composer.json
-    health_checks:
-      endpoints: []
-
-  staging:
-    hostname: staging.example.com
-    remote_user: deploy
-    deploy_path: /var/www/staging
-    branch: develop
-
-  production:
-    hostname: example.com
-    remote_user: deploy
-    deploy_path: /var/www/production
-    branch: main
-    port: 22
-
-config:
+test:
+  hostname: localhost
+  remote_user: root
+  deploy_path: .deploy/builds
+  repository: .
+  branch: main
+  local: true
+  shared_dirs:
+    - storage/app
+    - storage/framework
+    - storage/logs
+  shared_files:
+    - .env
+  writable_dirs:
+    - bootstrap/cache
+    - storage
+    - storage/app
+    - storage/framework
+    - storage/logs
   keep_releases: 3
-  application: TestApp
-  show_diff: true
-  confirm_changes: false
-  diff_display_limit: 25
   rsync:
-    exclude:
-      - .git
-      - node_modules
-      - .env
-      - tests
-    include:
-      - app/
-      - config/
+    - src
+    - tests
+    - composer.json
+    - phpunit.xml
+  health_checks:
+    endpoints: []
+
+local:
+  hostname: localhost
+  remote_user: root
+  deploy_path: .deploy/builds/local
+  repository: .
+  branch: main
+  local: true
+  shared_dirs:
+    - storage/app
+    - storage/framework
+    - storage/logs
+  shared_files:
+    - .env
+  writable_dirs:
+    - bootstrap/cache
+    - storage
+  keep_releases: 2
+  rsync:
+    - src
+    - tests
+    - composer.json
+  health_checks:
+    endpoints: []

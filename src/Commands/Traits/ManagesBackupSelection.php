@@ -17,12 +17,10 @@ trait ManagesBackupSelection
 
     /**
      * Get backup manager instance
-     *
-     * @return BackupManager
      */
     protected function getBackupManager(): BackupManager
     {
-        return $this->backupManager ??= new BackupManager();
+        return $this->backupManager ??= new BackupManager;
     }
 
     /**
@@ -47,7 +45,7 @@ trait ManagesBackupSelection
         if ($backupArg) {
             $backup = $this->getBackupManager()->findBackup($backupArg);
 
-            if (!$backup) {
+            if (! $backup) {
                 $this->error("❌ Backup not found: {$backupArg}");
 
                 return null;
@@ -85,7 +83,7 @@ trait ManagesBackupSelection
             '1'
         );
 
-        if (!is_numeric($choice) || $choice < 1 || $choice > count($backups)) {
+        if (! is_numeric($choice) || $choice < 1 || $choice > count($backups)) {
             $this->error("❌ Invalid backup selection: {$choice}");
 
             return null;
@@ -100,8 +98,7 @@ trait ManagesBackupSelection
      * Shows a formatted table of backups with index, filename,
      * size, and date.
      *
-     * @param array<string> $backups List of backup file paths
-     * @return void
+     * @param  array<string>  $backups  List of backup file paths
      */
     protected function displayBackups(array $backups): void
     {
@@ -130,12 +127,10 @@ trait ManagesBackupSelection
      *
      * Shows contextual error message based on whether the backups
      * directory exists or not.
-     *
-     * @return void
      */
     protected function displayNoBackupsError(): void
     {
-        if (!$this->getBackupManager()->backupsDirectoryExists()) {
+        if (! $this->getBackupManager()->backupsDirectoryExists()) {
             $this->error('❌ No backups directory found.');
         } else {
             $this->error('❌ No database backups found in .deploy/downloads/backups/ directory.');

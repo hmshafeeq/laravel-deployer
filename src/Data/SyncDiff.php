@@ -17,17 +17,17 @@ readonly class SyncDiff
 
     public function hasNew(): bool
     {
-        return !empty($this->newFiles);
+        return ! empty($this->newFiles);
     }
 
     public function hasModified(): bool
     {
-        return !empty($this->modifiedFiles);
+        return ! empty($this->modifiedFiles);
     }
 
     public function hasDeleted(): bool
     {
-        return !empty($this->deletedFiles);
+        return ! empty($this->deletedFiles);
     }
 
     public function newCount(): int

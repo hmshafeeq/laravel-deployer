@@ -3,7 +3,6 @@
 namespace Shaf\LaravelDeployer\Actions\Database;
 
 use Shaf\LaravelDeployer\Support\Abstract\DatabaseAction;
-use Shaf\LaravelDeployer\ValueObjects\BackupInfo;
 
 class DownloadDatabaseBackupAction extends DatabaseAction
 {
@@ -18,7 +17,7 @@ class DownloadDatabaseBackupAction extends DatabaseAction
 
         try {
             $this->downloadWithProgress($backup->path, $localFile, $remoteInfo['bytes'], $downloadMethod);
-            $this->writeln("");
+            $this->writeln('');
             $this->writeln("💡 To restore locally: php artisan database:restore {$backup->name}");
 
             return $localFile;
@@ -59,7 +58,7 @@ class DownloadDatabaseBackupAction extends DatabaseAction
 
         $cmd = $this->buildDownloadCommand($method, $deployUser, $deployHost, $remoteFile, $localFile);
 
-        $this->writeln("💡 This may take a while for large files...");
+        $this->writeln('💡 This may take a while for large files...');
         $this->deployer->runLocally($cmd);
 
         $downloadTime = round(microtime(true) - $startTime, 2);
@@ -69,12 +68,12 @@ class DownloadDatabaseBackupAction extends DatabaseAction
     protected function determineDownloadMethod(?string $method): string
     {
         if ($method === null) {
-            $this->writeln("💡 Speed optimization tips:");
-            $this->writeln("   • Option 1 (rsync): Best for reliability, resume capability");
-            $this->writeln("   • Option 2 (scp): Often faster for large files, no resume");
-            $this->writeln("");
+            $this->writeln('💡 Speed optimization tips:');
+            $this->writeln('   • Option 1 (rsync): Best for reliability, resume capability');
+            $this->writeln('   • Option 2 (scp): Often faster for large files, no resume');
+            $this->writeln('');
             $method = '1';
-            $this->writeln("Using rsync (default)");
+            $this->writeln('Using rsync (default)');
         } else {
             $methodName = (strtolower($method) === 'scp' || $method === '2') ? 'SCP' : 'rsync';
             $this->writeln("⚡ Using {$methodName} download method");
@@ -86,17 +85,19 @@ class DownloadDatabaseBackupAction extends DatabaseAction
     protected function buildDownloadCommand(string $method, string $user, string $host, string $remoteFile, string $localFile): string
     {
         if ($method === '2') {
-            $this->writeln("🚀 Using SCP for maximum speed...");
-            return "scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 {$user}@{$host}:{$remoteFile} " . dirname($localFile) . '/';
+            $this->writeln('🚀 Using SCP for maximum speed...');
+
+            return "scp -o Compression=no -o TCPKeepAlive=yes -o ServerAliveInterval=60 {$user}@{$host}:{$remoteFile} ".dirname($localFile).'/';
         } else {
-            $this->writeln("⚡ Using optimized rsync (no compression, no bandwidth limit)...");
-            return "rsync -av --partial --inplace {$user}@{$host}:{$remoteFile} " . dirname($localFile) . '/';
+            $this->writeln('⚡ Using optimized rsync (no compression, no bandwidth limit)...');
+
+            return "rsync -av --partial --inplace {$user}@{$host}:{$remoteFile} ".dirname($localFile).'/';
         }
     }
 
     protected function verifyDownload(string $localFile, int $remoteSizeBytes, float $downloadTime): void
     {
-        if (!file_exists($localFile)) {
+        if (! file_exists($localFile)) {
             throw new \RuntimeException('Download failed: Local file not found');
         }
 
@@ -111,8 +112,8 @@ class DownloadDatabaseBackupAction extends DatabaseAction
         $localSizeHuman = $this->deployer->runLocally("ls -lh '{$localFile}' | awk '{print \$5}'");
         $speedMBps = round(($localSize / 1024 / 1024) / $downloadTime, 2);
 
-        $this->writeln("");
-        $this->writeln("✅ Database backup downloaded successfully!");
+        $this->writeln('');
+        $this->writeln('✅ Database backup downloaded successfully!');
         $this->writeln("📁 Location: {$localFile}");
         $this->writeln("📊 Size: {$localSizeHuman}");
         $this->writeln("⏱️  Time: {$downloadTime}s");
@@ -125,9 +126,9 @@ class DownloadDatabaseBackupAction extends DatabaseAction
             $localSize = filesize($localFile);
             if ($localSize < ($remoteSizeBytes * 0.95)) {
                 unlink($localFile);
-                $this->writeln("🧹 Cleaned up partial download");
+                $this->writeln('🧹 Cleaned up partial download');
             } else {
-                $this->writeln("📁 File appears complete, keeping download");
+                $this->writeln('📁 File appears complete, keeping download');
             }
         }
     }

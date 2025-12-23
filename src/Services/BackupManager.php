@@ -12,7 +12,7 @@ class BackupManager
     /**
      * Create a new BackupManager instance
      *
-     * @param string|null $backupsDirectory Custom backups directory path (optional)
+     * @param  string|null  $backupsDirectory  Custom backups directory path (optional)
      */
     public function __construct(?string $backupsDirectory = null)
     {
@@ -51,7 +51,7 @@ class BackupManager
     /**
      * Find backup by filename or index
      *
-     * @param string|int $identifier Backup filename or index (1-based)
+     * @param  string|int  $identifier  Backup filename or index (1-based)
      * @return string|null Path to backup or null if not found
      */
     public function findBackup(string|int $identifier): ?string
@@ -99,7 +99,7 @@ class BackupManager
     /**
      * Get backup metadata
      *
-     * @param string $backupPath Path to backup file
+     * @param  string  $backupPath  Path to backup file
      * @return array{name: string, size: int, size_formatted: string, date: string, timestamp: int}
      */
     public function getBackupMetadata(string $backupPath): array
@@ -116,7 +116,7 @@ class BackupManager
     /**
      * Ensure backups directory exists, creating it if necessary
      *
-     * @param int $permissions Directory permissions (default: 0755)
+     * @param  int  $permissions  Directory permissions (default: 0755)
      * @return bool True if directory exists or was created successfully
      */
     public function ensureBackupsDirectoryExists(int $permissions = 0755): bool

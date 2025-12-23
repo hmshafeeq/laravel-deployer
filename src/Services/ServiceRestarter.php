@@ -28,8 +28,7 @@ class ServiceRestarter
     /**
      * Restart all enabled services
      *
-     * @param bool $failSilently If true, service restart failures won't throw exceptions
-     * @return void
+     * @param  bool  $failSilently  If true, service restart failures won't throw exceptions
      */
     public function restartAll(bool $failSilently = false): void
     {
@@ -37,10 +36,10 @@ class ServiceRestarter
             return;
         }
 
-        $this->deployer->writeln("🔄 Restarting services...");
+        $this->deployer->writeln('🔄 Restarting services...');
 
         foreach ($this->enabledServices as $service => $enabled) {
-            if (!$enabled) {
+            if (! $enabled) {
                 continue;
             }
 
@@ -59,8 +58,8 @@ class ServiceRestarter
     /**
      * Restart a specific service
      *
-     * @param string $service Service name (php-fpm, nginx, supervisor)
-     * @return void
+     * @param  string  $service  Service name (php-fpm, nginx, supervisor)
+     *
      * @throws \RuntimeException If service name is not recognized
      */
     public function restartService(string $service): void
@@ -76,9 +75,8 @@ class ServiceRestarter
     /**
      * Restart only specific services
      *
-     * @param array $services List of service names to restart
-     * @param bool $failSilently If true, failures won't throw exceptions
-     * @return void
+     * @param  array  $services  List of service names to restart
+     * @param  bool  $failSilently  If true, failures won't throw exceptions
      */
     public function restartOnly(array $services, bool $failSilently = false): void
     {
@@ -97,8 +95,6 @@ class ServiceRestarter
 
     /**
      * Get services configuration from config file
-     *
-     * @return array
      */
     protected function getServicesFromConfig(): array
     {

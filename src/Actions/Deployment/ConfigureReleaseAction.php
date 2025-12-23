@@ -2,11 +2,11 @@
 
 namespace Shaf\LaravelDeployer\Actions\Deployment;
 
-use Shaf\LaravelDeployer\Services\SharedResourceLinker;
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Services\PermissionManager;
+use Shaf\LaravelDeployer\Services\SharedResourceLinker;
 use Shaf\LaravelDeployer\Services\SystemCommandDetector;
 use Shaf\LaravelDeployer\Support\Abstract\DeploymentAction;
-use Shaf\LaravelDeployer\Deployer;
 
 class ConfigureReleaseAction extends DeploymentAction
 {
@@ -62,7 +62,7 @@ class ConfigureReleaseAction extends DeploymentAction
         $this->writeln("run {$composerCommand}");
 
         $result = $this->cmd($composerCommand);
-        if (!empty($result)) {
+        if (! empty($result)) {
             $lines = explode("\n", $result);
             foreach ($lines as $line) {
                 $this->writeln($line);
@@ -78,7 +78,7 @@ class ConfigureReleaseAction extends DeploymentAction
         // Check if release symlink exists
         $this->writeln("run if [ -h {$this->getDeployPath()}/release ]; then echo +correct; fi");
         $result = $this->cmd("if [ -h {$this->getDeployPath()}/release ]; then echo +correct; fi");
-        if (!empty($result)) {
+        if (! empty($result)) {
             $this->writeln($result);
         }
 

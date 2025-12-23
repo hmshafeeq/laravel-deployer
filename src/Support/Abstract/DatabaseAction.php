@@ -29,6 +29,6 @@ abstract class DatabaseAction extends Action
      */
     protected function getFullBackupPath(): string
     {
-        return $this->getDeployPath() . '/' . $this->getBackupPath();
+        return $this->getDeployPath().'/'.$this->getBackupPath();
     }
 }
