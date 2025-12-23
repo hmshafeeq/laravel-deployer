@@ -519,7 +519,7 @@ class MigrateCommand extends Command
         $sitePath = $this->config->deployPath;
 
         // These are the only directories/files that should remain
-        $keepItems = ['current', 'releases', 'shared', '.dep'];
+        $keepItems = ['current', 'releases', 'shared', '.dep', '.env'];
 
         $this->components->task('Removing leftover files and directories', function () use ($sitePath, $keepItems) {
             if ($this->dryRun) {
