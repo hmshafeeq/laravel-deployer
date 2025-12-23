@@ -77,14 +77,14 @@ class DeployAction
             // 8. Create shared symlinks
             $this->createSharedLinks();
 
-            // 9. Set writable permissions
-            $this->setWritablePermissions();
-
-            // 10. Install composer dependencies
+            // 9. Install composer dependencies
             $this->installComposerDependencies();
 
-            // 11. Fix module permissions
+            // 10. Fix module permissions
             $this->fixModulePermissions();
+
+            // 11. Set writable permissions (must run after fixModulePermissions)
+            $this->setWritablePermissions();
 
             // 12. Run database migrations
             $this->runMigrations();
@@ -284,6 +284,8 @@ class DeployAction
             "{$this->releasePath}/storage",
         ];
 
+        $commands = [];
+
         foreach ($writableDirs as $dir) {
             $escapedDir = CommandService::escapePath($dir);
 
@@ -296,8 +298,14 @@ class DeployAction
             }
 
             // Create directory if it doesn't exist (e.g., bootstrap/cache is often gitignored)
-            $this->cmd->remote("mkdir -p {$escapedDir}");
-            $this->cmd->remote("chmod -R 775 {$escapedDir}");
+            // Set group to www-data and permissions to 775 so web server can write
+            $commands[] = "mkdir -p {$escapedDir}";
+            $commands[] = "chgrp -R www-data {$escapedDir}";
+            $commands[] = "chmod -R 775 {$escapedDir}";
+        }
+
+        if (! empty($commands)) {
+            $this->cmd->runBatch($commands);
         }
 
         $this->cmd->success('Writable permissions set');
