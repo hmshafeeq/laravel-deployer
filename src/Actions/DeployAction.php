@@ -300,14 +300,12 @@ class DeployAction
         $this->cmd->task('permissions:modules');
 
         // Fix all file permissions (644 for files, 755 for directories)
-        $this->cmd->remote("find {$this->releasePath} -type f -exec chmod 644 {} \\; 2>/dev/null || true");
-        $this->cmd->remote("find {$this->releasePath} -type d -exec chmod 755 {} \\; 2>/dev/null || true");
+        // Using + instead of \; to batch chmod calls for better performance
+        $this->cmd->remote("find {$this->releasePath} -type f -exec chmod 644 {} + 2>/dev/null || true");
+        $this->cmd->remote("find {$this->releasePath} -type d -exec chmod 755 {} + 2>/dev/null || true");
 
-        // Fix node_modules permissions if exists
-        $this->cmd->remote("chmod -R 755 {$this->releasePath}/node_modules 2>/dev/null || true");
-
-        // Fix vendor permissions
-        $this->cmd->remote("chmod -R 755 {$this->releasePath}/vendor 2>/dev/null || true");
+        // Fix vendor bin permissions (executables need 755)
+        $this->cmd->remote("chmod -R 755 {$this->releasePath}/vendor/bin 2>/dev/null || true");
 
         $this->cmd->success('Module permissions fixed');
     }

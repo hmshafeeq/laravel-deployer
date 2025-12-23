@@ -108,9 +108,6 @@ return [
         'timeout' => env('DEPLOY_HEALTH_CHECK_TIMEOUT', 30),
         'connect_timeout' => env('DEPLOY_HEALTH_CHECK_CONNECT_TIMEOUT', 5),
         'endpoints' => [
-            '/' => 'Home page',
-            '/admin/login' => 'Admin login',
-            '/user/login' => 'User login',
             '/health' => 'Health check',
         ],
         'acceptable_status_codes' => [200, 302, 401],
@@ -189,5 +186,24 @@ return [
         'php-fpm' => env('DEPLOY_RESTART_PHP_FPM', true),
         'nginx' => env('DEPLOY_RESTART_NGINX', true),
         'supervisor' => env('DEPLOY_RESTART_SUPERVISOR', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Post-Deployment Commands
+    |--------------------------------------------------------------------------
+    |
+    | Artisan commands to run after deployment is complete. These commands
+    | are executed in order after all other deployment steps have finished.
+    |
+    | Example:
+    |   'vendor:publish --tag=log-viewer-assets --force',
+    |   'storage:link',
+    |   'icons:cache',
+    |
+    */
+    'post_deploy_commands' => [
+        'vendor:publish --tag=log-viewer-assets --force',
+        'tool-tracker:migrate',
     ],
 ];

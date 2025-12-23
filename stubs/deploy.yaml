@@ -61,7 +61,6 @@ config:
         include:
             - composer.json
             - composer.lock
-            - post-deployment.sh
         include-file: false
         filter: [ ]
         filter-file: false
@@ -78,8 +77,6 @@ tasks:
     #  'build:assets':
     'build:assets':
         -   run_locally: 'npm run build'
-    'post-deployment':
-        -   run: '{{current_path}}/post-deployment.sh'
 hosts:
     local:
         labels:
@@ -114,7 +111,5 @@ after:
     deploy:failed:
         - deploy:unlock
         - notify:failure
-    deploy:success:
-        - post-deployment
 
 # Event handlers moved to deploy.phpoy.php
