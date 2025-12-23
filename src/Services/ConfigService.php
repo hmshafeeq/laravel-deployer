@@ -133,6 +133,10 @@ class ConfigService
             $overrides['identity_file'] = $identityFile;
         }
 
+        if ($githubToken = $this->getEnv('GITHUB_TOKEN')) {
+            $overrides['github_token'] = $githubToken;
+        }
+
         return array_merge($hostConfig, $overrides);
     }
 

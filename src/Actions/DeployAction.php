@@ -317,7 +317,22 @@ class DeployAction
         $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
 
-        $this->cmd->remote("cd {$escapedPath} && composer install {$composerOptions}");
+        // Build composer command with GitHub token if provided
+        $composerCommand = "cd {$escapedPath}";
+
+        if ($this->config->githubToken) {
+            // Set COMPOSER_AUTH environment variable for GitHub authentication
+            $composerAuth = json_encode([
+                'github-oauth' => [
+                    'github.com' => $this->config->githubToken,
+                ],
+            ]);
+            $composerCommand .= " && COMPOSER_AUTH='{$composerAuth}'";
+        }
+
+        $composerCommand .= " composer install {$composerOptions}";
+
+        $this->cmd->remote($composerCommand);
 
         $this->cmd->success('Composer dependencies installed');
     }

@@ -25,6 +25,7 @@ readonly class DeploymentConfig
         public bool $showUploadProgress = true,
         public int $diffDisplayLimit = 20,
         public string $phpBinary = 'php',
+        public ?string $githubToken = null,
     ) {}
 
     public static function fromArray(string $environment, array $config, array $globalConfig = []): self
@@ -48,6 +49,7 @@ readonly class DeploymentConfig
             showUploadProgress: $globalConfig['show_upload_progress'] ?? $config['show_upload_progress'] ?? true,
             diffDisplayLimit: $globalConfig['diff_display_limit'] ?? $config['diff_display_limit'] ?? 20,
             phpBinary: $config['bin/php'] ?? $config['php_binary'] ?? 'php',
+            githubToken: $config['github_token'] ?? null,
         );
     }
 
