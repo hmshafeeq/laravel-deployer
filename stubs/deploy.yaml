@@ -1,0 +1,115 @@
+import:
+    - vendor/shaf/laravel-deployer/recipe/deploy.php
+
+config:
+    application: 'Application Name'
+    ssh_multiplexing: true
+    keep_releases: 3
+    default_timeout: 900
+    default_selector: staging
+    log_files: [
+        'storage/logs/*.log'
+    ]
+
+    # Diff and confirmation settings
+    show_diff: true                    # Show files that will be synced before deployment
+    confirm_changes: true               # Ask for confirmation before uploading changes
+    show_upload_progress: true          # Show upload progress messages
+    diff_display_limit: 20             # Maximum number of files to display per category
+
+    rsync:
+        exclude:
+            - deploy.php
+            - deploy.yaml
+            - .git/
+            - .github/
+            - node_modules/
+            - vendor/
+            - storage/
+            - bootstrap/cache/
+            - tests/
+            - phpunit.xml
+            - .phpunit.result.cache
+            - .env
+            - .env.*
+            - .deploy/
+            - README.md
+            - .editorconfig
+            - .gitignore
+            - .styleci.yml
+            - docker-compose.yml
+            - Dockerfile
+            - package.json
+            - package-lock.json
+            - yarn.lock
+            - webpack.mix.js
+            - vite.config.js
+            - '*.log'
+            - .DS_Store
+            - Thumbs.db
+            - backups/
+            - sql/
+            - .idea/
+            - .vscode/
+            - .ai
+            - .claude
+            - .gemini
+            - .junie
+            - .zed
+            - .idea
+        exclude-file: false
+        include:
+            - composer.json
+            - composer.lock
+        include-file: false
+        filter: [ ]
+        filter-file: false
+        filter-perdir: false
+        flags: 'rzc'
+        options:
+            - delete
+            - delete-after
+            - compress
+        timeout: 900
+
+tasks:
+    #  You can create or override tasks here if needed for example:
+    #  'build:assets':
+    'build:assets':
+        -   run_locally: 'npm run build'
+hosts:
+    local:
+        labels:
+            env: local
+        local: true  # Use local execution instead of SSH
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.local
+        deploy_path: '/tmp/app'  # Overridden by DEPLOY_PATH in .deploy/.env.local
+        branch: 'dev'  # Overridden by DEPLOY_BRANCH in .deploy/.env.local
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader'
+        bin/php: 'php'  # Use system PHP to avoid path issues
+        bin/composer: 'composer'  # Use system Composer to avoid path issues
+
+    staging:
+        labels:
+            env: staging
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.staging
+        remote_user: 'deploy'  # Overridden by DEPLOY_USER in .deploy/.env.staging
+        deploy_path: '/var/www/app'  # Overridden by DEPLOY_PATH in .deploy/.env.staging
+        branch: 'dev'  # Overridden by DEPLOY_BRANCH in .deploy/.env.staging
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader'
+
+    production:
+        labels:
+            env: production
+        hostname: 'localhost'  # Overridden by DEPLOY_HOST in .deploy/.env.production
+        remote_user: 'deploy'  # Overridden by DEPLOY_USER in .deploy/.env.production
+        deploy_path: '/var/www/app'  # Overridden by DEPLOY_PATH in .deploy/.env.production
+        branch: 'main'  # Overridden by DEPLOY_BRANCH in .deploy/.env.production
+        composer_options: '--verbose --prefer-dist --no-interaction --no-scripts --no-dev --optimize-autoloader'
+
+after:
+    deploy:failed:
+        - deploy:unlock
+        - notify:failure
+
+# Event handlers moved to deploy.phpoy.php
