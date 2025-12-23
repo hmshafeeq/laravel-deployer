@@ -68,7 +68,7 @@ class MigrateCommand extends Command
             // Execute migration steps
             $this->newLine();
 
-            // Cleanup-only mode: just run cleanup on already migrated site
+            // Cleanup-only mode from CLI flag: just run cleanup on already migrated site
             if ($this->cleanupOnly) {
                 if (! $this->preflightChecksForCleanup()) {
                     return self::FAILURE;
@@ -84,9 +84,21 @@ class MigrateCommand extends Command
                 return self::SUCCESS;
             }
 
-            // Step 1: Pre-flight checks
+            // Step 1: Pre-flight checks (may set cleanupOnly if already migrated)
             if (! $this->preflightChecks()) {
                 return self::FAILURE;
+            }
+
+            // If preflightChecks detected already migrated site, run cleanup only
+            if ($this->cleanupOnly) {
+                if (! $this->cleanupLeftoverFiles()) {
+                    return self::FAILURE;
+                }
+
+                $this->newLine();
+                $this->components->info('Cleanup completed successfully!');
+
+                return self::SUCCESS;
             }
 
             // Step 2: Backup project files
@@ -234,23 +246,24 @@ class MigrateCommand extends Command
             return false;
         }
 
-        // Check not already migrated
+        // Check if already migrated
         $alreadyMigrated = false;
-        $this->components->task('Checking site not already migrated', function () use ($sitePath, &$alreadyMigrated) {
+        $this->components->task('Checking migration status', function () use ($sitePath, &$alreadyMigrated) {
             if ($this->dryRun) {
                 return true;
             }
 
             $alreadyMigrated = $this->cmd->directoryExists("{$sitePath}/releases");
 
-            return ! $alreadyMigrated;
+            return true; // Always pass, we handle both cases
         });
 
         if ($alreadyMigrated) {
             $this->newLine();
-            $this->components->error('Site appears to already be migrated (releases directory exists).');
+            $this->components->warn('Site is already migrated. Running cleanup only...');
+            $this->cleanupOnly = true;
 
-            return false;
+            return true; // Continue to cleanup
         }
 
         // Check Laravel installation
