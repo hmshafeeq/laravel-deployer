@@ -25,6 +25,15 @@ class RollbackCommand extends Command
             // Load configuration
             $config = ConfigService::load($environment, base_path());
 
+            // SAFETY: Block rollback in local mode
+            if ($config->isLocal) {
+                $this->components->error('Rollback cannot run in local mode!');
+                $this->components->error('Local mode would execute destructive commands on your local machine.');
+                $this->newLine();
+
+                return self::FAILURE;
+            }
+
             // Initialize services
             $cmdService = new CommandService($config, $this->output);
             $deployService = new DeploymentService($config, base_path());

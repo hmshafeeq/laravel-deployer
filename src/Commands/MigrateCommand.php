@@ -47,12 +47,23 @@ class MigrateCommand extends Command
         $force = $this->option('force');
 
         $this->timestamp = date('Ymd-His');
-        $this->releaseName = date('Ym').'.1';
+        $this->releaseName = date('Ym') . '.1';
 
         try {
             // Load configuration
             $this->config = ConfigService::load($environment, base_path());
             $this->cmd = new CommandService($this->config, $this->output);
+
+            // SAFETY: Never allow migrate command to run in local mode
+            // This prevents accidental deletion of local project files
+            if ($this->config->isLocal) {
+                $this->components->error('Migration cannot run in local mode!');
+                $this->components->error('Local mode would execute destructive commands on your local machine.');
+                $this->newLine();
+                $this->line('Please use a remote environment (staging or production) instead.');
+
+                return self::FAILURE;
+            }
 
             // Show migration info
             $this->showMigrationInfo();
@@ -133,7 +144,7 @@ class MigrateCommand extends Command
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->components->error('Migration failed: '.$e->getMessage());
+            $this->components->error('Migration failed: ' . $e->getMessage());
 
             return self::FAILURE;
         }
@@ -720,7 +731,7 @@ class MigrateCommand extends Command
         $this->line('<fg=cyan>Next Steps:</>');
         $this->line('  1. Update nginx configuration (see above)');
         $this->line('  2. Test the site is working');
-        $this->line('  3. Deploy using: <fg=white>php artisan deploy '.$this->config->environment->value.'</>');
+        $this->line('  3. Deploy using: <fg=white>php artisan deploy ' . $this->config->environment->value . '</>');
         $this->newLine();
     }
 

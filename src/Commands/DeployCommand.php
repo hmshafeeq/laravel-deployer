@@ -32,7 +32,7 @@ class DeployCommand extends Command
         $validEnvironments = ['local', 'staging', 'production'];
         if (! in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
-            $this->info('Valid environments: '.implode(', ', $validEnvironments));
+            $this->info('Valid environments: ' . implode(', ', $validEnvironments));
 
             return self::FAILURE;
         }
@@ -51,6 +51,23 @@ class DeployCommand extends Command
         try {
             // Load configuration
             $config = ConfigService::load($environment, base_path());
+
+            // SAFETY WARNING: Local deployments can be dangerous
+            if ($config->isLocal) {
+                $this->newLine();
+                $this->components->warn('⚠️  LOCAL DEPLOYMENT MODE DETECTED');
+                $this->line('   Local mode executes rsync with --delete on local paths.');
+                $this->line('   This can DELETE files on your local machine!');
+                $this->newLine();
+
+                if (! $this->components->confirm('Are you SURE you want to deploy in local mode?', false)) {
+                    $this->newLine();
+                    $this->comment('🛑 Local deployment cancelled for safety');
+                    $this->newLine();
+
+                    return self::FAILURE;
+                }
+            }
 
             // Initialize services
             $cmdService = new CommandService($config, $this->output);
