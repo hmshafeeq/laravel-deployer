@@ -184,22 +184,30 @@ class CommandService
 
     public function fileExists(string $path): bool
     {
-        return $this->test("[ -f {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -f {$escapedPath} ]");
     }
 
     public function directoryExists(string $path): bool
     {
-        return $this->test("[ -d {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -d {$escapedPath} ]");
     }
 
     public function symlinkExists(string $path): bool
     {
-        return $this->test("[ -L {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -L {$escapedPath} ]");
     }
 
     public function pathExists(string $path): bool
     {
-        return $this->test("[ -e {$path} ]");
+        $escapedPath = self::escapePath($path);
+
+        return $this->test("[ -e {$escapedPath} ]");
     }
 
     // ============================================================
@@ -358,9 +366,23 @@ class CommandService
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
-        $this->ssh->disableStrictHostKeyChecking();
+        // Only disable strict host key checking if explicitly configured to do so
+        // Default is true (enabled) for security - disabling allows MITM attacks
+        if (! config('laravel-deployer.ssh.strict_host_key_checking', true)) {
+            $this->ssh->disableStrictHostKeyChecking();
+        }
+
         $this->ssh->disablePasswordAuthentication();
         $this->ssh->setTimeout($this->timeout);
+    }
+
+    /**
+     * Escape a path for safe use in shell commands.
+     * Prevents command injection vulnerabilities.
+     */
+    public static function escapePath(string $path): string
+    {
+        return escapeshellarg($path);
     }
 
     private function buildArtisanOptions(array $options, bool $force): string

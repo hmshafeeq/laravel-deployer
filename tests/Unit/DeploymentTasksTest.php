@@ -1,6 +1,6 @@
 <?php
 
-use Shaf\LaravelDeployer\Deployer\Deployer;
+use Shaf\LaravelDeployer\Deployer;
 use Shaf\LaravelDeployer\Deployer\DeploymentTasks;
 use Symfony\Component\Yaml\Yaml;
 

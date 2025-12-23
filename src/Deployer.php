@@ -5,6 +5,11 @@ namespace Shaf\LaravelDeployer;
 use Spatie\Ssh\Ssh;
 use Symfony\Component\Process\Process;
 
+/**
+ * @deprecated Use CommandService, DeploymentService, and RsyncService instead.
+ *             This class will be removed in a future major version.
+ *             Migration: Replace Deployer with the modular services in src/Services/.
+ */
 class Deployer
 {
     protected string $environment;

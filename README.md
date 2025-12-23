@@ -32,8 +32,10 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 ### 1. Install via Composer
 
 ```bash
-composer require shaf/laravel-deployer
+composer require shaf/laravel-deployer --dev
 ```
+
+> **Note:** This package is designed as a **dev dependency**. It runs on your local machine (or CI/CD) and deploys to servers via SSH. The package is NOT needed on the production server.
 
 ### 2. Run Installation Command
 

@@ -1,6 +1,35 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| Laravel Deployer Configuration
+|--------------------------------------------------------------------------
+|
+| This package is designed to be a DEV DEPENDENCY (composer require --dev).
+| It runs locally on your development machine or CI/CD environment and
+| deploys to remote servers via SSH. The package is NOT required on the
+| production server - only standard Laravel is needed there.
+|
+| All configuration is read locally during deployment orchestration.
+| The server only receives shell commands via SSH.
+|
+*/
+
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | SSH Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure SSH connection security settings. Strict host key checking
+    | is enabled by default for security. Only disable if you understand
+    | the MITM attack risks.
+    |
+    */
+    'ssh' => [
+        'strict_host_key_checking' => env('DEPLOY_SSH_STRICT_HOST_KEY', true),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | PHP Configuration
@@ -57,6 +86,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Assets Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure frontend asset building settings. By default, deployment
+    | will fail if asset build fails (fail_on_error = true). Set to false
+    | to continue deployment even if asset build fails.
+    |
+    */
+    'assets' => [
+        'fail_on_error' => env('DEPLOY_ASSETS_FAIL_ON_ERROR', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rsync Configuration
     |--------------------------------------------------------------------------
     |
@@ -73,6 +116,18 @@ return [
             '.env',
             'tests',
             '.deploy',
+            'packages/laravel-deployer',  // This package (dev-only)
+            'phpunit.xml',
+            'phpstan.neon',
+            'pint.json',
+            '.php-cs-fixer.php',
+            '.github',
+            'docker-compose*.yml',
+            'Dockerfile',
+            '.editorconfig',
+            '.styleci.yml',
+            'CHANGELOG.md',
+            'CONTRIBUTING.md',
         ],
     ],
 
@@ -204,6 +259,5 @@ return [
     */
     'post_deploy_commands' => [
         'vendor:publish --tag=log-viewer-assets --force',
-        'tool-tracker:migrate',
     ],
 ];
