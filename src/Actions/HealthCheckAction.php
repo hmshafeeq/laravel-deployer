@@ -49,9 +49,24 @@ class HealthCheckAction
         $this->cmd->info('Checking server resources...');
 
         try {
-            // Check disk space
-            $diskUsage = $this->cmd->remote("df -h {$this->config->deployPath} | tail -1 | awk '{print \$5}' | sed 's/%//'");
-            $diskUsage = (int) trim($diskUsage);
+            // Batch disk and memory checks into a single SSH call with labeled output
+            $escapedPath = CommandService::escapePath($this->config->deployPath);
+            $output = $this->cmd->remote(
+                "echo \"DISK:\$(df -h {$escapedPath} | tail -1 | awk '{print \$5}' | sed 's/%//')\" && ".
+                "echo \"MEM:\$(free | grep Mem | awk '{print int(\$3/\$2 * 100)}')\""
+            );
+
+            // Parse labeled output
+            $diskUsage = 0;
+            $memUsage = 0;
+
+            foreach (explode("\n", $output) as $line) {
+                if (str_starts_with($line, 'DISK:')) {
+                    $diskUsage = (int) trim(substr($line, 5));
+                } elseif (str_starts_with($line, 'MEM:')) {
+                    $memUsage = (int) trim(substr($line, 4));
+                }
+            }
 
             $this->cmd->info("Disk usage: {$diskUsage}%");
 
@@ -63,10 +78,6 @@ class HealthCheckAction
             if ($diskUsage > 80) {
                 $this->cmd->warning("⚠️  Disk usage is high: {$diskUsage}%");
             }
-
-            // Check memory
-            $memUsage = $this->cmd->remote("free | grep Mem | awk '{print int(\$3/\$2 * 100)}'");
-            $memUsage = (int) trim($memUsage);
 
             $this->cmd->info("Memory usage: {$memUsage}%");
 

@@ -26,30 +26,27 @@ class OptimizeAction
         $this->cmd->newLine();
 
         $releasePath = $this->config->deployPath.'/current';
+        $escapedPath = CommandService::escapePath($releasePath);
+        $php = $this->config->phpBinary;
 
-        // 1. Storage link
+        // 1. Storage link (may fail if already exists)
         $this->createStorageLink($releasePath);
 
-        // 2. Clear and cache configuration
-        $this->optimizeConfiguration($releasePath);
+        // 2. Run optimize + queue:restart in a single batched call
+        // Note: artisan optimize already runs config:cache, route:cache, view:cache, event:cache
+        try {
+            $this->cmd->runBatch([
+                "{$php} {$escapedPath}/artisan optimize",
+                "{$php} {$escapedPath}/artisan queue:restart",
+            ]);
+            $this->cmd->success('Application optimized and queues restarted');
+        } catch (\Exception $e) {
+            $this->cmd->warning('Optimization failed: '.$e->getMessage());
+        }
 
-        // 3. Clear and cache views
-        $this->optimizeViews($releasePath);
-
-        // 4. Clear and cache routes
-        $this->optimizeRoutes($releasePath);
-
-        // 5. Run optimize command
-        $this->optimizeApplication($releasePath);
-
-        // 6. Restart queue workers
-        $this->restartQueueWorkers($releasePath);
-
-        // 7. Restart services
+        // 3. Restart services
         if (! $this->config->isLocal) {
-            $this->restartPhpFpm();
-            $this->reloadNginx();
-            $this->reloadSupervisor();
+            $this->restartServices();
         }
 
         $this->cmd->newLine();
@@ -70,124 +67,38 @@ class OptimizeAction
     }
 
     /**
-     * Optimize configuration
+     * Restart all configured services (PHP-FPM, Nginx, Supervisor)
      */
-    private function optimizeConfiguration(string $releasePath): void
+    private function restartServices(): void
     {
+        $this->cmd->info('Restarting services...');
+
         try {
-            $this->cmd->artisanConfigCache($releasePath);
-            $this->cmd->success('Configuration cached');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Configuration caching failed: '.$e->getMessage());
-        }
-    }
+            // Detect PHP-FPM version first (can't batch this detection with restarts)
+            $phpFpmService = trim($this->cmd->remote(
+                'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
+            ));
 
-    /**
-     * Optimize views
-     */
-    private function optimizeViews(string $releasePath): void
-    {
-        try {
-            $this->cmd->artisanViewCache($releasePath);
-            $this->cmd->success('Views cached');
-        } catch (\Exception $e) {
-            $this->cmd->warning('View caching failed: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Optimize routes
-     */
-    private function optimizeRoutes(string $releasePath): void
-    {
-        try {
-            $this->cmd->artisanRouteCache($releasePath);
-            $this->cmd->success('Routes cached');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Route caching failed: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Run optimize command
-     */
-    private function optimizeApplication(string $releasePath): void
-    {
-        try {
-            $this->cmd->artisanOptimize($releasePath);
-            $this->cmd->success('Application optimized');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Application optimization failed: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Restart queue workers
-     */
-    private function restartQueueWorkers(string $releasePath): void
-    {
-        try {
-            $this->cmd->artisanQueueRestart($releasePath);
-            $this->cmd->success('Queue workers restarted');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Queue restart failed: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Restart PHP-FPM service
-     */
-    private function restartPhpFpm(): void
-    {
-        try {
-            $this->cmd->info('Restarting PHP-FPM...');
-
-            // Detect all running PHP-FPM services
-            $phpFpmServices = $this->cmd->remote('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
-
-            if (! empty(trim($phpFpmServices))) {
-                $services = array_filter(explode("\n", trim($phpFpmServices)));
-
-                foreach ($services as $service) {
-                    $service = trim($service);
-                    if (! empty($service)) {
-                        $this->cmd->remote("sudo systemctl restart {$service}");
-                        $this->cmd->success("Restarted {$service}");
-                    }
-                }
-            } else {
+            if (empty($phpFpmService)) {
                 $this->cmd->warning('No running PHP-FPM service found');
+
+                // Still restart nginx and supervisor
+                $this->cmd->runBatch([
+                    'sudo systemctl reload nginx',
+                    'sudo supervisorctl reread && sudo supervisorctl update',
+                ]);
+            } else {
+                // Batch all service restarts into a single SSH call
+                $this->cmd->runBatch([
+                    "sudo systemctl restart {$phpFpmService}",
+                    'sudo systemctl reload nginx',
+                    'sudo supervisorctl reread && sudo supervisorctl update',
+                ]);
             }
-        } catch (\Exception $e) {
-            $this->cmd->warning('PHP-FPM restart failed: '.$e->getMessage());
-        }
-    }
 
-    /**
-     * Reload Nginx
-     */
-    private function reloadNginx(): void
-    {
-        try {
-            $this->cmd->info('Reloading Nginx...');
-            $this->cmd->remote('sudo systemctl reload nginx');
-            $this->cmd->success('Nginx reloaded');
+            $this->cmd->success('Services restarted');
         } catch (\Exception $e) {
-            $this->cmd->warning('Nginx reload failed: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Reload Supervisor
-     */
-    private function reloadSupervisor(): void
-    {
-        try {
-            $this->cmd->info('Reloading Supervisor...');
-            $this->cmd->remote('sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl restart all');
-            $this->cmd->success('Supervisor reloaded');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Supervisor reload failed: '.$e->getMessage());
+            $this->cmd->warning('Service restart failed: '.$e->getMessage());
         }
     }
 }

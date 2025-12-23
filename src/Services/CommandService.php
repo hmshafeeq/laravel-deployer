@@ -74,6 +74,24 @@ class CommandService
     }
 
     /**
+     * Execute multiple commands as a single batched remote call.
+     * Commands are joined with && so execution stops on first failure.
+     *
+     * @param  array<string>  $commands  Array of commands to execute
+     * @return string Output from the combined command
+     */
+    public function runBatch(array $commands): string
+    {
+        if (empty($commands)) {
+            return '';
+        }
+
+        $batchedCommand = implode(' && ', $commands);
+
+        return $this->remote($batchedCommand);
+    }
+
+    /**
      * Execute a local command
      */
     public function local(string $command): string

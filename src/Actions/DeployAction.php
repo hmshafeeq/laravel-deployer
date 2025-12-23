@@ -95,16 +95,13 @@ class DeployAction
             // 14. Symlink current release
             $this->symlinkRelease();
 
-            // 15. Restart services (if configured)
-            $this->restartServices();
-
-            // 16. Cleanup old releases
+            // 15. Cleanup old releases
             $this->cleanupOldReleases();
 
-            // 17. Log deployment success
+            // 16. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 18. Run post-deployment hooks
+            // 17. Run post-deployment hooks
             $this->runPostDeploymentHooks();
 
             // Calculate total deployment time
@@ -157,14 +154,14 @@ class DeployAction
             "{$deployPath}/".Paths::SHARED_DIR.'/storage/logs',
         ];
 
-        foreach ($directories as $dir) {
-            $escapedDir = CommandService::escapePath($dir);
-            $this->cmd->remote("mkdir -p {$escapedDir}");
-        }
-
-        // Ensure .env exists in shared
+        // Batch all mkdir commands into a single SSH call
+        $escapedDirs = array_map([CommandService::class, 'escapePath'], $directories);
         $sharedEnvPath = CommandService::escapePath("{$deployPath}/".Paths::SHARED_DIR.'/.env');
-        $this->cmd->remote("touch {$sharedEnvPath}");
+
+        $this->cmd->runBatch([
+            'mkdir -p '.implode(' ', $escapedDirs),
+            "touch {$sharedEnvPath}",
+        ]);
 
         $this->cmd->success('Deployment structure ready');
     }
@@ -258,19 +255,19 @@ class DeployAction
         $this->cmd->task('shared:link');
 
         $sharedPath = $this->deployment->getSharedPath();
-        $escapedReleasePath = CommandService::escapePath($this->releasePath);
-        $escapedSharedPath = CommandService::escapePath($sharedPath);
 
-        // Remove storage directory and link to shared
+        // Prepare all paths
         $escapedReleaseStorage = CommandService::escapePath("{$this->releasePath}/storage");
         $escapedSharedStorage = CommandService::escapePath("{$sharedPath}/storage");
-        $this->cmd->remote("rm -rf {$escapedReleaseStorage}");
-        $this->cmd->remote("ln -nfs {$escapedSharedStorage} {$escapedReleaseStorage}");
-
-        // Link .env file
         $escapedSharedEnv = CommandService::escapePath("{$sharedPath}/.env");
         $escapedReleaseEnv = CommandService::escapePath("{$this->releasePath}/.env");
-        $this->cmd->remote("ln -nfs {$escapedSharedEnv} {$escapedReleaseEnv}");
+
+        // Batch all shared link operations into a single SSH call
+        $this->cmd->runBatch([
+            "rm -rf {$escapedReleaseStorage}",
+            "ln -nfs {$escapedSharedStorage} {$escapedReleaseStorage}",
+            "ln -nfs {$escapedSharedEnv} {$escapedReleaseEnv}",
+        ]);
 
         $this->cmd->success('Shared directories linked');
     }
@@ -347,16 +344,14 @@ class DeployAction
         $escapedPath = CommandService::escapePath($this->releasePath);
         $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
 
-        // Fix all file permissions (644 for files, 755 for directories)
-        // Using + instead of \; to batch chmod calls for better performance
-        $this->cmd->remote("find {$escapedPath} -type f -exec chmod 644 {} +");
-        $this->cmd->remote("find {$escapedPath} -type d -exec chmod 755 {} +");
-
-        // Fix vendor bin permissions (executables need 755)
-        // Only run if vendor/bin exists
-        if ($this->cmd->directoryExists("{$this->releasePath}/vendor/bin")) {
-            $this->cmd->remote("chmod -R 755 {$escapedVendorBin}");
-        }
+        // Batch all permission fixes into a single SSH call
+        // - 644 for files, 755 for directories
+        // - vendor/bin gets 755 if it exists (using shell conditional)
+        $this->cmd->runBatch([
+            "find {$escapedPath} -type f -exec chmod 644 {} +",
+            "find {$escapedPath} -type d -exec chmod 755 {} +",
+            "[ -d {$escapedVendorBin} ] && chmod -R 755 {$escapedVendorBin} || true",
+        ]);
 
         $this->cmd->success('Module permissions fixed');
     }
@@ -396,89 +391,15 @@ class DeployAction
         $currentPath = $this->deployment->getCurrentPath();
         $escapedReleasePath = CommandService::escapePath($this->releasePath);
         $escapedCurrentPath = CommandService::escapePath($currentPath);
+        $escapedLatestRelease = CommandService::escapePath("{$this->config->deployPath}/.dep/latest_release");
 
-        $this->cmd->remote("ln -nfs {$escapedReleasePath} {$escapedCurrentPath}");
-
-        $this->deployment->writeLatestRelease($this->releaseName);
+        // Batch symlink creation and latest release file write
+        $this->cmd->runBatch([
+            "ln -nfs {$escapedReleasePath} {$escapedCurrentPath}",
+            "echo {$this->releaseName} > {$escapedLatestRelease}",
+        ]);
 
         $this->cmd->success('Release symlinked as current');
-    }
-
-    /**
-     * Restart configured services after deployment
-     */
-    private function restartServices(): void
-    {
-        $services = config('laravel-deployer.services', []);
-
-        // Check if any services are enabled for restart
-        $enabledServices = array_filter($services);
-        if (empty($enabledServices)) {
-            return;
-        }
-
-        $this->cmd->task('services:restart');
-        $this->cmd->info('Restarting services...');
-
-        // Restart PHP-FPM if enabled
-        if (! empty($services['php-fpm'])) {
-            $this->restartPhpFpm();
-        }
-
-        // Restart Nginx if enabled
-        if (! empty($services['nginx'])) {
-            $this->restartNginx();
-        }
-
-        // Reload Supervisor if enabled
-        if (! empty($services['supervisor'])) {
-            $this->reloadSupervisor();
-        }
-
-        $this->cmd->success('Services restarted');
-    }
-
-    /**
-     * Restart PHP-FPM service
-     */
-    private function restartPhpFpm(): void
-    {
-        // Detect all running PHP-FPM services
-        $phpFpmServices = $this->cmd->remote('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""');
-
-        if (empty(trim($phpFpmServices))) {
-            $this->cmd->warning('No running PHP-FPM service found');
-
-            return;
-        }
-
-        $services = array_filter(explode("\n", trim($phpFpmServices)));
-        foreach ($services as $service) {
-            $service = trim($service);
-            if (! empty($service)) {
-                $escapedService = escapeshellarg($service);
-                $this->cmd->remote("sudo systemctl restart {$escapedService}");
-                $this->cmd->info("  ✓ Restarted {$service}");
-            }
-        }
-    }
-
-    /**
-     * Restart Nginx service
-     */
-    private function restartNginx(): void
-    {
-        $this->cmd->remote('sudo systemctl reload nginx');
-        $this->cmd->info('  ✓ Reloaded nginx');
-    }
-
-    /**
-     * Reload Supervisor
-     */
-    private function reloadSupervisor(): void
-    {
-        $this->cmd->remote('sudo supervisorctl reread && sudo supervisorctl update');
-        $this->cmd->info('  ✓ Reloaded supervisor');
     }
 
     /**
@@ -495,13 +416,14 @@ class DeployAction
         $this->cmd->info("Cleaning up old releases (keeping {$keepReleases})...");
 
         try {
-            // List releases sorted by time, skip the most recent ones, remove the rest
-            // Use || true to prevent failure if some files can't be deleted (permission issues)
-            $this->cmd->remote(
-                "cd {$escapedReleasesPath} && ls -t | tail -n +".($keepReleases + 1).' | xargs -r rm -rf 2>/dev/null || true'
+            // Batch cleanup and count into a single SSH call
+            // Use || true to prevent failure if some files can't be deleted
+            $output = $this->cmd->remote(
+                "cd {$escapedReleasesPath} && ls -t | tail -n +".($keepReleases + 1).' | xargs -r rm -rf 2>/dev/null || true; '.
+                "ls -1 {$escapedReleasesPath} | wc -l"
             );
 
-            $remaining = trim($this->cmd->remote("ls -1 {$escapedReleasesPath} | wc -l"));
+            $remaining = trim($output);
             $this->cmd->success("Cleanup complete. {$remaining} releases remain");
         } catch (\Exception $e) {
             // Cleanup is non-critical - warn but don't fail the deployment
@@ -515,8 +437,7 @@ class DeployAction
     private function logDeploymentSuccess(): void
     {
         $deployPath = $this->config->deployPath;
-        $logFile = "{$deployPath}/.dep/deploy.log";
-        $escapedLogFile = CommandService::escapePath($logFile);
+        $escapedLogFile = CommandService::escapePath("{$deployPath}/.dep/deploy.log");
 
         $timestamp = date('Y-m-d H:i:s');
         $user = $this->deployment->getUser();
@@ -525,7 +446,7 @@ class DeployAction
 
         $this->cmd->remote("echo {$escapedLogEntry} >> {$escapedLogFile}");
 
-        // Also log release info
+        // Log release info (this is a local PHP operation via DeploymentService)
         $releaseInfo = new ReleaseInfo(
             name: $this->releaseName,
             createdAt: new \DateTimeImmutable,
