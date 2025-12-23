@@ -22,6 +22,8 @@ class CommandService
 
     private string $prefix = '';
 
+    private ?string $lastError = null;
+
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
@@ -98,8 +100,15 @@ class CommandService
     /**
      * Test a condition (returns true/false)
      */
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
+    }
+
     public function test(string $condition): bool
     {
+        $this->lastError = null;
+
         try {
             if ($this->config->isLocal) {
                 $process = Process::fromShellCommandline(
@@ -113,8 +122,18 @@ class CommandService
 
             $process = $this->ssh->execute($condition.' && echo "true" || echo "false"');
 
-            return trim($process->getOutput()) === 'true';
+            // Capture any error output
+            $errorOutput = trim($process->getErrorOutput());
+            $stdout = trim($process->getOutput());
+
+            if (! $process->isSuccessful() || $errorOutput) {
+                $this->lastError = $errorOutput ?: "Exit code: {$process->getExitCode()}, stdout: {$stdout}";
+            }
+
+            return $stdout === 'true' || str_contains($stdout, 'true');
         } catch (\Exception $e) {
+            $this->lastError = $e->getMessage();
+
             return false;
         }
     }
@@ -368,8 +387,27 @@ class CommandService
 
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
-        if (! config('laravel-deployer.ssh.strict_host_key_checking', true)) {
+        $strictHostKeyChecking = true;
+        if (function_exists('config')) {
+            $strictHostKeyChecking = config('laravel-deployer.ssh.strict_host_key_checking', true);
+        }
+        if (! $strictHostKeyChecking) {
             $this->ssh->disableStrictHostKeyChecking();
+        }
+
+        // Use identity file if configured
+        if ($this->config->identityFile) {
+            $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
+            $identityPath = str_starts_with($this->config->identityFile, '~')
+                ? str_replace('~', $home, $this->config->identityFile)
+                : $this->config->identityFile;
+
+            // Verify file exists
+            if (! file_exists($identityPath)) {
+                throw new \RuntimeException("SSH identity file not found: {$identityPath}");
+            }
+
+            $this->ssh->usePrivateKey($identityPath);
         }
 
         $this->ssh->disablePasswordAuthentication();

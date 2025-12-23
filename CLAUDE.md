@@ -86,13 +86,10 @@ Changes to the deployment recipe affect all projects immediately (symlinked). Te
 ### ThePayrollApp
 - Laravel 11 with Laravel Mix
 - Uses `npm run prod` for assets (not `npm run build`)
-- Excludes additional AI tool directories
 
 ### WestWindSupplies
 - Laravel 12 + Filament setup
-- Has custom `post:deployment` task
 - Uses `npm run build` for assets
-- Includes `post-deployment.sh` in rsync
 
 ---
 
@@ -104,6 +101,7 @@ php artisan deploy staging          # Deploy to staging
 php artisan deploy production       # Deploy to production
 php artisan deploy:rollback         # Rollback release
 php artisan deploy:key-generate     # Generate SSH keys
+php artisan deployer:migrate staging    # Migrate existing site to deployer structure
 php artisan deployer:clear          # Clear caches on server
 php artisan laravel-deployer:install    # Install/regenerate config
 php artisan laravel-deployer:provision  # Provision new server

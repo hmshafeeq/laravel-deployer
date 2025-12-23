@@ -129,6 +129,10 @@ class ConfigService
             $overrides['branch'] = $branch;
         }
 
+        if ($identityFile = $this->getEnv('DEPLOY_IDENTITY_FILE')) {
+            $overrides['identity_file'] = $identityFile;
+        }
+
         return array_merge($hostConfig, $overrides);
     }
 
