@@ -68,37 +68,44 @@ class OptimizeAction
 
     /**
      * Restart all configured services (PHP-FPM, Nginx, Supervisor)
+     * Each service is restarted independently so one failure doesn't block others
      */
     private function restartServices(): void
     {
         $this->cmd->info('Restarting services...');
 
+        // Restart PHP-FPM
         try {
-            // Detect PHP-FPM version first (can't batch this detection with restarts)
             $phpFpmService = trim($this->cmd->remote(
                 'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
             ));
 
-            if (empty($phpFpmService)) {
-                $this->cmd->warning('No running PHP-FPM service found');
-
-                // Still restart nginx and supervisor
-                $this->cmd->runBatch([
-                    'sudo systemctl reload nginx',
-                    'sudo supervisorctl reread && sudo supervisorctl update',
-                ]);
+            if (! empty($phpFpmService)) {
+                $this->cmd->remote("sudo systemctl restart {$phpFpmService}");
+                $this->cmd->info("  ✓ Restarted {$phpFpmService}");
             } else {
-                // Batch all service restarts into a single SSH call
-                $this->cmd->runBatch([
-                    "sudo systemctl restart {$phpFpmService}",
-                    'sudo systemctl reload nginx',
-                    'sudo supervisorctl reread && sudo supervisorctl update',
-                ]);
+                $this->cmd->warning('  No running PHP-FPM service found');
             }
-
-            $this->cmd->success('Services restarted');
         } catch (\Exception $e) {
-            $this->cmd->warning('Service restart failed: '.$e->getMessage());
+            $this->cmd->warning("  PHP-FPM restart failed: {$e->getMessage()}");
         }
+
+        // Reload Nginx
+        try {
+            $this->cmd->remote('sudo systemctl reload nginx');
+            $this->cmd->info('  ✓ Reloaded nginx');
+        } catch (\Exception $e) {
+            $this->cmd->warning("  Nginx reload failed: {$e->getMessage()}");
+        }
+
+        // Reload Supervisor
+        try {
+            $this->cmd->remote('sudo supervisorctl reread && sudo supervisorctl update');
+            $this->cmd->info('  ✓ Reloaded supervisor');
+        } catch (\Exception $e) {
+            $this->cmd->warning("  Supervisor reload failed: {$e->getMessage()}");
+        }
+
+        $this->cmd->success('Service restart completed');
     }
 }
