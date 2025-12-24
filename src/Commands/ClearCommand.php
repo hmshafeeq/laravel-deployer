@@ -70,8 +70,7 @@ class ClearCommand extends Command
                 $this->info('🔄 Restarting PHP-FPM...');
 
                 try {
-                    $this->restartPhpFpm($cmd);
-                    $this->info('  ✓ PHP-FPM restarted');
+                    $cmd->restartPhpFpm();
                 } catch (\Exception $e) {
                     $this->warn('  ⚠ PHP-FPM restart failed: '.$e->getMessage());
                 }
@@ -102,18 +101,5 @@ class ClearCommand extends Command
         } catch (\Exception $e) {
             return false;
         }
-    }
-
-    /**
-     * Restart PHP-FPM service
-     */
-    private function restartPhpFpm(CommandService $cmd): void
-    {
-        // Detect PHP-FPM version
-        $phpVersion = trim($cmd->remote('php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"'));
-        $serviceName = "php{$phpVersion}-fpm";
-
-        // Check if the service exists and restart it
-        $cmd->remote("sudo systemctl restart {$serviceName}");
     }
 }

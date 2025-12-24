@@ -78,11 +78,10 @@ class DeploymentSummary
     {
         $this->output->writeln('<fg=cyan>Step Timings:</>');
 
-        // Filter out very fast steps (< 100ms) for cleaner output
-        $significantTimings = array_filter($timings, fn ($duration) => $duration >= 0.1);
-
-        // Sort by duration descending to show slowest first
-        arsort($significantTimings);
+        // Filter out very fast steps (< 100ms) and sort by duration descending
+        $significantTimings = collect($timings)
+            ->filter(fn ($duration) => $duration >= 0.1)
+            ->sortDesc();
 
         foreach ($significantTimings as $step => $duration) {
             $formattedDuration = format_duration($duration);

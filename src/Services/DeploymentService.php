@@ -80,10 +80,14 @@ class DeploymentService
             return [];
         }
 
-        $releases = array_filter(explode("\n", trim($output)));
+        $releases = collect(explode("\n", trim($output)))
+            ->filter()
+            ->values()
+            ->all();
+
         $this->cmd->debug('Found '.count($releases).' release(s)');
 
-        return array_values($releases);
+        return $releases;
     }
 
     /**

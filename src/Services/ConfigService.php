@@ -63,10 +63,12 @@ class ConfigService
     private function resolveEnvironmentInheritance(string $environment, array $config, array $visited = []): array
     {
         // Detect circular dependency
-        if (in_array($environment, $visited)) {
-            $chain = implode(' → ', [...$visited, $environment]);
-            throw ConfigurationException::circularInheritance($chain);
-        }
+        throw_if(
+            in_array($environment, $visited),
+            fn () => ConfigurationException::circularInheritance(
+                implode(' → ', [...$visited, $environment])
+            )
+        );
 
         $envConfig = $config['environments'][$environment] ?? [];
 
@@ -79,9 +81,10 @@ class ConfigService
         $this->verbose("Environment '{$environment}' extends '{$parentEnv}'");
 
         // Validate parent environment exists
-        if (! isset($config['environments'][$parentEnv])) {
-            throw ConfigurationException::parentEnvironmentNotFound($parentEnv, $environment);
-        }
+        throw_unless(
+            isset($config['environments'][$parentEnv]),
+            fn () => ConfigurationException::parentEnvironmentNotFound($parentEnv, $environment)
+        );
 
         // Resolve parent's inheritance chain first
         $parentConfig = $this->resolveEnvironmentInheritance(

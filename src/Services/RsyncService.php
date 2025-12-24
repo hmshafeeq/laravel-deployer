@@ -58,9 +58,11 @@ class RsyncService
         return $this;
     }
 
-    public function setVerbose(bool $verbose): void
+    public function setVerbose(bool $verbose): self
     {
         $this->verbose = $verbose;
+
+        return $this;
     }
 
     public function sync(string $destination): void
@@ -184,24 +186,32 @@ class RsyncService
         return Number::fileSize($this->totalBytesTransferred);
     }
 
-    public function setExcludes(array $excludes): void
+    public function setExcludes(array $excludes): self
     {
         $this->excludes = $excludes;
+
+        return $this;
     }
 
-    public function setIncludes(array $includes): void
+    public function setIncludes(array $includes): self
     {
         $this->includes = $includes;
+
+        return $this;
     }
 
-    public function addExclude(string $pattern): void
+    public function addExclude(string $pattern): self
     {
         $this->excludes[] = $pattern;
+
+        return $this;
     }
 
-    public function addInclude(string $pattern): void
+    public function addInclude(string $pattern): self
     {
         $this->includes[] = $pattern;
+
+        return $this;
     }
 
     private function buildRsyncCommand(string $source, string $destination, bool $forProgress = false): string

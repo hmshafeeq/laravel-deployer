@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Illuminate\Support\Str;
 use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
@@ -836,10 +837,7 @@ class DeployAction
         $this->cmd->info("📦 Deploying: {$branch} @ {$commit} ({$author})");
 
         if ($this->gitCommitMessage) {
-            // Truncate long commit messages
-            $message = mb_strlen($this->gitCommitMessage) > 60
-                ? mb_substr($this->gitCommitMessage, 0, 57).'...'
-                : $this->gitCommitMessage;
+            $message = Str::limit($this->gitCommitMessage, 60);
             $this->cmd->info("   \"{$message}\"");
         }
     }

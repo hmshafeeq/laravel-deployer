@@ -97,17 +97,7 @@ class OptimizeAction extends Action
     private function restartPhpFpm(): void
     {
         try {
-            $phpFpmService = trim($this->cmd->remote(
-                'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
-            ));
-
-            if (! empty($phpFpmService)) {
-                $this->cmd->remote("sudo systemctl restart {$phpFpmService}");
-                $this->cmd->info("  ✓ Restarted {$phpFpmService}");
-            } else {
-                $this->cmd->warning('  No running PHP-FPM service found');
-                $this->cmd->comment('    Tip: Check if PHP-FPM is installed and running');
-            }
+            $this->cmd->restartPhpFpm();
         } catch (\Exception $e) {
             $this->showServiceError('PHP-FPM', $e->getMessage(), [
                 'Check if PHP-FPM is installed: dpkg -l | grep php-fpm',

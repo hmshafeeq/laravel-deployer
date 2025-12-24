@@ -375,6 +375,25 @@ class CommandService implements CommandExecutor
     }
 
     // ============================================================
+    // Service Control Methods
+    // ============================================================
+
+    /**
+     * Restart PHP-FPM service (auto-detects version)
+     */
+    public function restartPhpFpm(): void
+    {
+        $phpFpmService = trim($this->remote(
+            'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
+        ));
+
+        if (! empty($phpFpmService)) {
+            $this->remote("sudo systemctl restart {$phpFpmService}");
+            $this->success("Restarted {$phpFpmService}");
+        }
+    }
+
+    // ============================================================
     // File/Directory Test Methods
     // ============================================================
 
@@ -410,70 +429,88 @@ class CommandService implements CommandExecutor
     // Output Methods
     // ============================================================
 
-    public function info(string $message): void
+    public function info(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<info>{$this->prefix}{$message}</info>");
         }
+
+        return $this;
     }
 
-    public function success(string $message): void
+    public function success(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<info>{$this->prefix}✓ {$message}</info>");
         }
+
+        return $this;
     }
 
-    public function error(string $message): void
+    public function error(string $message): self
     {
         $this->output->writeln("<error>{$this->prefix}{$message}</error>");
+
+        return $this;
     }
 
-    public function warning(string $message): void
+    public function warning(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<comment>{$this->prefix}⚠ {$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function comment(string $message): void
+    public function comment(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<comment>{$this->prefix}{$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function debug(string $message): void
+    public function debug(string $message): self
     {
         if ($this->output->isDebug()) {
             $this->output->writeln("<comment>{$this->prefix}[DEBUG] {$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function task(string $name): void
+    public function task(string $name): self
     {
         if ($this->output->isVerbose()) {
             $this->output->writeln("\n<fg=cyan>task {$name}</>");
         }
+
+        return $this;
     }
 
-    public function line(string $message): void
+    public function line(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln($this->prefix.$message);
         }
+
+        return $this;
     }
 
-    public function newLine(int $count = 1): void
+    public function newLine(int $count = 1): self
     {
         if ($this->shouldShowNormal()) {
             for ($i = 0; $i < $count; $i++) {
                 $this->output->writeln('');
             }
         }
+
+        return $this;
     }
 
-    public function section(string $title): void
+    public function section(string $title): self
     {
         if ($this->shouldShowNormal()) {
             $this->newLine();
@@ -482,13 +519,17 @@ class CommandService implements CommandExecutor
             $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->newLine();
         }
+
+        return $this;
     }
 
-    public function write(string $message): void
+    public function write(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->write($message);
         }
+
+        return $this;
     }
 
     public function confirm(string $question, bool $default = false): bool
@@ -507,17 +548,21 @@ class CommandService implements CommandExecutor
     // Configuration Methods
     // ============================================================
 
-    public function setTimeout(int $timeout): void
+    public function setTimeout(int $timeout): self
     {
         $this->timeout = $timeout;
         if ($this->ssh) {
             $this->ssh->setTimeout($timeout);
         }
+
+        return $this;
     }
 
-    public function setPrefix(string $prefix): void
+    public function setPrefix(string $prefix): self
     {
         $this->prefix = $prefix;
+
+        return $this;
     }
 
     public function isLocal(): bool

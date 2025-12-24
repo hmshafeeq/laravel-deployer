@@ -89,7 +89,10 @@ class HooksService
      */
     public function getActiveHookPoints(): array
     {
-        return array_keys(array_filter($this->hooks, fn ($cmds) => ! empty($cmds)));
+        return collect($this->hooks)
+            ->filter()
+            ->keys()
+            ->all();
     }
 
     /**
