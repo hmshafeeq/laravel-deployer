@@ -121,7 +121,7 @@ class DeployCommand extends Command
 
             // Initialize health check action for post-deployment verification
             $postHealthCheck = null;
-            if ($config->healthCheckEnabled && $config->healthCheckUrl) {
+            if ($config->isHealthCheckEnabled()) {
                 $postHealthCheck = new HealthCheckAction($cmdService, $config);
             }
 
@@ -209,13 +209,7 @@ class DeployCommand extends Command
             githubToken: $config->githubToken,
             strictHostKeyChecking: $config->strictHostKeyChecking,
             assetsFailOnError: $config->assetsFailOnError,
-            healthCheckEnabled: $config->healthCheckEnabled,
             healthCheckUrl: $config->healthCheckUrl,
-            healthCheckTimeout: $config->healthCheckTimeout,
-            healthCheckExpectedStatus: $config->healthCheckExpectedStatus,
-            healthCheckRetries: $config->healthCheckRetries,
-            healthCheckRetryDelay: $config->healthCheckRetryDelay,
-            healthCheckEndpoints: $config->healthCheckEndpoints,
             hooks: $config->hooks,
         );
     }
@@ -319,7 +313,7 @@ class DeployCommand extends Command
             ['10', 'Symlink release', 'current → new release'],
         ];
 
-        if ($config->healthCheckEnabled && $config->healthCheckUrl) {
+        if ($config->isHealthCheckEnabled()) {
             $steps[] = [(string) (count($steps) + 1), 'Health check', 'GET '.$config->healthCheckUrl];
         }
 
