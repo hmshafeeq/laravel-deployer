@@ -48,6 +48,23 @@ abstract class Action
     }
 
     /**
+     * Run a command with optional verbose logging
+     *
+     * Convenience method that combines writeln + cmd pattern.
+     * Use this instead of manually calling writeln() then cmd().
+     *
+     * @param  string  $command  Command to run
+     * @param  string|null  $description  Optional description to log (defaults to "run {command}")
+     * @return string Command output
+     */
+    protected function run(string $command, ?string $description = null): string
+    {
+        $this->writeln($description ?? "run {$command}");
+
+        return $this->cmd($command);
+    }
+
+    /**
      * Run a command quietly without logging
      *
      * This method executes a command without writing the command itself

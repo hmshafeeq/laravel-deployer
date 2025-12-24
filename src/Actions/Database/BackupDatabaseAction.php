@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions\Database;
 
+use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 use Shaf\LaravelDeployer\Support\Abstract\DatabaseAction;
 use Shaf\LaravelDeployer\ValueObjects\DatabaseConfig;
 
@@ -59,7 +60,7 @@ class BackupDatabaseAction extends DatabaseAction
         $exitCode = (int) trim($result);
 
         if ($exitCode !== 0) {
-            throw new \RuntimeException("mysqldump failed with exit code: {$exitCode}");
+            throw DeploymentException::taskFailed('backup', "mysqldump failed with exit code: {$exitCode}");
         }
     }
 

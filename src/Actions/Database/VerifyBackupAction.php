@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions\Database;
 
+use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 use Shaf\LaravelDeployer\Support\Abstract\DatabaseAction;
 
 class VerifyBackupAction extends DatabaseAction
@@ -23,7 +24,7 @@ class VerifyBackupAction extends DatabaseAction
         }
 
         if ($exists !== 'OK') {
-            throw new \RuntimeException("Backup file was not created: {$file}");
+            throw DeploymentException::taskFailed('verify', "Backup file was not created: {$file}");
         }
     }
 
@@ -34,7 +35,7 @@ class VerifyBackupAction extends DatabaseAction
         $this->writeln($fileSize);
 
         if ($fileSize < 100) {
-            throw new \RuntimeException("Backup file is too small ({$fileSize} bytes), backup likely failed");
+            throw DeploymentException::taskFailed('verify', "Backup file is too small ({$fileSize} bytes), backup likely failed");
         }
     }
 

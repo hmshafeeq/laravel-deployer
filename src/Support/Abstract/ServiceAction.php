@@ -12,6 +12,8 @@ use Shaf\LaravelDeployer\Deployer;
  */
 abstract class ServiceAction extends Action
 {
+    protected ?string $lastError = null;
+
     public function __construct(
         protected Deployer $deployer
     ) {}
@@ -53,11 +55,22 @@ abstract class ServiceAction extends Action
         try {
             $sudo = $useSudo ? 'sudo ' : '';
             $this->cmd("{$sudo}systemctl {$action} {$service}");
+            $this->lastError = null;
 
             return true;
         } catch (\Exception $e) {
+            $this->lastError = $e->getMessage();
+
             return false;
         }
+    }
+
+    /**
+     * Get the last error message from a failed service command
+     */
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
     }
 
     /**

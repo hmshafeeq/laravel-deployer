@@ -148,7 +148,11 @@ class CommandService
                 $this->lastError = $errorOutput ?: "Exit code: {$process->getExitCode()}, stdout: {$stdout}";
             }
 
-            return $stdout === 'true' || str_contains($stdout, 'true');
+            // Check for exact "true" match or "true" on its own line
+            // Avoid false positives like "truthful" or "untruthful"
+            $trimmed = trim($stdout);
+
+            return $trimmed === 'true' || str_ends_with($trimmed, "\ntrue");
         } catch (\Exception $e) {
             $this->lastError = $e->getMessage();
 

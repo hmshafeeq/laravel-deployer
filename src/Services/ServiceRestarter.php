@@ -6,6 +6,7 @@ use Shaf\LaravelDeployer\Actions\Service\ReloadSupervisorAction;
 use Shaf\LaravelDeployer\Actions\Service\RestartNginxAction;
 use Shaf\LaravelDeployer\Actions\Service\RestartPhpFpmAction;
 use Shaf\LaravelDeployer\Deployer;
+use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 
 /**
  * Service for managing server service restarts
@@ -43,15 +44,7 @@ class ServiceRestarter
                 continue;
             }
 
-            try {
-                $this->restartService($service);
-            } catch (\Exception $e) {
-                if ($failSilently) {
-                    $this->deployer->writeln("  ⚠ {$service} restart failed: {$e->getMessage()}", 'comment');
-                } else {
-                    throw $e;
-                }
-            }
+            $this->safeRestart($service, $failSilently);
         }
     }
 
@@ -60,7 +53,7 @@ class ServiceRestarter
      *
      * @param  string  $service  Service name (php-fpm, nginx, supervisor)
      *
-     * @throws \RuntimeException If service name is not recognized
+     * @throws DeploymentException If service name is not recognized
      */
     public function restartService(string $service): void
     {
@@ -68,7 +61,7 @@ class ServiceRestarter
             'php-fpm' => RestartPhpFpmAction::run($this->deployer),
             'nginx' => RestartNginxAction::run($this->deployer),
             'supervisor' => ReloadSupervisorAction::run($this->deployer),
-            default => throw new \RuntimeException("Unknown service: {$service}")
+            default => throw DeploymentException::unknownService($service)
         };
     }
 
@@ -81,15 +74,25 @@ class ServiceRestarter
     public function restartOnly(array $services, bool $failSilently = false): void
     {
         foreach ($services as $service) {
-            try {
-                $this->restartService($service);
-            } catch (\Exception $e) {
-                if ($failSilently) {
-                    $this->deployer->writeln("  ⚠ {$service} restart failed: {$e->getMessage()}", 'comment');
-                } else {
-                    throw $e;
-                }
+            $this->safeRestart($service, $failSilently);
+        }
+    }
+
+    /**
+     * Restart a service with optional error suppression
+     *
+     * @param  string  $service  Service name to restart
+     * @param  bool  $failSilently  If true, log warning instead of throwing
+     */
+    private function safeRestart(string $service, bool $failSilently): void
+    {
+        try {
+            $this->restartService($service);
+        } catch (\Exception $e) {
+            if (! $failSilently) {
+                throw $e;
             }
+            $this->deployer->writeln("  ⚠ {$service} restart failed: {$e->getMessage()}", 'comment');
         }
     }
 

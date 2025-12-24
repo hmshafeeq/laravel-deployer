@@ -32,7 +32,7 @@ class RestartQueueWorkersAction extends Action
             $this->cmd("cd {$currentPath} && php artisan queue:restart");
             $this->writeln('  ✓ Queue workers restarted', 'info');
         } catch (\Exception $e) {
-            $this->writeln('  ⚠ Queue restart failed', 'comment');
+            $this->writeln("  ⚠ Queue restart failed: {$e->getMessage()}", 'comment');
         }
     }
 }

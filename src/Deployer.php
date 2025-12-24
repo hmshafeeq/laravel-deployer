@@ -235,14 +235,14 @@ class Deployer
         $counterFile = "{$counterDir}/{$yearMonth}.txt";
 
         // Ensure the folder exists
-        $this->cmd("mkdir -p {$counterDir}");
+        $this->run("mkdir -p {$counterDir}");
 
         // Read counter or start from 0
-        $count = $this->cmd("if [ -f {$counterFile} ]; then cat {$counterFile}; else echo 0; fi");
+        $count = $this->run("if [ -f {$counterFile} ]; then cat {$counterFile}; else echo 0; fi");
         $count = (int) $count + 1;
 
         // Save updated counter
-        $this->cmd("echo {$count} > {$counterFile}");
+        $this->run("echo {$count} > {$counterFile}");
 
         $this->releaseName = "{$yearMonth}.{$count}";
 

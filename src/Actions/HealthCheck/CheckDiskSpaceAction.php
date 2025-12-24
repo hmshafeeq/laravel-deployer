@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions\HealthCheck;
 
+use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 use Shaf\LaravelDeployer\Support\Abstract\HealthCheckAction;
 
 class CheckDiskSpaceAction extends HealthCheckAction
@@ -27,7 +28,7 @@ class CheckDiskSpaceAction extends HealthCheckAction
         $availableIndex = count($diskInfo) === 6 ? 3 : 2;
 
         if (! isset($diskInfo[$usedPercentIndex])) {
-            throw new \RuntimeException('Unable to parse disk usage information');
+            throw DeploymentException::taskFailed('disk_check', 'Unable to parse disk usage information');
         }
 
         $usedPercent = rtrim($diskInfo[$usedPercentIndex], '%');
@@ -40,7 +41,7 @@ class CheckDiskSpaceAction extends HealthCheckAction
 
         // Check critical threshold
         if ((int) $usedPercent > $criticalThreshold) {
-            throw new \RuntimeException("❌ Disk space critical! {$usedPercent}% used. Please free up space before deployment.");
+            throw DeploymentException::taskFailed('disk_check', "Disk space critical! {$usedPercent}% used. Please free up space before deployment.");
         }
 
         // Check warning threshold

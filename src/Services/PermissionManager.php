@@ -12,6 +12,16 @@ class PermissionManager
     ) {}
 
     /**
+     * Run a command with verbose logging
+     */
+    protected function run(string $command): string
+    {
+        $this->deployer->writeln("run {$command}");
+
+        return $this->deployer->run($command);
+    }
+
+    /**
      * Create writable directories
      */
     public function createWritableDirectories(string $releasePath): void
@@ -30,8 +40,7 @@ class PermissionManager
         ]);
 
         $dirList = implode(' ', $dirs);
-        $this->deployer->writeln("run cd {$releasePath} && (mkdir -p {$dirList})");
-        $this->deployer->run("cd {$releasePath} && (mkdir -p {$dirList})");
+        $this->run("cd {$releasePath} && (mkdir -p {$dirList})");
     }
 
     /**
@@ -54,8 +63,7 @@ class PermissionManager
         $currentUser = $this->deployer->get('remote_user');
 
         // Verify current user exists
-        $this->deployer->writeln("run cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
-        $userExists = $this->deployer->run("cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
+        $userExists = $this->run("cd {$releasePath} && (if id -u {$currentUser} &>/dev/null 2>&1 || exit 0; then echo +right; fi)");
         if (! empty($userExists)) {
             $this->deployer->writeln($userExists);
         }
@@ -77,17 +85,13 @@ class PermissionManager
      */
     protected function setDirectoryAcl(string $releasePath, string $dir, string $httpUser, string $currentUser): void
     {
-        $this->deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-        $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+        $aclCount = $this->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
 
         if (! empty($aclCount) && trim($aclCount) !== '0') {
             $this->deployer->writeln($aclCount);
         } else {
-            $this->deployer->writeln("run cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
-            $this->deployer->run("cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
-
-            $this->deployer->writeln("run cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
-            $this->deployer->run("cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
+            $this->run("cd {$releasePath} && (setfacl -L  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
+            $this->run("cd {$releasePath} && (setfacl -dL  -m u:\"{$httpUser}\":rwX -m u:{$currentUser}:rwX {$dir})");
         }
     }
 
@@ -96,8 +100,7 @@ class PermissionManager
      */
     protected function checkDirectoryAcl(string $releasePath, string $dir, string $httpUser): void
     {
-        $this->deployer->writeln("run cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
-        $aclCount = $this->deployer->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
+        $aclCount = $this->run("cd {$releasePath} && (getfacl -p {$dir} | grep \"^user:{$httpUser}:.*w\" | wc -l)");
         if (! empty($aclCount)) {
             $this->deployer->writeln($aclCount);
         }
@@ -110,14 +113,9 @@ class PermissionManager
     {
         $this->deployer->writeln('🔒 Fixing permissions for modular structure...');
 
-        $this->deployer->writeln("run chmod -R 755 {$releasePath}/app-modules || true");
-        $this->deployer->run("chmod -R 755 {$releasePath}/app-modules || true");
-
-        $this->deployer->writeln("run find {$releasePath}/app-modules -type f -exec chmod 644 {} \\; || true");
-        $this->deployer->run("find {$releasePath}/app-modules -type f -exec chmod 644 {} \\; || true");
-
-        $this->deployer->writeln("run find {$releasePath}/app-modules -type d -exec chmod 755 {} \\; || true");
-        $this->deployer->run("find {$releasePath}/app-modules -type d -exec chmod 755 {} \\; || true");
+        $this->run("chmod -R 755 {$releasePath}/app-modules || true");
+        $this->run("find {$releasePath}/app-modules -type f -exec chmod 644 {} \\; || true");
+        $this->run("find {$releasePath}/app-modules -type d -exec chmod 755 {} \\; || true");
 
         $this->deployer->writeln('✅ Module permissions fixed');
     }

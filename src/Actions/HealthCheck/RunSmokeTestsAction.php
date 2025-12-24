@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions\HealthCheck;
 
+use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 use Shaf\LaravelDeployer\Support\Abstract\HealthCheckAction;
 
 class RunSmokeTestsAction extends HealthCheckAction
@@ -28,7 +29,7 @@ class RunSmokeTestsAction extends HealthCheckAction
             $this->writeln($response);
 
             if (! in_array($response, array_map('strval', $acceptableStatusCodes))) {
-                throw new \RuntimeException("Smoke test failed for {$endpoint} ({$description}). HTTP: {$response}");
+                throw DeploymentException::taskFailed('smoke_test', "Failed for {$endpoint} ({$description}). HTTP: {$response}");
             }
 
             $this->writeln("   ✅ {$endpoint} ({$description}) - HTTP {$response}");

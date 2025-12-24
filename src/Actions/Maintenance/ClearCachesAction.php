@@ -56,7 +56,7 @@ class ClearCachesAction extends Action
             $this->cmd("cd {$currentPath} && php artisan {$cache}:clear");
             $this->writeln('  ✓ '.ucfirst($cache).' cache cleared', 'info');
         } catch (\Exception $e) {
-            $this->writeln('  ⚠ '.ucfirst($cache).' cache clear failed', 'comment');
+            $this->writeln('  ⚠ '.ucfirst($cache)." cache clear failed: {$e->getMessage()}", 'comment');
         }
     }
 }
