@@ -481,6 +481,14 @@ class CommandService implements CommandExecutor
         return $this->workingDirectory;
     }
 
+    /**
+     * Get the output interface
+     */
+    public function getOutput(): OutputInterface
+    {
+        return $this->output;
+    }
+
     // ============================================================
     // Verbosity Checks
     // ============================================================

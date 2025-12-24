@@ -25,7 +25,7 @@ class ClearCommand extends Command
 
             // Initialize services
             $cmd = new CommandService($config, $this->output);
-            $deployment = new DeploymentService($config, base_path());
+            $deployment = new DeploymentService($config, $cmd, base_path());
 
             // Show confirmation for non-local environments
             if (! $config->isLocal && ! $noConfirm) {

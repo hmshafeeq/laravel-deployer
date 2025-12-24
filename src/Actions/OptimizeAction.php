@@ -9,12 +9,14 @@ use Shaf\LaravelDeployer\Services\CommandService;
  * Optimization action.
  * Handles cache clearing, optimization, and service restarts.
  */
-class OptimizeAction
+class OptimizeAction extends Action
 {
     public function __construct(
-        private CommandService $cmd,
-        private DeploymentConfig $config
-    ) {}
+        CommandService $cmd,
+        DeploymentConfig $config
+    ) {
+        parent::__construct($cmd, $config);
+    }
 
     /**
      * Execute complete optimization workflow

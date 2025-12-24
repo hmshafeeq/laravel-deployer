@@ -14,25 +14,16 @@ use Symfony\Component\Process\Process;
  */
 class DeploymentService
 {
-    private CommandService $cmd;
-
     private string $lockFile;
 
     private string $currentReleaseName = '';
 
     public function __construct(
         private DeploymentConfig $config,
-        private string $basePath
+        private CommandService $cmd,
+        private string $basePath = ''
     ) {
         $this->lockFile = "{$config->deployPath}/".Paths::LOCK_FILE;
-    }
-
-    /**
-     * Set the command service (injected after construction)
-     */
-    public function setCommandService(CommandService $cmd): void
-    {
-        $this->cmd = $cmd;
     }
 
     // ============================================================

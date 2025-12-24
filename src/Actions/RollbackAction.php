@@ -20,9 +20,7 @@ class RollbackAction
         private DeploymentService $deployment,
         private CommandService $cmd,
         private DeploymentConfig $config
-    ) {
-        $this->deployment->setCommandService($cmd);
-    }
+    ) {}
 
     /**
      * Execute rollback to previous release
@@ -81,8 +79,10 @@ class RollbackAction
         $this->cmd->task('release:symlink');
 
         $currentPath = $this->deployment->getCurrentPath();
+        $escapedPreviousPath = CommandService::escapePath($previousPath);
+        $escapedCurrentPath = CommandService::escapePath($currentPath);
 
-        $this->cmd->remote("ln -nfs {$previousPath} {$currentPath}");
+        $this->cmd->remote("ln -nfs {$escapedPreviousPath} {$escapedCurrentPath}");
 
         $this->cmd->success("Symlinked to release: {$previous}");
     }
@@ -92,13 +92,14 @@ class RollbackAction
      */
     private function logRollback(string $from, string $to): void
     {
-        $deployPath = $this->config->deployPath;
-        $logFile = "{$deployPath}/.dep/deploy.log";
+        $logFile = "{$this->config->deployPath}/.dep/deploy.log";
+        $escapedLogFile = CommandService::escapePath($logFile);
 
         $timestamp = date('Y-m-d H:i:s');
         $user = $this->deployment->getUser();
         $logEntry = "[{$timestamp}] {$user} rolled back from {$from} to {$to} on {$this->config->environment->value}";
+        $escapedLogEntry = escapeshellarg($logEntry);
 
-        $this->cmd->remote("echo '{$logEntry}' >> {$logFile}");
+        $this->cmd->remote("echo {$escapedLogEntry} >> {$escapedLogFile}");
     }
 }

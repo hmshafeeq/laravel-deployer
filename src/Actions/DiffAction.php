@@ -42,6 +42,14 @@ class DiffAction
     }
 
     /**
+     * Calculate sync differences without displaying output
+     */
+    public function calculate(): SyncDiff
+    {
+        return $this->calculateDiff();
+    }
+
+    /**
      * Ask for confirmation to proceed with changes
      */
     public function confirmChanges(SyncDiff $diff): bool

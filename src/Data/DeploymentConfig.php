@@ -38,6 +38,8 @@ readonly class DeploymentConfig
         public int $healthCheckRetries = 3,
         public int $healthCheckRetryDelay = 2,
         public array $healthCheckEndpoints = [],
+        // Hooks configuration
+        public array $hooks = [],
     ) {}
 
     public static function fromArray(string $environment, array $config): self
@@ -81,6 +83,7 @@ readonly class DeploymentConfig
             healthCheckRetries: $healthCheck['retries'] ?? 3,
             healthCheckRetryDelay: $healthCheck['retryDelay'] ?? 2,
             healthCheckEndpoints: $healthCheck['endpoints'] ?? [],
+            hooks: $config['hooks'] ?? [],
         );
     }
 

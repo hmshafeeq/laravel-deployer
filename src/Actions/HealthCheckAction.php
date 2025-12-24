@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Shaf\LaravelDeployer\Concerns\HandlesRetry;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\HealthCheckException;
 use Shaf\LaravelDeployer\Services\CommandService;
@@ -10,12 +11,16 @@ use Shaf\LaravelDeployer\Services\CommandService;
  * Health check action.
  * Performs server resource and endpoint health checks.
  */
-class HealthCheckAction
+class HealthCheckAction extends Action
 {
+    use HandlesRetry;
+
     public function __construct(
-        private CommandService $cmd,
-        private DeploymentConfig $config
-    ) {}
+        CommandService $cmd,
+        DeploymentConfig $config
+    ) {
+        parent::__construct($cmd, $config);
+    }
 
     /**
      * Perform complete health check
@@ -150,49 +155,27 @@ class HealthCheckAction
 
         $url = $this->buildHealthCheckUrl();
         $expectedStatus = $this->config->healthCheckExpectedStatus;
-        $retries = $this->config->healthCheckRetries;
-        $retryDelay = $this->config->healthCheckRetryDelay;
         $timeout = $this->config->healthCheckTimeout;
 
-        for ($attempt = 1; $attempt <= $retries; $attempt++) {
-            try {
-                $this->cmd->info("  → Attempt {$attempt}/{$retries}: GET {$url}");
-
-                $startTime = microtime(true);
-                $result = $this->cmd->remote(
+        try {
+            $this->retry(
+                operation: fn () => (int) trim($this->cmd->remote(
                     "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
-                );
-                $duration = (microtime(true) - $startTime) * 1000;
-                $statusCode = (int) trim($result);
+                )),
+                isSuccess: fn ($statusCode) => $statusCode === $expectedStatus,
+                maxAttempts: $this->config->healthCheckRetries,
+                delaySeconds: $this->config->healthCheckRetryDelay,
+                operationName: "Health check GET {$url}"
+            );
 
-                if ($statusCode === $expectedStatus) {
-                    $this->cmd->success(sprintf(
-                        'Health check passed: %s returned %d (%dms)',
-                        $url,
-                        $statusCode,
-                        (int) $duration
-                    ));
-
-                    return true;
-                }
-
-                $this->cmd->warning("  ✗ Got {$statusCode}, expected {$expectedStatus}");
-
-                if ($attempt < $retries) {
-                    $this->cmd->info("  ⏳ Waiting {$retryDelay}s before retry...");
-                    sleep($retryDelay);
-                }
-
-            } catch (\Exception $e) {
-                $this->cmd->warning("  ✗ Request failed: {$e->getMessage()}");
-
-                if ($attempt < $retries) {
-                    sleep($retryDelay);
-                }
-            }
+            return true;
+        } catch (\RuntimeException $e) {
+            throw HealthCheckException::endpointFailed(
+                $url,
+                $expectedStatus,
+                $e->getMessage()
+            );
         }
-
-        throw HealthCheckException::endpointFailed($url, $expectedStatus, "Failed after {$retries} attempts");
     }
 
     /**

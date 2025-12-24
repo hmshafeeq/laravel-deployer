@@ -2,7 +2,10 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Shaf\LaravelDeployer\Contracts\NotificationChannel;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
+use Shaf\LaravelDeployer\Notifications\DiscordChannel;
+use Shaf\LaravelDeployer\Notifications\SlackChannel;
 
 /**
  * Notification action.
@@ -10,9 +13,24 @@ use Shaf\LaravelDeployer\Data\DeploymentConfig;
  */
 class NotificationAction
 {
+    /** @var NotificationChannel[] */
+    private array $channels = [];
+
     public function __construct(
         private DeploymentConfig $config
-    ) {}
+    ) {
+        $this->registerDefaultChannels();
+    }
+
+    /**
+     * Add a custom notification channel.
+     */
+    public function addChannel(NotificationChannel $channel): self
+    {
+        $this->channels[] = $channel;
+
+        return $this;
+    }
 
     /**
      * Send success notification
@@ -28,7 +46,7 @@ class NotificationAction
                    "Release: {$release}\n".
                    "Time: {$timestamp}";
 
-        $this->sendNotification($message, 'success');
+        $this->sendToAllChannels($message, 'success');
     }
 
     /**
@@ -44,90 +62,33 @@ class NotificationAction
                    "Error: {$exception->getMessage()}\n".
                    "Time: {$timestamp}";
 
-        $this->sendNotification($message, 'failure');
+        $this->sendToAllChannels($message, 'failure');
     }
 
     /**
-     * Send notification to configured channels
+     * Register default channels based on environment variables.
      */
-    private function sendNotification(string $message, string $type): void
+    private function registerDefaultChannels(): void
     {
-        // Check if Slack webhook is configured
         $slackWebhook = $this->getEnv('DEPLOY_SLACK_WEBHOOK');
         if ($slackWebhook) {
-            $this->sendSlackNotification($slackWebhook, $message, $type);
+            $this->channels[] = new SlackChannel($slackWebhook);
         }
 
-        // Check if Discord webhook is configured
         $discordWebhook = $this->getEnv('DEPLOY_DISCORD_WEBHOOK');
         if ($discordWebhook) {
-            $this->sendDiscordNotification($discordWebhook, $message, $type);
-        }
-
-        // Add more notification channels here (Email, SMS, etc.)
-    }
-
-    /**
-     * Send Slack notification
-     */
-    private function sendSlackNotification(string $webhook, string $message, string $type): void
-    {
-        try {
-            $color = $type === 'success' ? 'good' : 'danger';
-
-            $payload = json_encode([
-                'attachments' => [
-                    [
-                        'color' => $color,
-                        'text' => $message,
-                        'footer' => 'Laravel Deployer',
-                        'ts' => time(),
-                    ],
-                ],
-            ]);
-
-            $ch = curl_init($webhook);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_exec($ch);
-            curl_close($ch);
-        } catch (\Exception $e) {
-            // Silently fail - notifications shouldn't break deployment
+            $this->channels[] = new DiscordChannel($discordWebhook);
         }
     }
 
     /**
-     * Send Discord notification
+     * Send notification to all registered channels.
      */
-    private function sendDiscordNotification(string $webhook, string $message, string $type): void
+    private function sendToAllChannels(string $message, string $type): void
     {
-        try {
-            $color = $type === 'success' ? 5763719 : 15548997; // Green or Red
-
-            $payload = json_encode([
-                'embeds' => [
-                    [
-                        'description' => $message,
-                        'color' => $color,
-                        'footer' => [
-                            'text' => 'Laravel Deployer',
-                        ],
-                        'timestamp' => date('c'),
-                    ],
-                ],
-            ]);
-
-            $ch = curl_init($webhook);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_exec($ch);
-            curl_close($ch);
-        } catch (\Exception $e) {
+        foreach ($this->channels as $channel) {
             // Silently fail - notifications shouldn't break deployment
+            $channel->send($message, $type);
         }
     }
 

@@ -9,12 +9,14 @@ use Shaf\LaravelDeployer\Services\CommandService;
  * Database operations action.
  * Handles backup, restore, upload, and download operations.
  */
-class DatabaseAction
+class DatabaseAction extends Action
 {
     public function __construct(
-        private CommandService $cmd,
-        private DeploymentConfig $config
-    ) {}
+        CommandService $cmd,
+        DeploymentConfig $config
+    ) {
+        parent::__construct($cmd, $config);
+    }
 
     /**
      * Backup the database
@@ -159,16 +161,11 @@ class DatabaseAction
     {
         $tempConfig = '/tmp/mysql_deployer_'.uniqid().'.cnf';
 
-        // Create config file with proper escaping
         $configContent = "[client]\n";
         $configContent .= "host={$credentials['host']}\n";
         $configContent .= "user={$credentials['username']}\n";
         $configContent .= "password={$credentials['password']}\n";
 
-        // Write config file and set secure permissions
-        $escapedContent = escapeshellarg($configContent);
-        $this->cmd->remote("echo {$escapedContent} > {$tempConfig} && chmod 600 {$tempConfig}");
-
-        return $tempConfig;
+        return $this->writeSecureFile($tempConfig, $configContent);
     }
 }

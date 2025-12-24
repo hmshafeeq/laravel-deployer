@@ -10,8 +10,10 @@ use Shaf\LaravelDeployer\Data\ReleaseInfo;
 use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\HooksService;
 use Shaf\LaravelDeployer\Services\ReceiptService;
 use Shaf\LaravelDeployer\Services\RsyncService;
+use Shaf\LaravelDeployer\Support\DeploymentSummary;
 
 /**
  * Complete deployment workflow action.
@@ -29,6 +31,8 @@ class DeployAction
 
     private float $duration = 0;
 
+    private ?HooksService $hooks = null;
+
     public function __construct(
         private DeploymentService $deployment,
         private CommandService $cmd,
@@ -38,7 +42,11 @@ class DeployAction
         private ?HealthCheckAction $healthCheck = null,
         private ?ReceiptService $receiptService = null
     ) {
-        $this->deployment->setCommandService($cmd);
+        // Initialize hooks service if hooks are configured
+        if (! empty($config->hooks)) {
+            $this->hooks = new HooksService($cmd, $config);
+            $this->hooks->loadHooks($config->hooks);
+        }
     }
 
     /**
@@ -51,6 +59,9 @@ class DeployAction
         $this->cmd->info("🚀 Starting deployment to {$this->config->environment->value}");
         $this->cmd->newLine();
 
+        // Run before:deploy hooks
+        $this->runHook('before:deploy');
+
         // 1. Check and lock deployment
         $this->lockDeployment();
 
@@ -58,12 +69,20 @@ class DeployAction
             // 2. Setup deployment structure
             $this->setupDeploymentStructure();
 
+            // Run after:setup hooks
+            $this->runHook('after:setup');
+
             // 3. Generate and create release
             $this->createRelease();
 
+            // Set release path for hooks
+            $this->hooks?->setReleasePath($this->releasePath);
+
             // 4. Build assets locally (if not local deployment)
             if (! $this->config->isLocal) {
+                $this->runHook('before:build');
                 $this->buildAssets();
+                $this->runHook('after:build');
             }
 
             // 5. Show sync differences
@@ -79,13 +98,17 @@ class DeployAction
             }
 
             // 7. Sync files to server
+            $this->runHook('before:sync');
             $this->syncFilesWithProgress();
+            $this->runHook('after:sync');
 
             // 8. Create shared symlinks
             $this->createSharedLinks();
 
             // 9. Install composer dependencies
+            $this->runHook('before:composer');
             $this->installComposerDependencies();
+            $this->runHook('after:composer');
 
             // 10. Fix module permissions
             $this->fixModulePermissions();
@@ -94,13 +117,17 @@ class DeployAction
             $this->setWritablePermissions();
 
             // 12. Run database migrations
+            $this->runHook('before:migrate');
             $this->runMigrations();
+            $this->runHook('after:migrate');
 
             // 13. Link .dep directory
             $this->linkDepDirectory();
 
             // 14. Symlink current release
+            $this->runHook('before:symlink');
             $this->symlinkRelease();
+            $this->runHook('after:symlink');
 
             // 15. Verify deployment health
             $this->verifyDeploymentHealth();
@@ -111,25 +138,34 @@ class DeployAction
             // 17. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 18. Run post-deployment hooks
+            // 18. Run post-deployment hooks (legacy)
             $this->runPostDeploymentHooks();
 
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
-            $formattedDuration = \format_duration($this->duration);
 
             // 19. Generate deployment receipt
             $this->generateReceipt(success: true);
 
-            $this->cmd->newLine();
-            $this->cmd->success('✅ Deployment completed successfully!');
-            $this->cmd->success("🎉 Release {$this->releaseName} is now live on {$this->config->environment->value}");
-            $this->cmd->success("⏱️  Total time: {$formattedDuration}");
+            // Run after:deploy hooks
+            $this->runHook('after:deploy');
 
+        } catch (\Exception $e) {
+            // Run on:failure hooks
+            $this->runHook('on:failure');
+            throw $e;
         } finally {
             // Always unlock deployment, even if there's an error
             $this->unlockDeployment();
         }
+    }
+
+    /**
+     * Run a deployment hook if configured
+     */
+    private function runHook(string $hookPoint): void
+    {
+        $this->hooks?->run($hookPoint);
     }
 
     /**
@@ -240,6 +276,10 @@ class DeployAction
     {
         $this->cmd->task('files:sync');
         $this->cmd->info('Syncing files to server...');
+
+        // Pass sync diff and output for progress bar
+        $this->rsync->setSyncDiff($this->syncDiff);
+        $this->rsync->setOutput($this->cmd->getOutput());
 
         // For local deployments, just use the path; RsyncService handles the rest
         $this->rsync->sync($this->releasePath);
@@ -557,6 +597,37 @@ class DeployAction
     public function getFormattedDuration(): string
     {
         return \format_duration($this->duration);
+    }
+
+    /**
+     * Get the sync diff for summary
+     */
+    public function getSyncDiff(): ?SyncDiff
+    {
+        return $this->syncDiff;
+    }
+
+    /**
+     * Show the deployment summary dashboard
+     */
+    public function showSummary(): void
+    {
+        $summary = DeploymentSummary::create($this->cmd->getOutput(), $this->config);
+
+        // Build the URL if health check URL is configured
+        $url = null;
+        if ($this->config->healthCheckUrl) {
+            $scheme = $this->config->environment->isProduction() ? 'https' : 'http';
+            $url = "{$scheme}://{$this->config->hostname}";
+        }
+
+        $summary->showSuccess(
+            releaseName: $this->releaseName,
+            duration: $this->duration,
+            syncDiff: $this->syncDiff,
+            migrationsRun: 0, // TODO: Track migrations count
+            url: $url
+        );
     }
 
     /**

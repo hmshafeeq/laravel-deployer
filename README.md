@@ -22,6 +22,10 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 🧪 **Dry-Run Mode** - Preview deployment plan without executing
 - 📋 **Deployment Receipts** - JSON audit trail for every deployment
 - 🔗 **Environment Inheritance** - Reduce config duplication with `extends`
+- 🎛️ **Interactive Mode** - Step-by-step prompts for deployment options
+- 📊 **Progress Bar** - Real-time file sync progress with ETA
+- 📈 **Summary Dashboard** - Beautiful deployment completion summary
+- 🪝 **Deployment Hooks** - Custom commands at any deployment step
 
 ## 📋 Requirements
 
@@ -411,6 +415,70 @@ Use dry-run to:
 - Verify configuration is correct
 - Review file changes that would be synced
 
+### Interactive Mode
+
+Interactive mode allows you to configure each deployment option through prompts:
+
+```bash
+php artisan deploy staging --interactive
+```
+
+**Output example:**
+```
+═══════════════════════════════════════════════════════════
+                   INTERACTIVE MODE
+═══════════════════════════════════════════════════════════
+
+  Environment: staging
+  Server:      staging.example.com
+
+  Configure your deployment options below:
+
+  Build frontend assets locally? [Y/n] Y
+  Run database migrations? [Y/n] Y
+  Clear Laravel caches after deployment? [Y/n] Y
+  Optimize application (config:cache, route:cache)? [Y/n] Y
+  Show file changes before uploading? [Y/n] Y
+  Require confirmation before uploading? [Y/n] n
+
+═══════════════════════════════════════════════════════════
+
+  Selected options:
+
+    ✓ Build assets
+    ✓ Run migrations
+    ✓ Clear caches
+    ✓ Optimize app
+    ✓ Show diff
+    ✗ Confirm changes
+
+  Proceed with deployment? [Y/n]
+```
+
+### Progress Bar
+
+During file sync, a progress bar shows real-time upload status:
+
+```
+[staging] [████████████████████░░░░░░░░░░] 67% (85/127 files) ETA: 12s
+```
+
+### Deployment Summary Dashboard
+
+After successful deployment, a summary dashboard is displayed:
+
+```
+╔════════════════════════════════════════════════════════════╗
+║                    DEPLOYMENT COMPLETE                      ║
+╠════════════════════════════════════════════════════════════╣
+║ Environment:  staging                                       ║
+║ Release:      202501.4                                      ║
+║ Duration:     45.2s                                         ║
+║ Files:        +5 ~12 -2 (19 total)                          ║
+║ URL:          https://staging.example.com                   ║
+╚════════════════════════════════════════════════════════════╝
+```
+
 **What happens during deployment:**
 
 1. ✅ Health checks (disk space, memory)
@@ -571,6 +639,61 @@ Verify your application is responding correctly after deployment:
 2. Makes an HTTP request to the health check URL
 3. Retries if the check fails (up to configured retries)
 4. Deployment is marked successful only if health check passes
+
+### Deployment Hooks
+
+Define custom commands to run at specific points during deployment:
+
+```json
+{
+  "hooks": {
+    "before:deploy": ["local:git fetch --all"],
+    "after:setup": [],
+    "before:build": ["local:npm ci"],
+    "after:build": [],
+    "before:sync": [],
+    "after:sync": ["artisan storage:link"],
+    "before:composer": [],
+    "after:composer": ["artisan package:discover"],
+    "before:migrate": ["artisan backup:run --only-db"],
+    "after:migrate": [],
+    "before:symlink": [],
+    "after:symlink": ["artisan horizon:terminate", "artisan queue:restart"],
+    "after:deploy": ["notify:slack"],
+    "on:failure": ["artisan cache:clear"]
+  }
+}
+```
+
+**Hook points:**
+
+| Hook | When it runs |
+|------|-------------|
+| `before:deploy` | Before deployment starts (pre-lock) |
+| `after:setup` | After deployment structure is created |
+| `before:build` | Before frontend assets are built |
+| `after:build` | After frontend assets are built |
+| `before:sync` | Before files are synced to server |
+| `after:sync` | After files are synced to server |
+| `before:composer` | Before composer install runs |
+| `after:composer` | After composer install runs |
+| `before:migrate` | Before database migrations run |
+| `after:migrate` | After database migrations run |
+| `before:symlink` | Before release is symlinked as current |
+| `after:symlink` | After release is symlinked as current |
+| `after:deploy` | After deployment completes successfully |
+| `on:failure` | When deployment fails |
+
+**Command prefixes:**
+- `artisan <command>` - Run a Laravel Artisan command on the server
+- `local:<command>` - Run a command locally (not on server)
+- No prefix - Run a shell command on the server in the release directory
+
+**Example use cases:**
+- **`after:symlink`**: Restart queue workers, terminate Horizon
+- **`before:migrate`**: Create database backup before migrations
+- **`on:failure`**: Clean up caches, send failure notification
+- **`before:build`**: Ensure dependencies are installed locally
 
 ### Deployment Diff & Confirmation
 

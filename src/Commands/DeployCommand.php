@@ -12,7 +12,9 @@ use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\ReceiptService;
 use Shaf\LaravelDeployer\Services\RsyncService;
+use Shaf\LaravelDeployer\Support\InteractiveMode;
 use Symfony\Component\Process\Process;
 
 class DeployCommand extends Command
@@ -20,7 +22,8 @@ class DeployCommand extends Command
     protected $signature = 'deploy {environment=staging : The deployment environment (local, staging, production)}
                             {--no-confirm : Skip deployment confirmation}
                             {--skip-health-check : Skip health check before deployment}
-                            {--dry-run : Show deployment plan without executing}';
+                            {--dry-run : Show deployment plan without executing}
+                            {--interactive : Interactive mode - prompt for each deployment option}';
 
     protected $description = 'Deploy the application using simplified action-based deployment';
 
@@ -30,6 +33,7 @@ class DeployCommand extends Command
         $noConfirm = $this->option('no-confirm');
         $skipHealthCheck = $this->option('skip-health-check');
         $dryRun = $this->option('dry-run');
+        $interactive = $this->option('interactive');
 
         // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
@@ -60,6 +64,17 @@ class DeployCommand extends Command
                 return $this->showDryRunPlan($config);
             }
 
+            // Interactive mode options
+            $interactiveOptions = null;
+            if ($interactive) {
+                $interactiveMode = new InteractiveMode($this->input, $this->output, $config);
+                $interactiveOptions = $interactiveMode->prompt();
+
+                // Override config based on interactive options
+                $config = $this->applyInteractiveOptions($config, $interactiveOptions);
+                $noConfirm = ! $interactiveOptions['confirmChanges'];
+            }
+
             // SAFETY WARNING: Local deployments can be dangerous
             if ($config->isLocal) {
                 $this->newLine();
@@ -79,7 +94,7 @@ class DeployCommand extends Command
 
             // Initialize services
             $cmdService = new CommandService($config, $this->output);
-            $deployService = new DeploymentService($config, base_path());
+            $deployService = new DeploymentService($config, $cmdService, base_path());
             $rsyncService = new RsyncService($config, base_path(), $cmdService);
             $diffAction = new DiffAction($cmdService, $config, base_path());
 
@@ -104,14 +119,33 @@ class DeployCommand extends Command
                 $this->newLine();
             }
 
+            // Initialize health check action for post-deployment verification
+            $postHealthCheck = null;
+            if ($config->healthCheckEnabled && $config->healthCheckUrl) {
+                $postHealthCheck = new HealthCheckAction($cmdService, $config);
+            }
+
+            // Initialize receipt service
+            $receiptService = new ReceiptService($cmdService, $config);
+
             // Execute deployment
-            $deploy = new DeployAction($deployService, $cmdService, $rsyncService, $diffAction, $config);
+            $deploy = new DeployAction(
+                $deployService,
+                $cmdService,
+                $rsyncService,
+                $diffAction,
+                $config,
+                $postHealthCheck,
+                $receiptService
+            );
             $deploy->execute();
 
-            // Post-deployment optimization
-            $this->newLine();
-            $optimize = new OptimizeAction($cmdService, $config);
-            $optimize->execute();
+            // Post-deployment optimization (skip if interactive mode disabled it)
+            if (! $interactive || ($interactiveOptions['optimizeApp'] ?? true)) {
+                $this->newLine();
+                $optimize = new OptimizeAction($cmdService, $config);
+                $optimize->execute();
+            }
 
             // Send success notification
             $notify = new NotificationAction($config);
@@ -120,7 +154,8 @@ class DeployCommand extends Command
                 'release' => $deploy->getReleaseName(),
             ]);
 
-            $this->newLine();
+            // Show deployment summary dashboard at the very end
+            $deploy->showSummary();
 
             return self::SUCCESS;
 
@@ -141,6 +176,48 @@ class DeployCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * Apply interactive mode options to config
+     */
+    private function applyInteractiveOptions(DeploymentConfig $config, array $options): DeploymentConfig
+    {
+        // Create a new config with overridden options
+        // We need to use reflection or create a new instance since DeploymentConfig is readonly
+        return new DeploymentConfig(
+            environment: $config->environment,
+            hostname: $config->hostname,
+            remoteUser: $config->remoteUser,
+            deployPath: $config->deployPath,
+            composerOptions: $config->composerOptions,
+            keepReleases: $config->keepReleases,
+            isLocal: $config->isLocal,
+            rsyncExcludes: $config->rsyncExcludes,
+            rsyncIncludes: $config->rsyncIncludes,
+            rsyncOptions: $config->rsyncOptions,
+            rsyncFlags: $config->rsyncFlags,
+            identityFile: $config->identityFile,
+            port: $config->port,
+            showDiff: $options['showDiff'] ?? $config->showDiff,
+            confirmChanges: $options['confirmChanges'] ?? $config->confirmChanges,
+            showUploadProgress: $config->showUploadProgress,
+            diffDisplayLimit: $config->diffDisplayLimit,
+            phpBinary: $config->phpBinary,
+            postDeployCommands: $config->postDeployCommands,
+            branch: $config->branch,
+            githubToken: $config->githubToken,
+            strictHostKeyChecking: $config->strictHostKeyChecking,
+            assetsFailOnError: $config->assetsFailOnError,
+            healthCheckEnabled: $config->healthCheckEnabled,
+            healthCheckUrl: $config->healthCheckUrl,
+            healthCheckTimeout: $config->healthCheckTimeout,
+            healthCheckExpectedStatus: $config->healthCheckExpectedStatus,
+            healthCheckRetries: $config->healthCheckRetries,
+            healthCheckRetryDelay: $config->healthCheckRetryDelay,
+            healthCheckEndpoints: $config->healthCheckEndpoints,
+            hooks: $config->hooks,
+        );
     }
 
     /**
@@ -206,92 +283,127 @@ class DeployCommand extends Command
      */
     private function showDryRunPlan(DeploymentConfig $config): int
     {
+        // Box width = 64 characters (including borders)
+        // Inner content = 62 characters
+        $boxWidth = 64;
+        $innerWidth = $boxWidth - 2; // 62
+
         $this->newLine();
-        $this->line('<fg=cyan>╔══════════════════════════════════════════════════════════════╗</>');
-        $this->line('<fg=cyan>║                    DRY RUN - No changes made                  ║</>');
-        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+        $this->line('<fg=cyan>╔'.str_repeat('═', $innerWidth).'╗</>');
+        $this->line('<fg=cyan>║'.$this->centerText('DRY RUN - No changes made', $innerWidth).'║</>');
+        $this->line('<fg=cyan>╠'.str_repeat('═', $innerWidth).'╣</>');
 
-        // Environment info
-        $this->line('<fg=cyan>║</> <fg=white>Environment:</> <fg=yellow>'.$this->padRight($config->environment->value, 44).'<fg=cyan>║</>');
-        $this->line('<fg=cyan>║</> <fg=white>Server:</>      <fg=yellow>'.$this->padRight($config->hostname, 44).'<fg=cyan>║</>');
-        $this->line('<fg=cyan>║</> <fg=white>Deploy Path:</> <fg=yellow>'.$this->padRight($config->deployPath, 44).'<fg=cyan>║</>');
+        // Environment info - label width 14, value gets the rest
+        $labelWidth = 14;
+        $valueWidth = $innerWidth - $labelWidth - 2; // 46
 
-        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
-        $this->line('<fg=cyan>║</>                   <fg=white>Deployment Steps</>                          <fg=cyan>║</>');
-        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+        $this->line('<fg=cyan>║</> '.$this->formatTableRow('Environment:', $config->environment->value, $labelWidth, $valueWidth).' <fg=cyan>║</>');
+        $this->line('<fg=cyan>║</> '.$this->formatTableRow('Server:', $config->hostname, $labelWidth, $valueWidth).' <fg=cyan>║</>');
+        $this->line('<fg=cyan>║</> '.$this->formatTableRow('Deploy Path:', $config->deployPath, $labelWidth, $valueWidth).' <fg=cyan>║</>');
 
-        // Show steps
+        $this->line('<fg=cyan>╠'.str_repeat('═', $innerWidth).'╣</>');
+        $this->line('<fg=cyan>║'.$this->centerText('Deployment Steps', $innerWidth).'║</>');
+        $this->line('<fg=cyan>╠'.str_repeat('═', $innerWidth).'╣</>');
+
+        // Show steps - step num (4), action (24), detail (30) = 58 + spacing
         $steps = [
-            ['1', 'Lock deployment', 'Prevent concurrent deployments'],
+            ['1', 'Lock deployment', 'Prevent concurrent deploys'],
             ['2', 'Create release directory', $this->generateReleaseName()],
             ['3', 'Build frontend assets', 'npm run build'],
             ['4', 'Calculate file diff', 'Compare local → server'],
             ['5', 'Sync files via rsync', 'Upload changed files'],
             ['6', 'Link shared directories', 'storage, .env'],
             ['7', 'Install Composer deps', 'composer install'],
-            ['8', 'Set permissions', 'chmod 755 dirs, 644 files'],
-            ['9', 'Run migrations', 'php artisan migrate --force'],
+            ['8', 'Set permissions', 'chmod 755/644'],
+            ['9', 'Run migrations', 'artisan migrate --force'],
             ['10', 'Symlink release', 'current → new release'],
         ];
 
         if ($config->healthCheckEnabled && $config->healthCheckUrl) {
-            $steps[] = ['11', 'Health check', "GET {$config->healthCheckUrl}"];
+            $steps[] = [(string) (count($steps) + 1), 'Health check', 'GET '.$config->healthCheckUrl];
         }
 
-        $steps[] = [count($steps) + 1, 'Cleanup old releases', "Keep {$config->keepReleases} releases"];
+        $steps[] = [(string) (count($steps) + 1), 'Cleanup old releases', "Keep {$config->keepReleases} releases"];
 
         if (! empty($config->postDeployCommands)) {
-            $commands = implode(', ', array_slice($config->postDeployCommands, 0, 3));
-            if (count($config->postDeployCommands) > 3) {
+            $commands = implode(', ', array_slice($config->postDeployCommands, 0, 2));
+            if (count($config->postDeployCommands) > 2) {
                 $commands .= '...';
             }
-            $steps[] = [count($steps) + 1, 'Post-deploy commands', $commands];
+            $steps[] = [(string) (count($steps) + 1), 'Post-deploy commands', $commands];
         }
 
         foreach ($steps as $step) {
-            $stepNum = str_pad($step[0], 2, ' ', STR_PAD_LEFT);
-            $action = $this->padRight($step[1], 22);
-            $detail = $this->padRight($step[2], 30);
-            $this->line("<fg=cyan>║</> <fg=green>{$stepNum}.</> {$action} <fg=gray>{$detail}</><fg=cyan>║</>");
+            $stepNum = str_pad($step[0].'.', 4, ' ', STR_PAD_LEFT);
+            $action = $this->padRight($step[1], 24);
+            $detail = $this->padRight($step[2], 28);
+            $this->line("<fg=cyan>║</> <fg=green>{$stepNum}</> {$action} <fg=gray>{$detail}</> <fg=cyan>║</>");
         }
 
-        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+        $this->line('<fg=cyan>╠'.str_repeat('═', $innerWidth).'╣</>');
+        $this->line('<fg=cyan>║'.$this->centerText('Files to Deploy', $innerWidth).'║</>');
+        $this->line('<fg=cyan>╠'.str_repeat('═', $innerWidth).'╣</>');
 
-        // Show file diff preview
-        $this->line('<fg=cyan>║</>                    <fg=white>Files to Deploy</>                          <fg=cyan>║</>');
-        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
-
-        // Calculate actual diff
+        // Calculate actual diff (silently - don't show the diff output)
         $cmdService = new CommandService($config, $this->output);
         $diffAction = new DiffAction($cmdService, $config, base_path());
 
         try {
-            $diff = $diffAction->show();
+            $diff = $diffAction->calculate(); // Use calculate() instead of show() to avoid output
 
+            $contentWidth = $innerWidth - 4; // 58
             if ($diff->isEmpty()) {
-                $this->line('<fg=cyan>║</>   <fg=gray>No file changes detected</>                               <fg=cyan>║</>');
+                $this->line('<fg=cyan>║</>  <fg=gray>'.$this->padRight('No file changes detected', $contentWidth).'</> <fg=cyan>║</>');
             } else {
                 if ($diff->hasNew()) {
-                    $this->line('<fg=cyan>║</>   <fg=green>+ '.$this->padRight($diff->newCount().' new files', 54).'</><fg=cyan>║</>');
+                    $this->line('<fg=cyan>║</>  <fg=green>+ '.$this->padRight($diff->newCount().' new files', $contentWidth - 2).'</> <fg=cyan>║</>');
                 }
                 if ($diff->hasModified()) {
-                    $this->line('<fg=cyan>║</>   <fg=yellow>~ '.$this->padRight($diff->modifiedCount().' modified files', 54).'</><fg=cyan>║</>');
+                    $this->line('<fg=cyan>║</>  <fg=yellow>~ '.$this->padRight($diff->modifiedCount().' modified files', $contentWidth - 2).'</> <fg=cyan>║</>');
                 }
                 if ($diff->hasDeleted()) {
-                    $this->line('<fg=cyan>║</>   <fg=red>- '.$this->padRight($diff->deletedCount().' deleted files', 54).'</><fg=cyan>║</>');
+                    $this->line('<fg=cyan>║</>  <fg=red>- '.$this->padRight($diff->deletedCount().' deleted files', $contentWidth - 2).'</> <fg=cyan>║</>');
                 }
             }
         } catch (\Exception $e) {
-            $this->line('<fg=cyan>║</>   <fg=gray>Unable to calculate diff: '.$this->padRight(substr($e->getMessage(), 0, 30), 30).'</><fg=cyan>║</>');
+            $contentWidth = $innerWidth - 4;
+            $errorMsg = 'Unable to calculate diff';
+            $this->line('<fg=cyan>║</>  <fg=gray>'.$this->padRight($errorMsg, $contentWidth).'</> <fg=cyan>║</>');
         }
 
-        $this->line('<fg=cyan>╚══════════════════════════════════════════════════════════════╝</>');
+        $this->line('<fg=cyan>╚'.str_repeat('═', $innerWidth).'╝</>');
         $this->newLine();
 
         $this->info('Run without --dry-run to execute the deployment.');
         $this->newLine();
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Format a table row with label and value
+     */
+    private function formatTableRow(string $label, string $value, int $labelWidth, int $valueWidth): string
+    {
+        $labelFormatted = str_pad($label, $labelWidth);
+        $valueFormatted = $this->padRight($value, $valueWidth);
+
+        return "<fg=white>{$labelFormatted}</><fg=yellow>{$valueFormatted}</>";
+    }
+
+    /**
+     * Center text within a given width
+     */
+    private function centerText(string $text, int $width): string
+    {
+        $textLen = mb_strlen($text);
+        if ($textLen >= $width) {
+            return substr($text, 0, $width);
+        }
+        $padding = (int) (($width - $textLen) / 2);
+        $rightPadding = $width - $textLen - $padding;
+
+        return str_repeat(' ', $padding).$text.str_repeat(' ', $rightPadding);
     }
 
     /**
