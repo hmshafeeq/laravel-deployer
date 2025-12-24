@@ -25,6 +25,8 @@ class CommandService implements CommandExecutor
 
     private ?string $lastError = null;
 
+    private ?float $sshConnectionTime = null;
+
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
@@ -35,6 +37,14 @@ class CommandService implements CommandExecutor
         }
 
         $this->prefix = "[{$config->environment->value}] ";
+    }
+
+    /**
+     * Get SSH connection establishment time (if available)
+     */
+    public function getSshConnectionTime(): ?float
+    {
+        return $this->sshConnectionTime;
     }
 
     // ============================================================
@@ -315,9 +325,73 @@ class CommandService implements CommandExecutor
         return $this->artisan('optimize', $releasePath);
     }
 
-    public function artisanMigrate(string $releasePath, bool $force = true): string
+    /**
+     * Run database migrations with verbose output parsing
+     *
+     * @return array{output: string, count: int, migrations: array<string>}
+     */
+    public function artisanMigrate(string $releasePath, bool $force = true): array
     {
-        return $this->artisan('migrate', $releasePath, [], $force);
+        $optionsString = $force ? ' --force' : '';
+        $fullCommand = "{$this->config->phpBinary} {$releasePath}/artisan migrate{$optionsString}";
+
+        $this->info('Running artisan migrate');
+
+        try {
+            $output = $this->remote($fullCommand);
+            $result = $this->parseMigrationOutput($output);
+
+            // Show verbose migration details if enabled
+            if ($this->output->isVerbose() && ! empty($result['migrations'])) {
+                foreach ($result['migrations'] as $migration) {
+                    $this->output->writeln("{$this->prefix}  → {$migration}");
+                }
+            }
+
+            if ($result['count'] > 0) {
+                $this->success("{$result['count']} migration(s) executed");
+            } else {
+                $this->info('Nothing to migrate');
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            throw TaskExecutionException::artisanFailed('migrate', $e->getMessage());
+        }
+    }
+
+    /**
+     * Parse migration command output to extract executed migrations
+     *
+     * @return array{output: string, count: int, migrations: array<string>}
+     */
+    private function parseMigrationOutput(string $output): array
+    {
+        $migrations = [];
+        $lines = explode("\n", $output);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Match migration lines like "2025_01_15_create_users_table ... DONE"
+            // or "Running migration: 2025_01_15_create_users_table"
+            if (preg_match('/(\d{4}_\d{2}_\d{2}_\d{6}_[a-z_]+)/i', $line, $matches)) {
+                $migrations[] = $matches[1];
+            }
+            // Also match Laravel's newer format "Migrating: ..."
+            elseif (preg_match('/(?:Migrating|Running):\s*(.+)/i', $line, $matches)) {
+                $migrations[] = trim($matches[1]);
+            }
+        }
+
+        // Remove duplicates (migration might appear in both "Running" and "Done" lines)
+        $migrations = array_unique($migrations);
+
+        return [
+            'output' => $output,
+            'count' => count($migrations),
+            'migrations' => array_values($migrations),
+        ];
     }
 
     public function artisanQueueRestart(string $releasePath): string
@@ -544,6 +618,33 @@ class CommandService implements CommandExecutor
 
         $this->ssh->disablePasswordAuthentication();
         $this->ssh->setTimeout($this->timeout);
+    }
+
+    /**
+     * Test SSH connection and measure connection time.
+     * Runs a simple command to establish the connection and times it.
+     */
+    public function testConnection(): bool
+    {
+        if ($this->config->isLocal) {
+            return true;
+        }
+
+        $startTime = microtime(true);
+
+        try {
+            $this->remote('echo "connected"');
+            $this->sshConnectionTime = microtime(true) - $startTime;
+
+            if ($this->output->isVerbose()) {
+                $formatted = number_format($this->sshConnectionTime, 2);
+                $this->output->writeln("{$this->prefix}SSH connected in {$formatted}s");
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**

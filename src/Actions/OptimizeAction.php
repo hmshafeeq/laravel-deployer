@@ -77,6 +77,25 @@ class OptimizeAction extends Action
         $this->cmd->info('Restarting services...');
 
         // Restart PHP-FPM
+        $this->restartPhpFpm();
+
+        // Reload Nginx
+        $this->restartNginx();
+
+        // Reload Supervisor
+        $this->restartSupervisor();
+
+        // Reset OPcache if available
+        $this->resetOpcache();
+
+        $this->cmd->success('Service restart completed');
+    }
+
+    /**
+     * Restart PHP-FPM service with detailed error context
+     */
+    private function restartPhpFpm(): void
+    {
         try {
             $phpFpmService = trim($this->cmd->remote(
                 'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
@@ -87,27 +106,124 @@ class OptimizeAction extends Action
                 $this->cmd->info("  ✓ Restarted {$phpFpmService}");
             } else {
                 $this->cmd->warning('  No running PHP-FPM service found');
+                $this->cmd->comment('    Tip: Check if PHP-FPM is installed and running');
             }
         } catch (\Exception $e) {
-            $this->cmd->warning("  PHP-FPM restart failed: {$e->getMessage()}");
+            $this->showServiceError('PHP-FPM', $e->getMessage(), [
+                'Check if PHP-FPM is installed: dpkg -l | grep php-fpm',
+                'Check service status: sudo systemctl status php*-fpm',
+                'Check logs: sudo journalctl -u php*-fpm -n 20',
+            ]);
         }
+    }
 
-        // Reload Nginx
+    /**
+     * Restart Nginx with detailed error context
+     */
+    private function restartNginx(): void
+    {
         try {
             $this->cmd->remote('sudo systemctl reload nginx');
             $this->cmd->info('  ✓ Reloaded nginx');
         } catch (\Exception $e) {
-            $this->cmd->warning("  Nginx reload failed: {$e->getMessage()}");
+            $this->showServiceError('Nginx', $e->getMessage(), [
+                'Test config: sudo nginx -t',
+                'Check status: sudo systemctl status nginx',
+                'Check logs: sudo tail -20 /var/log/nginx/error.log',
+            ]);
         }
+    }
 
-        // Reload Supervisor
+    /**
+     * Restart Supervisor with detailed error context
+     */
+    private function restartSupervisor(): void
+    {
         try {
             $this->cmd->remote('sudo supervisorctl reread && sudo supervisorctl update');
             $this->cmd->info('  ✓ Reloaded supervisor');
         } catch (\Exception $e) {
-            $this->cmd->warning("  Supervisor reload failed: {$e->getMessage()}");
+            $errorMessage = $e->getMessage();
+
+            // Provide specific tips based on common errors
+            $tips = ['Check if supervisor is installed: which supervisorctl'];
+
+            if (str_contains($errorMessage, 'no such file') || str_contains($errorMessage, 'sock')) {
+                $tips[] = 'Supervisor may not be running. Try: sudo systemctl start supervisor';
+                $tips[] = 'Install supervisor: sudo apt install supervisor';
+            } elseif (str_contains($errorMessage, 'permission') || str_contains($errorMessage, 'Permission')) {
+                $tips[] = 'Check sudo permissions for the deploy user';
+                $tips[] = 'Add to sudoers: deploy ALL=(ALL) NOPASSWD: /usr/bin/supervisorctl';
+            }
+
+            $tips[] = 'Check status: sudo systemctl status supervisor';
+
+            $this->showServiceError('Supervisor', $errorMessage, $tips);
+        }
+    }
+
+    /**
+     * Reset OPcache via CLI or HTTP endpoint
+     */
+    private function resetOpcache(): void
+    {
+        // First try CLI reset
+        try {
+            $result = $this->cmd->remote(
+                "{$this->config->phpBinary} -r \"if (function_exists('opcache_reset')) { opcache_reset(); echo 'reset'; } else { echo 'unavailable'; }\" 2>/dev/null || echo 'error'"
+            );
+
+            $result = trim($result);
+
+            if ($result === 'reset') {
+                $this->cmd->info('  ✓ Reset OPcache (CLI)');
+
+                return;
+            }
+
+            if ($result === 'unavailable') {
+                // OPcache not available in CLI, which is normal
+                // It will be reset via PHP-FPM restart anyway
+                return;
+            }
+        } catch (\Exception) {
+            // CLI reset failed, not critical
         }
 
-        $this->cmd->success('Service restart completed');
+        // Note: PHP-FPM restart already clears OPcache for web requests
+        // CLI opcache is separate from FPM opcache
+    }
+
+    /**
+     * Display a service error with helpful tips
+     *
+     * @param  array<string>  $tips
+     */
+    private function showServiceError(string $service, string $errorMessage, array $tips): void
+    {
+        // Extract just the relevant part of the error message
+        $shortError = $this->extractRelevantError($errorMessage);
+
+        $this->cmd->warning("  ⚠  {$service} reload failed: {$shortError}");
+
+        foreach ($tips as $tip) {
+            $this->cmd->comment("    Tip: {$tip}");
+        }
+    }
+
+    /**
+     * Extract the most relevant part of an error message
+     */
+    private function extractRelevantError(string $message): string
+    {
+        // Remove SSH wrapper text
+        $message = preg_replace('/^.*?:\s*/', '', $message);
+
+        // Truncate very long messages
+        if (strlen($message) > 80) {
+            $message = substr($message, 0, 77).'...';
+        }
+
+        return $message ?: 'Unknown error';
     }
 }

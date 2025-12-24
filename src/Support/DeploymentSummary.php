@@ -22,23 +22,74 @@ class DeploymentSummary
 
     /**
      * Display the deployment success summary
+     *
+     * @param  array<string, float>  $stepTimings
+     * @param  array{branch: string, commit: ?string, message: ?string, author: ?string}|null  $gitInfo
      */
     public function showSuccess(
         string $releaseName,
         float $duration,
         ?SyncDiff $syncDiff = null,
         int $migrationsRun = 0,
-        ?string $url = null
+        ?string $url = null,
+        array $stepTimings = [],
+        ?array $gitInfo = null
     ): void {
         $this->output->writeln('');
-        $this->drawBox('DEPLOYMENT COMPLETE', 'green', [
+
+        $rows = [
             $this->formatRow('Environment', $this->config->environment->value),
             $this->formatRow('Release', $releaseName),
-            $this->formatRow('Duration', $this->formatDuration($duration)),
-            $this->formatFilesRow($syncDiff),
-            $migrationsRun > 0 ? $this->formatRow('Migrations', "{$migrationsRun} executed") : null,
-            $url ? $this->formatRow('URL', $url) : null,
-        ]);
+        ];
+
+        // Add git info if available
+        if ($gitInfo !== null && ! empty($gitInfo['commit'])) {
+            $branch = $gitInfo['branch'] ?? 'unknown';
+            $commit = $gitInfo['commit'];
+            $rows[] = $this->formatRow('Git', "{$branch} @ {$commit}");
+        }
+
+        $rows[] = $this->formatRow('Duration', $this->formatDuration($duration));
+        $rows[] = $this->formatFilesRow($syncDiff);
+
+        if ($migrationsRun > 0) {
+            $rows[] = $this->formatRow('Migrations', "{$migrationsRun} executed");
+        }
+
+        if ($url) {
+            $rows[] = $this->formatRow('URL', $url);
+        }
+
+        $this->drawBox('DEPLOYMENT COMPLETE', 'green', $rows);
+        $this->output->writeln('');
+
+        // Show step timings if available and verbose
+        if (! empty($stepTimings) && $this->output->isVerbose()) {
+            $this->showStepTimings($stepTimings);
+        }
+    }
+
+    /**
+     * Display step timings breakdown
+     *
+     * @param  array<string, float>  $timings
+     */
+    private function showStepTimings(array $timings): void
+    {
+        $this->output->writeln('<fg=cyan>Step Timings:</>');
+
+        // Filter out very fast steps (< 100ms) for cleaner output
+        $significantTimings = array_filter($timings, fn ($duration) => $duration >= 0.1);
+
+        // Sort by duration descending to show slowest first
+        arsort($significantTimings);
+
+        foreach ($significantTimings as $step => $duration) {
+            $formattedDuration = $this->formatDuration($duration);
+            $paddedStep = str_pad($step, 20);
+            $this->output->writeln("  {$paddedStep} <fg=gray>{$formattedDuration}</>");
+        }
+
         $this->output->writeln('');
     }
 
@@ -86,7 +137,7 @@ class DeploymentSummary
 
             if ($row === '') {
                 // Empty row for spacing
-                $this->output->writeln("<fg={$color}>║".str_repeat(' ', $innerWidth)."║</>");
+                $this->output->writeln("<fg={$color}>║".str_repeat(' ', $innerWidth).'║</>');
 
                 continue;
             }

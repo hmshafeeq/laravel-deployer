@@ -30,14 +30,13 @@ readonly class DeploymentConfig
         public ?string $githubToken = null,
         public bool $strictHostKeyChecking = true,
         public bool $assetsFailOnError = true,
-        // Health check configuration
-        public bool $healthCheckEnabled = false,
+        // Health check configuration (simplified: URL presence = enabled)
         public ?string $healthCheckUrl = null,
-        public int $healthCheckTimeout = 10,
-        public int $healthCheckExpectedStatus = 200,
-        public int $healthCheckRetries = 3,
-        public int $healthCheckRetryDelay = 2,
-        public array $healthCheckEndpoints = [],
+        // Maintenance mode configuration
+        public bool $maintenanceMode = false,
+        public ?string $maintenanceSecret = null,
+        // Pre-migration backup
+        public bool $backupBeforeMigrate = false,
         // Hooks configuration
         public array $hooks = [],
     ) {}
@@ -50,7 +49,13 @@ readonly class DeploymentConfig
         $composer = $config['composer'] ?? [];
         $ssh = $config['ssh'] ?? [];
         $assets = $config['assets'] ?? [];
-        $healthCheck = $config['healthCheck'] ?? [];
+
+        // Support both old nested healthCheck config and new simplified healthCheckUrl
+        $healthCheckUrl = $config['healthCheckUrl'] ?? null;
+        if ($healthCheckUrl === null && isset($config['healthCheck']['url'])) {
+            // Backwards compatibility: read from nested config
+            $healthCheckUrl = $config['healthCheck']['url'];
+        }
 
         return new self(
             environment: Environment::fromString($environment),
@@ -76,15 +81,20 @@ readonly class DeploymentConfig
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
             assetsFailOnError: $assets['failOnError'] ?? true,
-            healthCheckEnabled: $healthCheck['enabled'] ?? false,
-            healthCheckUrl: $healthCheck['url'] ?? null,
-            healthCheckTimeout: $healthCheck['timeout'] ?? 10,
-            healthCheckExpectedStatus: $healthCheck['expectedStatus'] ?? 200,
-            healthCheckRetries: $healthCheck['retries'] ?? 3,
-            healthCheckRetryDelay: $healthCheck['retryDelay'] ?? 2,
-            healthCheckEndpoints: $healthCheck['endpoints'] ?? [],
+            healthCheckUrl: $healthCheckUrl,
+            maintenanceMode: $config['maintenanceMode'] ?? false,
+            maintenanceSecret: $config['maintenanceSecret'] ?? null,
+            backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
             hooks: $config['hooks'] ?? [],
         );
+    }
+
+    /**
+     * Check if health check is enabled (URL is set)
+     */
+    public function isHealthCheckEnabled(): bool
+    {
+        return ! empty($this->healthCheckUrl);
     }
 
     /**

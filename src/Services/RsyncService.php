@@ -23,6 +23,10 @@ class RsyncService
 
     private ?OutputInterface $output = null;
 
+    private int $totalBytesTransferred = 0;
+
+    private int $filesSynced = 0;
+
     public function __construct(
         private DeploymentConfig $config,
         private string $sourcePath,
@@ -62,6 +66,10 @@ class RsyncService
     {
         $this->cmdService?->info('Syncing files to release...');
 
+        // Reset counters
+        $this->totalBytesTransferred = 0;
+        $this->filesSynced = 0;
+
         $source = rtrim($this->sourcePath, '/').'/';
 
         // For local deployments, use direct path; for remote, use SSH
@@ -75,7 +83,7 @@ class RsyncService
         $totalFiles = $this->syncDiff?->totalCount() ?? 0;
         $showProgress = $this->config->showUploadProgress && $totalFiles > 0 && $this->output !== null;
 
-        // Build command - include -v flag if we need progress output
+        // Build command - include -v flag if we need progress output, --stats for size info
         $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress);
 
         $this->cmdService?->debug("Rsync command: {$command}");
@@ -92,7 +100,11 @@ class RsyncService
 
         $syncedFiles = [];
         $fileCount = 0;
-        $process->run(function ($type, $buffer) use (&$syncedFiles, &$fileCount, $progressBar, $showProgress) {
+        $fullOutput = '';
+
+        $process->run(function ($type, $buffer) use (&$syncedFiles, &$fileCount, &$fullOutput, $progressBar, $showProgress) {
+            $fullOutput .= $buffer;
+
             if ($type === Process::ERR) {
                 $this->cmdService?->error($buffer);
             } else {
@@ -118,6 +130,10 @@ class RsyncService
             throw RsyncException::failed($process->getErrorOutput());
         }
 
+        // Parse rsync stats for transferred bytes
+        $this->parseRsyncStats($fullOutput);
+        $this->filesSynced = $fileCount;
+
         // Show synced files in verbose mode (only if not already showing progress)
         if ($this->verbose && ! $showProgress && ! empty($syncedFiles)) {
             $this->cmdService?->info('Synced files:');
@@ -126,7 +142,65 @@ class RsyncService
             }
         }
 
-        $this->cmdService?->success('Files synced successfully');
+        // Show transfer summary
+        $sizeFormatted = $this->formatBytes($this->totalBytesTransferred);
+        $this->cmdService?->success("Files synced successfully ({$fileCount} files, {$sizeFormatted})");
+    }
+
+    /**
+     * Parse rsync stats output to extract transferred bytes
+     */
+    private function parseRsyncStats(string $output): void
+    {
+        // Match "sent X bytes" from rsync output
+        // Example: "sent 12,345 bytes  received 567 bytes  4,303.73 bytes/sec"
+        if (preg_match('/sent\s+([\d,]+)\s+bytes/i', $output, $matches)) {
+            $this->totalBytesTransferred = (int) str_replace(',', '', $matches[1]);
+        }
+    }
+
+    /**
+     * Get the total bytes transferred in the last sync
+     */
+    public function getTotalBytesTransferred(): int
+    {
+        return $this->totalBytesTransferred;
+    }
+
+    /**
+     * Get the number of files synced in the last sync
+     */
+    public function getFilesSynced(): int
+    {
+        return $this->filesSynced;
+    }
+
+    /**
+     * Get formatted transfer size
+     */
+    public function getFormattedTransferSize(): string
+    {
+        return $this->formatBytes($this->totalBytesTransferred);
+    }
+
+    /**
+     * Format bytes into human-readable string
+     */
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes.' B';
+        }
+
+        if ($bytes < 1024 * 1024) {
+            return number_format($bytes / 1024, 1).' KB';
+        }
+
+        if ($bytes < 1024 * 1024 * 1024) {
+            return number_format($bytes / (1024 * 1024), 1).' MB';
+        }
+
+        return number_format($bytes / (1024 * 1024 * 1024), 2).' GB';
     }
 
     public function setExcludes(array $excludes): void
@@ -160,6 +234,9 @@ class RsyncService
             $flags .= 'v';
         }
         $parts[] = '-'.$flags;
+
+        // Add --stats to get transfer size information
+        $parts[] = '--stats';
 
         // Add SSH options only for remote deployments
         if (! $this->config->isLocal) {
@@ -201,13 +278,27 @@ class RsyncService
             return false;
         }
 
-        // Skip rsync statistics lines
+        // Skip rsync statistics lines (from --stats flag)
         $statsPatterns = [
             '/^sent \d+/',
             '/^total size/',
             '/bytes\/sec$/',
             '/^sending incremental/',
             '/^building file list/',
+            '/^Number of files/',
+            '/^Number of created/',
+            '/^Number of deleted/',
+            '/^Number of regular/',
+            '/^Total file size/',
+            '/^Total transferred/',
+            '/^Literal data/',
+            '/^Matched data/',
+            '/^File list size/',
+            '/^File list generation/',
+            '/^File list transfer/',
+            '/^Total bytes sent/',
+            '/^Total bytes received/',
+            '/^\s*$/', // Empty lines
         ];
 
         foreach ($statsPatterns as $pattern) {

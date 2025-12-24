@@ -44,7 +44,7 @@ class InteractiveMode
         $this->output->writeln("<fg=gray>  Environment: </><fg=yellow>{$this->config->environment->value}</>");
         $this->output->writeln("<fg=gray>  Server:      </><fg=yellow>{$this->config->hostname}</>");
         $this->output->writeln('');
-        $this->output->writeln('<fg=gray>  Configure your deployment options below:</>' );
+        $this->output->writeln('<fg=gray>  Configure your deployment options below:</>');
         $this->output->writeln('');
 
         $helper = new QuestionHelper;

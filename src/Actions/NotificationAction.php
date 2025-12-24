@@ -33,36 +33,109 @@ class NotificationAction
     }
 
     /**
-     * Send success notification
+     * Send success notification with rich details
+     *
+     * @param  array{
+     *     environment?: string,
+     *     release?: string,
+     *     duration?: float,
+     *     gitInfo?: array{branch: string, commit: ?string, message: ?string, author: ?string},
+     *     url?: string,
+     *     filesChanged?: int
+     * }  $data
      */
     public function success(array $data = []): void
     {
         $environment = $data['environment'] ?? $this->config->environment->value;
         $release = $data['release'] ?? 'unknown';
-        $timestamp = date('Y-m-d H:i:s');
+        $duration = $data['duration'] ?? null;
+        $gitInfo = $data['gitInfo'] ?? null;
+        $url = $data['url'] ?? null;
+        $filesChanged = $data['filesChanged'] ?? null;
 
-        $message = "✅ Deployment successful!\n".
-                   "Environment: {$environment}\n".
-                   "Release: {$release}\n".
-                   "Time: {$timestamp}";
+        $lines = ["✅ Deployment to {$environment} successful!"];
 
+        // Add release info with git details
+        if ($gitInfo !== null && ! empty($gitInfo['commit'])) {
+            $branch = $gitInfo['branch'] ?? 'unknown';
+            $commit = $gitInfo['commit'];
+            $lines[] = "Release: {$release} ({$branch} @ {$commit})";
+        } else {
+            $lines[] = "Release: {$release}";
+        }
+
+        // Add duration
+        if ($duration !== null) {
+            $lines[] = "Duration: {$this->formatDuration($duration)}";
+        }
+
+        // Add files changed
+        if ($filesChanged !== null && $filesChanged > 0) {
+            $lines[] = "Files: {$filesChanged} changed";
+        }
+
+        // Add URL
+        if ($url !== null) {
+            $lines[] = "🌐 {$url}";
+        }
+
+        $message = implode("\n", $lines);
         $this->sendToAllChannels($message, 'success');
     }
 
     /**
-     * Send failure notification
+     * Send failure notification with details
      */
-    public function failure(\Exception $exception): void
+    public function failure(\Exception $exception, array $data = []): void
+    {
+        $environment = $data['environment'] ?? $this->config->environment->value;
+        $release = $data['release'] ?? null;
+        $failedStep = $data['failedStep'] ?? null;
+
+        $lines = ["❌ Deployment to {$environment} failed!"];
+
+        if ($release !== null) {
+            $lines[] = "Release: {$release}";
+        }
+
+        if ($failedStep !== null) {
+            $lines[] = "Failed at: {$failedStep}";
+        }
+
+        // Truncate long error messages
+        $errorMessage = $exception->getMessage();
+        if (strlen($errorMessage) > 200) {
+            $errorMessage = substr($errorMessage, 0, 197).'...';
+        }
+
+        $lines[] = "Error: {$errorMessage}";
+        $lines[] = 'Time: '.date('Y-m-d H:i:s');
+
+        $message = implode("\n", $lines);
+        $this->sendToAllChannels($message, 'failure');
+    }
+
+    /**
+     * Send rollback notification
+     */
+    public function rollback(string $fromRelease, string $toRelease): void
     {
         $environment = $this->config->environment->value;
-        $timestamp = date('Y-m-d H:i:s');
 
-        $message = "❌ Deployment failed!\n".
-                   "Environment: {$environment}\n".
-                   "Error: {$exception->getMessage()}\n".
-                   "Time: {$timestamp}";
+        $message = "🔄 Rollback on {$environment}\n".
+                   "From: {$fromRelease}\n".
+                   "To: {$toRelease}\n".
+                   'Time: '.date('Y-m-d H:i:s');
 
-        $this->sendToAllChannels($message, 'failure');
+        $this->sendToAllChannels($message, 'warning');
+    }
+
+    /**
+     * Check if any notification channels are configured
+     */
+    public function hasChannels(): bool
+    {
+        return ! empty($this->channels);
     }
 
     /**
@@ -90,6 +163,21 @@ class NotificationAction
             // Silently fail - notifications shouldn't break deployment
             $channel->send($message, $type);
         }
+    }
+
+    /**
+     * Format duration as human-readable string
+     */
+    private function formatDuration(float $seconds): string
+    {
+        if ($seconds < 60) {
+            return number_format($seconds, 1).'s';
+        }
+
+        $minutes = (int) ($seconds / 60);
+        $secs = (int) ($seconds % 60);
+
+        return "{$minutes}m {$secs}s";
     }
 
     /**

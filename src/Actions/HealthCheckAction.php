@@ -10,10 +10,25 @@ use Shaf\LaravelDeployer\Services\CommandService;
 /**
  * Health check action.
  * Performs server resource and endpoint health checks.
+ *
+ * Uses sensible defaults:
+ * - Timeout: 10 seconds
+ * - Expected status: 200
+ * - Retries: 3
+ * - Retry delay: 2 seconds
  */
 class HealthCheckAction extends Action
 {
     use HandlesRetry;
+
+    // Hardcoded sensible defaults (simplifies configuration)
+    private const DEFAULT_TIMEOUT = 10;
+
+    private const DEFAULT_EXPECTED_STATUS = 200;
+
+    private const DEFAULT_RETRIES = 3;
+
+    private const DEFAULT_RETRY_DELAY = 2;
 
     public function __construct(
         CommandService $cmd,
@@ -23,21 +38,23 @@ class HealthCheckAction extends Action
     }
 
     /**
-     * Perform complete health check
+     * Perform complete health check (server resources + configured URL)
      */
     public function check(): bool
     {
         $this->cmd->task('health:check');
 
         $resourcesOk = $this->checkServerResources();
-        $endpointsOk = true;
+        $endpointOk = true;
 
-        // Check endpoints if configured
-        if (! empty($this->config->healthCheckEndpoints)) {
-            $endpointsOk = $this->checkEndpoints($this->config->healthCheckEndpoints);
+        // Check health URL if configured
+        if ($this->config->isHealthCheckEnabled()) {
+            $endpointOk = $this->checkEndpoints([
+                ['url' => $this->buildHealthCheckUrl(), 'status' => self::DEFAULT_EXPECTED_STATUS],
+            ]);
         }
 
-        if ($resourcesOk && $endpointsOk) {
+        if ($resourcesOk && $endpointOk) {
             $this->cmd->success('All health checks passed');
 
             return true;
@@ -146,7 +163,7 @@ class HealthCheckAction extends Action
      */
     public function verifyDeployment(): bool
     {
-        if (! $this->config->healthCheckEnabled || ! $this->config->healthCheckUrl) {
+        if (! $this->config->isHealthCheckEnabled()) {
             return true;
         }
 
@@ -154,8 +171,8 @@ class HealthCheckAction extends Action
         $this->cmd->info('Verifying deployment health...');
 
         $url = $this->buildHealthCheckUrl();
-        $expectedStatus = $this->config->healthCheckExpectedStatus;
-        $timeout = $this->config->healthCheckTimeout;
+        $expectedStatus = self::DEFAULT_EXPECTED_STATUS;
+        $timeout = self::DEFAULT_TIMEOUT;
 
         try {
             $this->retry(
@@ -163,10 +180,12 @@ class HealthCheckAction extends Action
                     "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
                 )),
                 isSuccess: fn ($statusCode) => $statusCode === $expectedStatus,
-                maxAttempts: $this->config->healthCheckRetries,
-                delaySeconds: $this->config->healthCheckRetryDelay,
+                maxAttempts: self::DEFAULT_RETRIES,
+                delaySeconds: self::DEFAULT_RETRY_DELAY,
                 operationName: "Health check GET {$url}"
             );
+
+            $this->cmd->success("Health check passed ({$url})");
 
             return true;
         } catch (\RuntimeException $e) {
