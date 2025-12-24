@@ -69,6 +69,61 @@
         }
       }
     },
+    "healthCheck": {
+      "type": "object",
+      "description": "Post-deployment health check configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable health check verification after deployment"
+        },
+        "url": {
+          "type": "string",
+          "description": "Health check URL (relative path like '/health' or full URL)"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Request timeout in seconds"
+        },
+        "expectedStatus": {
+          "type": "integer",
+          "default": 200,
+          "description": "Expected HTTP status code"
+        },
+        "retries": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "description": "Number of retry attempts"
+        },
+        "retryDelay": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "description": "Delay between retries in seconds"
+        },
+        "endpoints": {
+          "type": "array",
+          "description": "Additional endpoints to check (for pre-deployment checks)",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string" },
+                  "status": { "type": "integer", "default": 200 }
+                },
+                "required": ["url"]
+              }
+            ]
+          }
+        }
+      }
+    },
     "rsync": {
       "type": "object",
       "description": "Rsync file synchronization settings",
@@ -114,6 +169,10 @@
         "type": "object",
         "description": "Environment configuration (inherits and overrides global settings)",
         "properties": {
+          "extends": {
+            "type": "string",
+            "description": "Inherit configuration from another environment (e.g., 'staging' extends 'production')"
+          },
           "local": {
             "type": "boolean",
             "default": false,

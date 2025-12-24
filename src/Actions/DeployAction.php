@@ -5,10 +5,12 @@ namespace Shaf\LaravelDeployer\Actions;
 use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
+use Shaf\LaravelDeployer\Data\DeploymentReceipt;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
 use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\ReceiptService;
 use Shaf\LaravelDeployer\Services\RsyncService;
 
 /**
@@ -32,7 +34,9 @@ class DeployAction
         private CommandService $cmd,
         private RsyncService $rsync,
         private DiffAction $diff,
-        private DeploymentConfig $config
+        private DeploymentConfig $config,
+        private ?HealthCheckAction $healthCheck = null,
+        private ?ReceiptService $receiptService = null
     ) {
         $this->deployment->setCommandService($cmd);
     }
@@ -98,18 +102,24 @@ class DeployAction
             // 14. Symlink current release
             $this->symlinkRelease();
 
-            // 15. Cleanup old releases
+            // 15. Verify deployment health
+            $this->verifyDeploymentHealth();
+
+            // 16. Cleanup old releases
             $this->cleanupOldReleases();
 
-            // 16. Log deployment success
+            // 17. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 17. Run post-deployment hooks
+            // 18. Run post-deployment hooks
             $this->runPostDeploymentHooks();
 
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
             $formattedDuration = \format_duration($this->duration);
+
+            // 19. Generate deployment receipt
+            $this->generateReceipt(success: true);
 
             $this->cmd->newLine();
             $this->cmd->success('✅ Deployment completed successfully!');
@@ -424,6 +434,18 @@ class DeployAction
     }
 
     /**
+     * Verify deployment health after symlink
+     */
+    private function verifyDeploymentHealth(): void
+    {
+        if ($this->healthCheck === null) {
+            return;
+        }
+
+        $this->healthCheck->verifyDeployment();
+    }
+
+    /**
      * Cleanup old releases (keep configured number)
      */
     private function cleanupOldReleases(): void
@@ -535,5 +557,31 @@ class DeployAction
     public function getFormattedDuration(): string
     {
         return \format_duration($this->duration);
+    }
+
+    /**
+     * Generate and save a deployment receipt
+     */
+    private function generateReceipt(bool $success = true, ?string $errorMessage = null): void
+    {
+        if ($this->receiptService === null) {
+            return;
+        }
+
+        $this->cmd->task('receipt:generate');
+
+        $receipt = DeploymentReceipt::fromDeployment(
+            release: $this->releaseName,
+            environment: $this->config->environment->value,
+            deployedBy: $this->deployment->getUser(),
+            duration: $this->duration,
+            syncDiff: $this->syncDiff,
+            postDeployCommands: $this->config->postDeployCommands,
+            success: $success,
+            errorMessage: $errorMessage
+        );
+
+        $this->receiptService->save($receipt);
+        $this->cmd->success('Deployment receipt saved');
     }
 }

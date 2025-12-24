@@ -8,6 +8,7 @@ use Shaf\LaravelDeployer\Actions\DiffAction;
 use Shaf\LaravelDeployer\Actions\HealthCheckAction;
 use Shaf\LaravelDeployer\Actions\NotificationAction;
 use Shaf\LaravelDeployer\Actions\OptimizeAction;
+use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
@@ -18,7 +19,8 @@ class DeployCommand extends Command
 {
     protected $signature = 'deploy {environment=staging : The deployment environment (local, staging, production)}
                             {--no-confirm : Skip deployment confirmation}
-                            {--skip-health-check : Skip health check before deployment}';
+                            {--skip-health-check : Skip health check before deployment}
+                            {--dry-run : Show deployment plan without executing}';
 
     protected $description = 'Deploy the application using simplified action-based deployment';
 
@@ -27,6 +29,7 @@ class DeployCommand extends Command
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
         $skipHealthCheck = $this->option('skip-health-check');
+        $dryRun = $this->option('dry-run');
 
         // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
@@ -37,8 +40,8 @@ class DeployCommand extends Command
             return self::FAILURE;
         }
 
-        // Check if Vite is running
-        if ($this->isViteRunning()) {
+        // Check if Vite is running (skip in dry-run mode)
+        if (! $dryRun && $this->isViteRunning()) {
             $this->newLine();
             $this->components->error('Vite bundler is currently running!');
             $this->newLine();
@@ -51,6 +54,11 @@ class DeployCommand extends Command
         try {
             // Load configuration
             $config = ConfigService::load($environment, base_path(), $this->output);
+
+            // Handle dry-run mode
+            if ($dryRun) {
+                return $this->showDryRunPlan($config);
+            }
 
             // SAFETY WARNING: Local deployments can be dangerous
             if ($config->isLocal) {
@@ -191,5 +199,118 @@ class DeployCommand extends Command
         }
 
         return false;
+    }
+
+    /**
+     * Show dry-run deployment plan without executing
+     */
+    private function showDryRunPlan(DeploymentConfig $config): int
+    {
+        $this->newLine();
+        $this->line('<fg=cyan>╔══════════════════════════════════════════════════════════════╗</>');
+        $this->line('<fg=cyan>║                    DRY RUN - No changes made                  ║</>');
+        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+
+        // Environment info
+        $this->line('<fg=cyan>║</> <fg=white>Environment:</> <fg=yellow>'.$this->padRight($config->environment->value, 44).'<fg=cyan>║</>');
+        $this->line('<fg=cyan>║</> <fg=white>Server:</>      <fg=yellow>'.$this->padRight($config->hostname, 44).'<fg=cyan>║</>');
+        $this->line('<fg=cyan>║</> <fg=white>Deploy Path:</> <fg=yellow>'.$this->padRight($config->deployPath, 44).'<fg=cyan>║</>');
+
+        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+        $this->line('<fg=cyan>║</>                   <fg=white>Deployment Steps</>                          <fg=cyan>║</>');
+        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+
+        // Show steps
+        $steps = [
+            ['1', 'Lock deployment', 'Prevent concurrent deployments'],
+            ['2', 'Create release directory', $this->generateReleaseName()],
+            ['3', 'Build frontend assets', 'npm run build'],
+            ['4', 'Calculate file diff', 'Compare local → server'],
+            ['5', 'Sync files via rsync', 'Upload changed files'],
+            ['6', 'Link shared directories', 'storage, .env'],
+            ['7', 'Install Composer deps', 'composer install'],
+            ['8', 'Set permissions', 'chmod 755 dirs, 644 files'],
+            ['9', 'Run migrations', 'php artisan migrate --force'],
+            ['10', 'Symlink release', 'current → new release'],
+        ];
+
+        if ($config->healthCheckEnabled && $config->healthCheckUrl) {
+            $steps[] = ['11', 'Health check', "GET {$config->healthCheckUrl}"];
+        }
+
+        $steps[] = [count($steps) + 1, 'Cleanup old releases', "Keep {$config->keepReleases} releases"];
+
+        if (! empty($config->postDeployCommands)) {
+            $commands = implode(', ', array_slice($config->postDeployCommands, 0, 3));
+            if (count($config->postDeployCommands) > 3) {
+                $commands .= '...';
+            }
+            $steps[] = [count($steps) + 1, 'Post-deploy commands', $commands];
+        }
+
+        foreach ($steps as $step) {
+            $stepNum = str_pad($step[0], 2, ' ', STR_PAD_LEFT);
+            $action = $this->padRight($step[1], 22);
+            $detail = $this->padRight($step[2], 30);
+            $this->line("<fg=cyan>║</> <fg=green>{$stepNum}.</> {$action} <fg=gray>{$detail}</><fg=cyan>║</>");
+        }
+
+        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+
+        // Show file diff preview
+        $this->line('<fg=cyan>║</>                    <fg=white>Files to Deploy</>                          <fg=cyan>║</>');
+        $this->line('<fg=cyan>╠══════════════════════════════════════════════════════════════╣</>');
+
+        // Calculate actual diff
+        $cmdService = new CommandService($config, $this->output);
+        $diffAction = new DiffAction($cmdService, $config, base_path());
+
+        try {
+            $diff = $diffAction->show();
+
+            if ($diff->isEmpty()) {
+                $this->line('<fg=cyan>║</>   <fg=gray>No file changes detected</>                               <fg=cyan>║</>');
+            } else {
+                if ($diff->hasNew()) {
+                    $this->line('<fg=cyan>║</>   <fg=green>+ '.$this->padRight($diff->newCount().' new files', 54).'</><fg=cyan>║</>');
+                }
+                if ($diff->hasModified()) {
+                    $this->line('<fg=cyan>║</>   <fg=yellow>~ '.$this->padRight($diff->modifiedCount().' modified files', 54).'</><fg=cyan>║</>');
+                }
+                if ($diff->hasDeleted()) {
+                    $this->line('<fg=cyan>║</>   <fg=red>- '.$this->padRight($diff->deletedCount().' deleted files', 54).'</><fg=cyan>║</>');
+                }
+            }
+        } catch (\Exception $e) {
+            $this->line('<fg=cyan>║</>   <fg=gray>Unable to calculate diff: '.$this->padRight(substr($e->getMessage(), 0, 30), 30).'</><fg=cyan>║</>');
+        }
+
+        $this->line('<fg=cyan>╚══════════════════════════════════════════════════════════════╝</>');
+        $this->newLine();
+
+        $this->info('Run without --dry-run to execute the deployment.');
+        $this->newLine();
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Generate a release name for preview
+     */
+    private function generateReleaseName(): string
+    {
+        $yearMonth = date('Ym');
+
+        return "{$yearMonth}.X (auto-generated)";
+    }
+
+    /**
+     * Pad string to fixed width for table formatting
+     */
+    private function padRight(string $str, int $length): string
+    {
+        $str = substr($str, 0, $length);
+
+        return str_pad($str, $length);
     }
 }

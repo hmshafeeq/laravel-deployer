@@ -30,6 +30,14 @@ readonly class DeploymentConfig
         public ?string $githubToken = null,
         public bool $strictHostKeyChecking = true,
         public bool $assetsFailOnError = true,
+        // Health check configuration
+        public bool $healthCheckEnabled = false,
+        public ?string $healthCheckUrl = null,
+        public int $healthCheckTimeout = 10,
+        public int $healthCheckExpectedStatus = 200,
+        public int $healthCheckRetries = 3,
+        public int $healthCheckRetryDelay = 2,
+        public array $healthCheckEndpoints = [],
     ) {}
 
     public static function fromArray(string $environment, array $config): self
@@ -38,9 +46,9 @@ readonly class DeploymentConfig
         $display = $config['display'] ?? [];
         $rsync = $config['rsync'] ?? [];
         $composer = $config['composer'] ?? [];
-
         $ssh = $config['ssh'] ?? [];
         $assets = $config['assets'] ?? [];
+        $healthCheck = $config['healthCheck'] ?? [];
 
         return new self(
             environment: Environment::fromString($environment),
@@ -66,6 +74,13 @@ readonly class DeploymentConfig
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
             assetsFailOnError: $assets['failOnError'] ?? true,
+            healthCheckEnabled: $healthCheck['enabled'] ?? false,
+            healthCheckUrl: $healthCheck['url'] ?? null,
+            healthCheckTimeout: $healthCheck['timeout'] ?? 10,
+            healthCheckExpectedStatus: $healthCheck['expectedStatus'] ?? 200,
+            healthCheckRetries: $healthCheck['retries'] ?? 3,
+            healthCheckRetryDelay: $healthCheck['retryDelay'] ?? 2,
+            healthCheckEndpoints: $healthCheck['endpoints'] ?? [],
         );
     }
 

@@ -12,13 +12,16 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 🔒 **Deployment Locking** - Prevents concurrent deployments
 - 💾 **Database Operations** - Backup, download, upload, and restore
 - 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
-- ❤️ **Health Checks** - Pre-deployment resource and endpoint verification
+- ❤️ **Health Checks** - Pre and post-deployment verification with retries
 - 🔑 **SSH Key Generator** - Interactive key generation and server setup
 - 🖥️ **Server Provisioning** - Automated LEMP stack setup with security hardening
 - 🎨 **Beautiful Output** - Clear, colored progress indicators
 - 📢 **Notifications** - Slack and Discord integration
 - 🔍 **Diff Display** - See exactly what files will be deployed with color-coded changes
 - ✅ **Confirmation Prompts** - Prevent accidents with configurable confirmation before deployment
+- 🧪 **Dry-Run Mode** - Preview deployment plan without executing
+- 📋 **Deployment Receipts** - JSON audit trail for every deployment
+- 🔗 **Environment Inheritance** - Reduce config duplication with `extends`
 
 ## 📋 Requirements
 
@@ -364,7 +367,49 @@ php artisan deploy production --no-confirm
 
 # Skip health checks
 php artisan deploy staging --skip-health-check
+
+# Preview deployment without executing (dry-run)
+php artisan deploy production --dry-run
 ```
+
+### Dry-Run Mode
+
+Preview what would happen during deployment without actually executing any commands:
+
+```bash
+php artisan deploy staging --dry-run
+```
+
+**Output example:**
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    DRY RUN - No changes made                  ║
+╠══════════════════════════════════════════════════════════════╣
+║ Environment:  staging                                         ║
+║ Server:       staging.example.com                             ║
+║ Deploy Path:  /var/www/staging                                ║
+╠══════════════════════════════════════════════════════════════╣
+║                   Deployment Steps                            ║
+╠══════════════════════════════════════════════════════════════╣
+║  1. Lock deployment           Prevent concurrent deployments  ║
+║  2. Create release directory  202501.X (auto-generated)       ║
+║  3. Build frontend assets     npm run build                   ║
+║  4. Calculate file diff       Compare local → server          ║
+║  5. Sync files via rsync      Upload changed files            ║
+║  ...                                                          ║
+╠══════════════════════════════════════════════════════════════╣
+║                    Files to Deploy                            ║
+╠══════════════════════════════════════════════════════════════╣
+║   + 5 new files                                               ║
+║   ~ 12 modified files                                         ║
+║   - 2 deleted files                                           ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+Use dry-run to:
+- Preview deployments before executing
+- Verify configuration is correct
+- Review file changes that would be synced
 
 **What happens during deployment:**
 
@@ -393,6 +438,41 @@ php artisan deploy:rollback production
 # Skip confirmation
 php artisan deploy:rollback staging --no-confirm
 ```
+
+### Deployment Receipts
+
+Every successful deployment generates a JSON receipt for audit trails and debugging. Receipts are stored on the server at `.dep/receipts/{release}.json`.
+
+**Receipt structure:**
+```json
+{
+  "release": "202501.5",
+  "environment": "staging",
+  "deployed_at": "2025-01-27T14:30:00+00:00",
+  "deployed_by": "john",
+  "duration_seconds": 45.2,
+  "git": {
+    "commit": "abc123def456",
+    "branch": "main",
+    "message": "feat: add user authentication"
+  },
+  "stats": {
+    "files_synced": 127,
+    "files_added": 5,
+    "files_modified": 12,
+    "files_deleted": 2,
+    "bytes_transferred": 3355443
+  },
+  "post_deploy_commands": ["config:cache", "route:cache"],
+  "success": true
+}
+```
+
+**Use receipts to:**
+- Track who deployed what and when
+- Debug deployment issues with git commit info
+- Monitor deployment duration and file changes
+- Create deployment history reports
 
 ### Database Operations
 
@@ -431,6 +511,66 @@ php artisan database:restore --latest
 ```
 
 ## 📖 Advanced Configuration
+
+### Environment Inheritance
+
+Environments can inherit configuration from other environments using the `extends` key. This reduces duplication when environments share similar settings:
+
+```json
+{
+  "environments": {
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    },
+    "staging": {
+      "extends": "production",
+      "deployPath": "/var/www/staging"
+    }
+  }
+}
+```
+
+In this example, `staging` inherits all settings from `production` but overrides `deployPath`. The staging environment will use production's composer options.
+
+**Inheritance rules:**
+- Child environments inherit all settings from parent
+- Child settings override parent settings
+- Deep merging is performed for nested objects
+- Circular inheritance is detected and prevented
+
+### Post-Deployment Health Check
+
+Verify your application is responding correctly after deployment:
+
+```json
+{
+  "healthCheck": {
+    "enabled": true,
+    "url": "/health",
+    "timeout": 10,
+    "expectedStatus": 200,
+    "retries": 3,
+    "retryDelay": 2
+  }
+}
+```
+
+**Configuration options:**
+- `enabled` - Enable/disable post-deployment health check (default: `false`)
+- `url` - Health check endpoint (relative path or full URL)
+- `timeout` - Request timeout in seconds (default: `10`)
+- `expectedStatus` - Expected HTTP status code (default: `200`)
+- `retries` - Number of retry attempts (default: `3`)
+- `retryDelay` - Delay between retries in seconds (default: `2`)
+
+**What happens:**
+1. After the symlink swap, the deployer waits briefly for the app to initialize
+2. Makes an HTTP request to the health check URL
+3. Retries if the check fails (up to configured retries)
+4. Deployment is marked successful only if health check passes
 
 ### Deployment Diff & Confirmation
 
@@ -660,16 +800,18 @@ This package uses a **simple, cohesive action-based architecture**:
 **Actions** (Complete workflows):
 - `DeployAction` - Full deployment process
 - `RollbackAction` - Rollback to previous release
+- `DiffAction` - File diff calculation and display
 - `DatabaseAction` - Database operations
-- `HealthCheckAction` - Health verification
+- `HealthCheckAction` - Pre and post-deployment health verification
 - `OptimizeAction` - Cache & service optimization
 - `NotificationAction` - Deployment notifications
 
 **Services** (Core functionality):
 - `CommandService` - Execute local/remote commands
 - `DeploymentService` - Release & lock management
-- `ConfigService` - Configuration loading
+- `ConfigService` - Configuration loading with environment inheritance
 - `RsyncService` - File synchronization
+- `ReceiptService` - Deployment receipt generation and storage
 
 ## 🤝 Contributing
 

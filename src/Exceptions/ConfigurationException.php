@@ -29,4 +29,16 @@ class ConfigurationException extends Exception
     {
         return new self("Required configuration key missing: {$key}");
     }
+
+    public static function circularInheritance(string $chain): self
+    {
+        return new self("Circular environment inheritance detected: {$chain}");
+    }
+
+    public static function parentEnvironmentNotFound(string $parent, string $child): self
+    {
+        return new self(
+            "Environment '{$child}' extends '{$parent}', but '{$parent}' does not exist in deploy.json"
+        );
+    }
 }

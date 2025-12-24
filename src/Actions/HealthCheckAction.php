@@ -134,4 +134,84 @@ class HealthCheckAction
 
         return $allPassed;
     }
+
+    /**
+     * Verify application health after deployment (with retries).
+     * This runs POST-deployment to ensure the new release is working.
+     */
+    public function verifyDeployment(): bool
+    {
+        if (! $this->config->healthCheckEnabled || ! $this->config->healthCheckUrl) {
+            return true;
+        }
+
+        $this->cmd->task('health:verify');
+        $this->cmd->info('Verifying deployment health...');
+
+        $url = $this->buildHealthCheckUrl();
+        $expectedStatus = $this->config->healthCheckExpectedStatus;
+        $retries = $this->config->healthCheckRetries;
+        $retryDelay = $this->config->healthCheckRetryDelay;
+        $timeout = $this->config->healthCheckTimeout;
+
+        for ($attempt = 1; $attempt <= $retries; $attempt++) {
+            try {
+                $this->cmd->info("  → Attempt {$attempt}/{$retries}: GET {$url}");
+
+                $startTime = microtime(true);
+                $result = $this->cmd->remote(
+                    "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
+                );
+                $duration = (microtime(true) - $startTime) * 1000;
+                $statusCode = (int) trim($result);
+
+                if ($statusCode === $expectedStatus) {
+                    $this->cmd->success(sprintf(
+                        'Health check passed: %s returned %d (%dms)',
+                        $url,
+                        $statusCode,
+                        (int) $duration
+                    ));
+
+                    return true;
+                }
+
+                $this->cmd->warning("  ✗ Got {$statusCode}, expected {$expectedStatus}");
+
+                if ($attempt < $retries) {
+                    $this->cmd->info("  ⏳ Waiting {$retryDelay}s before retry...");
+                    sleep($retryDelay);
+                }
+
+            } catch (\Exception $e) {
+                $this->cmd->warning("  ✗ Request failed: {$e->getMessage()}");
+
+                if ($attempt < $retries) {
+                    sleep($retryDelay);
+                }
+            }
+        }
+
+        throw HealthCheckException::endpointFailed($url, $expectedStatus, "Failed after {$retries} attempts");
+    }
+
+    /**
+     * Build the full health check URL from config
+     */
+    private function buildHealthCheckUrl(): string
+    {
+        $url = $this->config->healthCheckUrl;
+
+        // If it's already a full URL, return it
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        // Build URL from hostname
+        $scheme = $this->config->environment->isProduction() ? 'https' : 'http';
+        $host = $this->config->hostname;
+        $path = ltrim($url, '/');
+
+        return "{$scheme}://{$host}/{$path}";
+    }
 }
