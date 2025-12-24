@@ -4,11 +4,10 @@ namespace Shaf\LaravelDeployer\Services;
 
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\ConfigurationException;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Service for loading and managing deployment configuration.
- * Simplified version of ConfigurationService.
+ * Uses JSON config (.deploy/deploy.json) + .env secrets.
  */
 class ConfigService
 {
@@ -31,18 +30,20 @@ class ConfigService
      */
     public function loadConfig(string $environment): DeploymentConfig
     {
-        $yamlPath = $this->findConfigFile();
-        $yaml = $this->parseYaml($yamlPath);
+        $configPath = $this->findConfigFile();
+        $config = $this->parseJson($configPath);
 
-        $this->validateEnvironment($environment, $yaml);
+        $this->validateEnvironment($environment, $config);
 
-        $hostConfig = $yaml['hosts'][$environment];
-        $globalConfig = $yaml['config'] ?? [];
+        // Deep merge global config with environment-specific config
+        $envConfig = $config['environments'][$environment] ?? [];
+        $mergedConfig = $this->deepMerge($config, $envConfig);
 
-        // Merge with environment variables
-        $mergedConfig = $this->mergeWithEnvVars($environment, $hostConfig, $globalConfig);
+        // Load secrets from .env file
+        $this->loadEnvFile($environment);
+        $mergedConfig = $this->applyEnvSecrets($mergedConfig);
 
-        return DeploymentConfig::fromArray($environment, $mergedConfig, $globalConfig);
+        return DeploymentConfig::fromArray($environment, $mergedConfig);
     }
 
     /**
@@ -51,10 +52,10 @@ class ConfigService
     public function getAvailableEnvironments(): array
     {
         try {
-            $yamlPath = $this->findConfigFile();
-            $yaml = $this->parseYaml($yamlPath);
+            $configPath = $this->findConfigFile();
+            $config = $this->parseJson($configPath);
 
-            return array_keys($yaml['hosts'] ?? []);
+            return array_keys($config['environments'] ?? []);
         } catch (\Exception $e) {
             return [];
         }
@@ -65,83 +66,84 @@ class ConfigService
      */
     private function findConfigFile(): string
     {
-        $locations = [
-            $this->basePath.'/.deploy/deploy.yaml',
-            $this->basePath.'/deploy.yaml',
-        ];
+        $path = $this->basePath.'/.deploy/deploy.json';
 
-        foreach ($locations as $path) {
-            if (file_exists($path)) {
-                return $path;
-            }
+        if (file_exists($path)) {
+            return $path;
         }
 
-        throw ConfigurationException::fileNotFound(
-            'deploy.yaml (tried: .deploy/deploy.yaml, deploy.yaml)'
-        );
+        throw ConfigurationException::fileNotFound('deploy.json (expected at .deploy/deploy.json)');
     }
 
     /**
-     * Parse YAML file
+     * Parse JSON config file
      */
-    private function parseYaml(string $path): array
+    private function parseJson(string $path): array
     {
-        try {
-            return Yaml::parseFile($path);
-        } catch (\Exception $e) {
-            throw ConfigurationException::invalidYaml($path, $e->getMessage());
+        $contents = file_get_contents($path);
+        $config = json_decode($contents, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw ConfigurationException::invalidJson($path, json_last_error_msg());
         }
+
+        return $config;
     }
 
     /**
      * Validate environment exists in configuration
      */
-    private function validateEnvironment(string $environment, array $yaml): void
+    private function validateEnvironment(string $environment, array $config): void
     {
-        if (! isset($yaml['hosts'][$environment])) {
-            $available = array_keys($yaml['hosts'] ?? []);
+        if (! isset($config['environments'][$environment])) {
+            $available = array_keys($config['environments'] ?? []);
             throw ConfigurationException::environmentNotFound($environment, $available);
         }
     }
 
     /**
-     * Merge configuration with environment variables
+     * Deep merge two arrays (environment config extends global config)
      */
-    private function mergeWithEnvVars(string $environment, array $hostConfig, array $globalConfig): array
+    private function deepMerge(array $base, array $override): array
     {
-        $this->loadEnvFile($environment);
+        $result = $base;
 
-        $overrides = [];
+        foreach ($override as $key => $value) {
+            // Skip 'environments' key - we don't want to nest it
+            if ($key === 'environments') {
+                continue;
+            }
 
-        if ($host = $this->getEnv('DEPLOY_HOST')) {
-            $overrides['hostname'] = $host;
+            if (is_array($value) && isset($result[$key]) && is_array($result[$key])) {
+                // If both are indexed arrays, replace entirely
+                if ($this->isIndexedArray($value) && $this->isIndexedArray($result[$key])) {
+                    $result[$key] = $value;
+                } else {
+                    // Associative arrays: deep merge
+                    $result[$key] = $this->deepMerge($result[$key], $value);
+                }
+            } else {
+                $result[$key] = $value;
+            }
         }
 
-        if ($user = $this->getEnv('DEPLOY_USER')) {
-            $overrides['remote_user'] = $user;
-        }
-
-        if ($path = $this->getEnv('DEPLOY_PATH')) {
-            $overrides['deploy_path'] = $path;
-        }
-
-        if ($branch = $this->getEnv('DEPLOY_BRANCH')) {
-            $overrides['branch'] = $branch;
-        }
-
-        if ($identityFile = $this->getEnv('DEPLOY_IDENTITY_FILE')) {
-            $overrides['identity_file'] = $identityFile;
-        }
-
-        if ($githubToken = $this->getEnv('GITHUB_TOKEN')) {
-            $overrides['github_token'] = $githubToken;
-        }
-
-        return array_merge($hostConfig, $overrides);
+        return $result;
     }
 
     /**
-     * Load environment-specific .env file
+     * Check if array is indexed (sequential numeric keys)
+     */
+    private function isIndexedArray(array $array): bool
+    {
+        if (empty($array)) {
+            return true;
+        }
+
+        return array_keys($array) === range(0, count($array) - 1);
+    }
+
+    /**
+     * Load environment-specific .env file for secrets
      */
     private function loadEnvFile(string $environment): void
     {
@@ -154,6 +156,38 @@ class ConfigService
             );
             $dotenv->load();
         }
+    }
+
+    /**
+     * Apply secrets from environment variables
+     */
+    private function applyEnvSecrets(array $config): array
+    {
+        if ($host = $this->getEnv('DEPLOY_HOST')) {
+            $config['hostname'] = $host;
+        }
+
+        if ($user = $this->getEnv('DEPLOY_USER')) {
+            $config['remoteUser'] = $user;
+        }
+
+        if ($path = $this->getEnv('DEPLOY_PATH')) {
+            $config['deployPath'] = $path;
+        }
+
+        if ($identityFile = $this->getEnv('DEPLOY_IDENTITY_FILE')) {
+            $config['identityFile'] = $identityFile;
+        }
+
+        if ($port = $this->getEnv('DEPLOY_PORT')) {
+            $config['port'] = (int) $port;
+        }
+
+        if ($githubToken = $this->getEnv('GITHUB_TOKEN')) {
+            $config['githubToken'] = $githubToken;
+        }
+
+        return $config;
     }
 
     /**

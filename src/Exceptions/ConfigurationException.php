@@ -16,13 +16,13 @@ class ConfigurationException extends Exception
         $availableList = implode(', ', $available);
 
         return new self(
-            "Environment '{$environment}' not found in deploy.yaml. Available: {$availableList}"
+            "Environment '{$environment}' not found in deploy.json. Available: {$availableList}"
         );
     }
 
-    public static function invalidYaml(string $path, string $reason): self
+    public static function invalidJson(string $path, string $reason): self
     {
-        return new self("Failed to parse configuration file {$path}: {$reason}");
+        return new self("Failed to parse JSON configuration {$path}: {$reason}");
     }
 
     public static function missingRequiredKey(string $key): self

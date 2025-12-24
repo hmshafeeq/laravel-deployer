@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\File;
-use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function () {
     // Set up test deployment configuration
@@ -12,48 +11,30 @@ beforeEach(function () {
         mkdir($this->deployPath, 0755, true);
     }
 
-    // Create deploy.yaml config for local deployment
+    // Create deploy.json config for local deployment
     $config = [
-        'test' => [
-            'hostname' => 'localhost',
-            'remote_user' => trim(shell_exec('whoami')),
-            'deploy_path' => $this->buildPath,
-            'repository' => base_path(),
-            'branch' => 'main',
-            'local' => true, // Mark as local to skip SSH
-            'shared_dirs' => [
-                'storage/app',
-                'storage/framework',
-                'storage/logs',
+        'keepReleases' => 2,
+        'environments' => [
+            'test' => [
+                'local' => true,
+                'deployPath' => $this->buildPath,
             ],
-            'shared_files' => ['.env'],
-            'writable_dirs' => [
-                'storage',
-                'storage/app',
-                'storage/framework',
-                'storage/logs',
-            ],
-            'keep_releases' => 2,
-            'rsync' => [
-                'src',
-                'tests',
-                'composer.json',
-            ],
-            'health_checks' => [
-                'endpoints' => [],
-            ],
+        ],
+        'rsync' => [
+            'exclude' => ['.git/', 'node_modules/', 'vendor/'],
+            'include' => ['composer.json', 'composer.lock'],
         ],
     ];
 
     file_put_contents(
-        $this->deployPath.'/deploy.yaml',
-        Yaml::dump($config)
+        $this->deployPath.'/deploy.json',
+        json_encode($config, JSON_PRETTY_PRINT)
     );
 
     // Create a minimal .env file for testing
     file_put_contents(
         $this->deployPath.'/.env.test',
-        "APP_NAME=TestApp\nAPP_ENV=testing\n"
+        "DEPLOY_HOST=localhost\nDEPLOY_USER=".trim(shell_exec('whoami'))."\n"
     );
 });
 

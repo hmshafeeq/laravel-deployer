@@ -64,43 +64,22 @@ abstract class TestCase extends Orchestra
             mkdir($buildPath, 0755, true);
         }
 
-        // Create deploy.yaml
-        $yaml = <<<YAML
-test:
-  host: localhost
-  user: {$this->getCurrentUser()}
-  deploy_path: {$buildPath}
-  repository: .
-  branch: main
-  shared_dirs:
-    - storage/app
-    - storage/framework
-    - storage/logs
-  shared_files:
-    - .env
-  writable_dirs:
-    - bootstrap/cache
-    - storage
-    - storage/app
-    - storage/framework
-    - storage/logs
-  keep_releases: 3
-  rsync:
-    - app
-    - bootstrap
-    - config
-    - database
-    - public
-    - resources
-    - routes
-    - composer.json
-    - composer.lock
-    - artisan
-  health_checks:
-    endpoints: []
-YAML;
+        // Create deploy.json
+        $config = [
+            'keepReleases' => 3,
+            'environments' => [
+                $environment => [
+                    'local' => true,
+                    'deployPath' => $buildPath,
+                ],
+            ],
+            'rsync' => [
+                'exclude' => ['.git/', 'node_modules/', 'vendor/'],
+                'include' => ['composer.json', 'composer.lock'],
+            ],
+        ];
 
-        file_put_contents("{$deployPath}/deploy.yaml", $yaml);
+        file_put_contents("{$deployPath}/deploy.json", json_encode($config, JSON_PRETTY_PRINT));
     }
 
     protected function getCurrentUser(): string

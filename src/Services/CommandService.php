@@ -419,11 +419,7 @@ class CommandService implements CommandExecutor
 
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
-        $strictHostKeyChecking = true;
-        if (function_exists('config')) {
-            $strictHostKeyChecking = config('laravel-deployer.ssh.strict_host_key_checking', true);
-        }
-        if (! $strictHostKeyChecking) {
+        if (! $this->config->strictHostKeyChecking) {
             $this->ssh->disableStrictHostKeyChecking();
         }
 

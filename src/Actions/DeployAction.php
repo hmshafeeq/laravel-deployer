@@ -188,9 +188,7 @@ class DeployAction
             $this->cmd->local('npm run build');
             $this->cmd->success('Assets built successfully');
         } catch (\Exception $e) {
-            $failOnError = config('laravel-deployer.assets.fail_on_error', true);
-
-            if ($failOnError) {
+            if ($this->config->assetsFailOnError) {
                 throw new \RuntimeException('Asset build failed: '.$e->getMessage(), 0, $e);
             }
 
@@ -465,7 +463,7 @@ class DeployAction
         $this->cmd->task('hooks:post-deploy');
 
         // Run configured post-deployment artisan commands
-        $postDeployCommands = config('laravel-deployer.post_deploy_commands', []);
+        $postDeployCommands = $this->config->postDeployCommands;
 
         if (! empty($postDeployCommands)) {
             $this->cmd->info('Running post-deployment commands...');

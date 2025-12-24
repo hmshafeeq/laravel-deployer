@@ -19,20 +19,13 @@ class LaravelDeployerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(
-            __DIR__.'/../config/laravel-deployer.php',
-            'laravel-deployer'
-        );
+        // Configuration is now handled via .deploy/deploy.json
+        // No Laravel config file needed
     }
 
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            // Publish configuration file
-            $this->publishes([
-                __DIR__.'/../config/laravel-deployer.php' => config_path('laravel-deployer.php'),
-            ], 'laravel-deployer-config');
-
             // Register commands
             $this->commands([
                 InstallCommand::class,

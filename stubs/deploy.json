@@ -1,0 +1,86 @@
+{
+  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+  "keepReleases": 3,
+  "phpBinary": "php",
+
+  "display": {
+    "showDiff": true,
+    "confirmChanges": true,
+    "showUploadProgress": true,
+    "diffDisplayLimit": 20
+  },
+
+  "rsync": {
+    "exclude": [
+      ".git/",
+      ".github/",
+      "node_modules/",
+      "vendor/",
+      "storage/",
+      "bootstrap/cache/",
+      "tests/",
+      ".env",
+      ".env.*",
+      ".deploy/",
+      "deploy.php",
+      "phpunit.xml",
+      ".phpunit.result.cache",
+      "README.md",
+      ".editorconfig",
+      ".gitignore",
+      ".styleci.yml",
+      "docker-compose*.yml",
+      "Dockerfile",
+      "package.json",
+      "package-lock.json",
+      "yarn.lock",
+      "webpack.mix.js",
+      "vite.config.js",
+      "*.log",
+      ".DS_Store",
+      "Thumbs.db",
+      "backups/",
+      "sql/",
+      ".idea/",
+      ".vscode/",
+      ".ai/",
+      ".claude/",
+      ".gemini/",
+      ".junie/",
+      ".zed/"
+    ],
+    "include": [
+      "composer.json",
+      "composer.lock"
+    ],
+    "flags": "rzc",
+    "options": ["delete", "delete-after", "compress"]
+  },
+
+  "composer": {
+    "options": "--prefer-dist --no-interaction --optimize-autoloader"
+  },
+
+  "environments": {
+    "local": {
+      "local": true,
+      "deployPath": "/tmp/app"
+    },
+    "staging": {
+      "deployPath": "/var/www/staging"
+    },
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    }
+  },
+
+  "postDeploy": [
+    "config:cache",
+    "route:cache",
+    "view:cache"
+  ]
+}
