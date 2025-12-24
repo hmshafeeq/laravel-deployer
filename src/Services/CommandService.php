@@ -3,6 +3,7 @@
 namespace Shaf\LaravelDeployer\Services;
 
 use Shaf\LaravelDeployer\Constants\Timeouts;
+use Shaf\LaravelDeployer\Contracts\CommandExecutor;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
 use Shaf\LaravelDeployer\Exceptions\TaskExecutionException;
@@ -12,9 +13,9 @@ use Symfony\Component\Process\Process;
 
 /**
  * Unified service for command execution (local/remote) and output handling.
- * Merges: LocalCommandExecutor, RemoteCommandExecutor, OutputService, ArtisanTaskRunner
+ * Implements CommandExecutor for standardized command execution.
  */
-class CommandService
+class CommandService implements CommandExecutor
 {
     private ?Ssh $ssh = null;
 
@@ -39,6 +40,15 @@ class CommandService
     // ============================================================
     // Command Execution Methods
     // ============================================================
+
+    /**
+     * Execute a command (remote or local based on configuration)
+     * Implements CommandExecutor interface
+     */
+    public function execute(string $command): string
+    {
+        return $this->remote($command);
+    }
 
     /**
      * Execute a remote command via SSH
@@ -148,7 +158,11 @@ class CommandService
                 $this->lastError = $errorOutput ?: "Exit code: {$process->getExitCode()}, stdout: {$stdout}";
             }
 
-            return $stdout === 'true' || str_contains($stdout, 'true');
+            // Check for exact "true" match or "true" on its own line
+            // Avoid false positives like "truthful" or "untruthful"
+            $trimmed = trim($stdout);
+
+            return $trimmed === 'true' || str_ends_with($trimmed, "\ntrue");
         } catch (\Exception $e) {
             $this->lastError = $e->getMessage();
 
@@ -405,11 +419,7 @@ class CommandService
 
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
-        $strictHostKeyChecking = true;
-        if (function_exists('config')) {
-            $strictHostKeyChecking = config('laravel-deployer.ssh.strict_host_key_checking', true);
-        }
-        if (! $strictHostKeyChecking) {
+        if (! $this->config->strictHostKeyChecking) {
             $this->ssh->disableStrictHostKeyChecking();
         }
 

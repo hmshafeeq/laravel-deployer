@@ -3,9 +3,9 @@
 namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
-use Shaf\LaravelDeployer\Actions\System\ClearCachesAction;
-use Shaf\LaravelDeployer\Actions\System\RestartPhpFpmAction;
-use Shaf\LaravelDeployer\Services\DeploymentServiceFactory;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\DeploymentService;
 
 class ClearCommand extends Command
 {
@@ -20,15 +20,15 @@ class ClearCommand extends Command
         $noConfirm = $this->option('no-confirm');
 
         try {
-            // Create factory and initialize for environment
-            $factory = new DeploymentServiceFactory(
-                base_path(),
-                $this->output
-            );
-            $factory->createForEnvironment($environment);
+            // Load configuration
+            $config = ConfigService::load($environment, base_path());
+
+            // Initialize services
+            $cmd = new CommandService($config, $this->output);
+            $deployment = new DeploymentService($config, base_path());
 
             // Show confirmation for non-local environments
-            if (! $factory->getConfig()->isLocal && ! $noConfirm) {
+            if (! $config->isLocal && ! $noConfirm) {
                 $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
 
                 if (! $this->confirm('Do you want to continue?', false)) {
@@ -41,22 +41,18 @@ class ClearCommand extends Command
             $this->info("Clearing caches and restarting services on {$environment}...");
             $this->newLine();
 
-            // We need to use the current release (not a specific release)
-            $releaseManager = $factory->createReleaseManager();
-            $currentRelease = $releaseManager->getCurrentRelease();
+            // Get current release path
+            $currentPath = $deployment->getCurrentPath();
 
-            if ($currentRelease) {
-                $factory->setReleaseName($currentRelease);
-            }
-
-            // Clear Laravel caches using action
+            // Clear Laravel caches
             $this->info('🗑️  Clearing Laravel caches...');
 
-            $clearCachesAction = new ClearCachesAction(
-                $factory->createArtisanTaskRunner()
-            );
-
-            $results = $clearCachesAction->execute();
+            $results = [
+                'config' => $this->runArtisanCommand($cmd, $currentPath, 'config:clear'),
+                'view' => $this->runArtisanCommand($cmd, $currentPath, 'view:clear'),
+                'route' => $this->runArtisanCommand($cmd, $currentPath, 'route:clear'),
+                'queue' => $this->runArtisanCommand($cmd, $currentPath, 'queue:restart'),
+            ];
 
             // Display results
             $this->info($results['config'] ? '  ✓ Config cache cleared' : '  ⚠ Config cache operation failed');
@@ -69,20 +65,15 @@ class ClearCommand extends Command
             $this->info($results['queue'] ? '  ✓ Queue workers restarted' : '  ⚠ Queue restart failed');
 
             // Restart PHP-FPM (if not local)
-            if (! $factory->getConfig()->isLocal) {
+            if (! $config->isLocal) {
                 $this->newLine();
                 $this->info('🔄 Restarting PHP-FPM...');
 
                 try {
-                    $restartPhpFpmAction = new RestartPhpFpmAction(
-                        $factory->createCommandExecutor(),
-                        $factory->getOutput()
-                    );
-
-                    $restartPhpFpmAction->execute();
+                    $this->restartPhpFpm($cmd);
                     $this->info('  ✓ PHP-FPM restarted');
                 } catch (\Exception $e) {
-                    $this->warn('  ⚠ PHP-FPM restart failed');
+                    $this->warn('  ⚠ PHP-FPM restart failed: '.$e->getMessage());
                 }
             }
 
@@ -97,5 +88,32 @@ class ClearCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * Run an artisan command on the remote server
+     */
+    private function runArtisanCommand(CommandService $cmd, string $path, string $command): bool
+    {
+        try {
+            $cmd->artisan($command, $path);
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Restart PHP-FPM service
+     */
+    private function restartPhpFpm(CommandService $cmd): void
+    {
+        // Detect PHP-FPM version
+        $phpVersion = trim($cmd->remote('php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"'));
+        $serviceName = "php{$phpVersion}-fpm";
+
+        // Check if the service exists and restart it
+        $cmd->remote("sudo systemctl restart {$serviceName}");
     }
 }

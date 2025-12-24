@@ -44,9 +44,9 @@ php artisan laravel-deployer:install
 ```
 
 This creates:
-- `.deploy/deploy.yaml` - Deployment configuration
-- `.deploy/.env.{environment}.example` - Environment templates
-- `.gitignore` entries for credentials
+- `.deploy/deploy.json` - Deployment configuration (tracked in git)
+- `.deploy/.env.{environment}.example` - Secret templates (gitignored)
+- `.gitignore` entries to track `deploy.json` but ignore `.env.*` files
 
 ## 🖥️ Server Provisioning
 
@@ -138,14 +138,22 @@ Once provisioning is complete:
    chmod 600 ./deploy_key
    ```
 
-2. **Update your `.deploy/deploy.yaml`**:
-   ```yaml
-   hosts:
-     production:
-       hostname: 'your-server.com'
-       remote_user: 'deployer'
-       identity_file: './deploy_key'
-       deploy_path: '/var/www/production'
+2. **Update your `.deploy/deploy.json`** and `.deploy/.env.production`:
+   ```json
+   {
+     "environments": {
+       "production": {
+         "deployPath": "/var/www/production"
+       }
+     }
+   }
+   ```
+
+   In `.deploy/.env.production`:
+   ```env
+   DEPLOY_HOST=your-server.com
+   DEPLOY_USER=deployer
+   DEPLOY_IDENTITY_FILE=./deploy_key
    ```
 
 3. **Deploy your application**:
@@ -264,35 +272,45 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### Basic Setup
 
-**1. Edit `.deploy/deploy.yaml`:**
+**1. Edit `.deploy/deploy.json`:**
 
-```yaml
-hosts:
-  staging:
-    hostname: staging.yourapp.com
-    remote_user: deploy
-    deploy_path: /var/www/staging
-    branch: main
+```json
+{
+  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
 
-  production:
-    hostname: yourapp.com
-    remote_user: deploy
-    deploy_path: /var/www/production
-    branch: production
+  "keepReleases": 3,
 
-config:
-  keep_releases: 3
-  composer_options: '--no-dev --optimize-autoloader'
+  "composer": {
+    "options": "--prefer-dist --no-interaction --optimize-autoloader"
+  },
+
+  "environments": {
+    "staging": {
+      "deployPath": "/var/www/staging"
+    },
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    }
+  },
+
+  "postDeploy": [
+    "config:cache",
+    "route:cache"
+  ]
+}
 ```
 
-**2. Create environment credentials:**
+**2. Create environment secrets:**
 
 ```bash
 # Copy example files
 cp .deploy/.env.staging.example .deploy/.env.staging
 cp .deploy/.env.production.example .deploy/.env.production
 
-# Edit with your credentials
+# Edit with your server credentials
 nano .deploy/.env.staging
 ```
 
@@ -301,8 +319,7 @@ nano .deploy/.env.staging
 ```env
 DEPLOY_HOST=staging.yourapp.com
 DEPLOY_USER=deploy
-DEPLOY_PATH=/var/www/staging
-DEPLOY_BRANCH=main
+DEPLOY_IDENTITY_FILE=~/.ssh/id_ed25519
 ```
 
 **3. Setup SSH key authentication:**
@@ -419,13 +436,15 @@ php artisan database:restore --latest
 
 Control whether to show file differences and require confirmation before deployment:
 
-```yaml
-config:
-  # Diff and confirmation settings
-  show_diff: true                    # Show files that will be synced before deployment
-  confirm_changes: true               # Ask for confirmation before uploading changes
-  show_upload_progress: true          # Show upload progress messages
-  diff_display_limit: 20             # Maximum number of files to display per category
+```json
+{
+  "display": {
+    "showDiff": true,
+    "confirmChanges": true,
+    "showUploadProgress": true,
+    "diffDisplayLimit": 20
+  }
+}
 ```
 
 **Features:**
@@ -440,51 +459,31 @@ config:
 - **Production Safety**: Extra warnings when deploying file deletions to production
 
 **Configuration Options:**
-- `show_diff: true|false` - Enable or disable diff display (default: `true`)
-- `confirm_changes: true|false` - Require confirmation after showing diff (default: `true`)
-- `show_upload_progress: true|false` - Show upload progress indicators (default: `true`)
-- `diff_display_limit: N` - Maximum files to show per category (default: `20`)
+- `showDiff: true|false` - Enable or disable diff display (default: `true`)
+- `confirmChanges: true|false` - Require confirmation after showing diff (default: `true`)
+- `showUploadProgress: true|false` - Show upload progress indicators (default: `true`)
+- `diffDisplayLimit: N` - Maximum files to show per category (default: `20`)
 
 ### Rsync Exclusions
 
-Edit `.deploy/deploy.yaml` to customize what gets deployed:
+Edit `.deploy/deploy.json` to customize what gets deployed:
 
-```yaml
-config:
-  rsync_excludes:
-    - .git/
-    - node_modules/
-    - .env
-    - storage/
-    - tests/
-
-  rsync_includes:
-    - app/
-    - bootstrap/
-    - config/
-    - database/
-    - public/
-    - resources/
-    - routes/
-    - composer.json
-    - composer.lock
-    - artisan
-```
-
-### Health Check Endpoints
-
-Configure health check endpoints:
-
-```yaml
-hosts:
-  production:
-    hostname: yourapp.com
-    # ... other config
-    health_check_endpoints:
-      - url: https://yourapp.com/health
-        status: 200
-      - url: https://yourapp.com/api/status
-        status: 200
+```json
+{
+  "rsync": {
+    "exclude": [
+      ".git/",
+      "node_modules/",
+      ".env",
+      "storage/",
+      "tests/"
+    ],
+    "include": [
+      "composer.json",
+      "composer.lock"
+    ]
+  }
+}
 ```
 
 ### Notifications
@@ -499,9 +498,24 @@ DEPLOY_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 DEPLOY_DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR/WEBHOOK/URL
 ```
 
-### Custom Post-Deployment Hooks
+### Post-Deployment Commands
 
-Create `.dep/post-deploy.sh` on your server:
+Configure artisan commands to run after deployment in `.deploy/deploy.json`:
+
+```json
+{
+  "postDeploy": [
+    "config:cache",
+    "route:cache",
+    "view:cache",
+    "icons:cache"
+  ]
+}
+```
+
+### Custom Post-Deployment Shell Script
+
+Create `.dep/post-deploy.sh` on your server for advanced tasks:
 
 ```bash
 #!/bin/bash

@@ -11,46 +11,72 @@ readonly class DeploymentConfig
         public string $hostname,
         public string $remoteUser,
         public string $deployPath,
-        public string $branch,
         public string $composerOptions,
         public int $keepReleases = 3,
         public bool $isLocal = false,
-        public string $application = 'Application',
         public array $rsyncExcludes = [],
         public array $rsyncIncludes = [],
-        public ?int $port = null,
+        public array $rsyncOptions = [],
+        public string $rsyncFlags = 'rzc',
         public ?string $identityFile = null,
+        public ?int $port = null,
         public bool $showDiff = true,
         public bool $confirmChanges = true,
         public bool $showUploadProgress = true,
         public int $diffDisplayLimit = 20,
         public string $phpBinary = 'php',
+        public array $postDeployCommands = [],
+        public string $branch = 'main',
         public ?string $githubToken = null,
+        public bool $strictHostKeyChecking = true,
+        public bool $assetsFailOnError = true,
     ) {}
 
-    public static function fromArray(string $environment, array $config, array $globalConfig = []): self
+    public static function fromArray(string $environment, array $config): self
     {
+        // Extract nested config sections
+        $display = $config['display'] ?? [];
+        $rsync = $config['rsync'] ?? [];
+        $composer = $config['composer'] ?? [];
+
+        $ssh = $config['ssh'] ?? [];
+        $assets = $config['assets'] ?? [];
+
         return new self(
             environment: Environment::fromString($environment),
             hostname: $config['hostname'] ?? 'localhost',
-            remoteUser: $config['remote_user'] ?? 'deploy',
-            deployPath: $config['deploy_path'] ?? '/var/www/app',
-            branch: $config['branch'] ?? 'main',
-            composerOptions: $config['composer_options'] ?? '--verbose --prefer-dist --no-interaction --no-scripts --optimize-autoloader',
-            keepReleases: $globalConfig['keep_releases'] ?? $config['keep_releases'] ?? 3,
+            remoteUser: $config['remoteUser'] ?? 'deploy',
+            deployPath: $config['deployPath'] ?? '/var/www/app',
+            composerOptions: $composer['options'] ?? $config['composerOptions'] ?? '--prefer-dist --no-interaction --optimize-autoloader',
+            keepReleases: $config['keepReleases'] ?? 3,
             isLocal: $config['local'] ?? false,
-            application: $globalConfig['application'] ?? $config['application'] ?? 'Application',
-            rsyncExcludes: $globalConfig['rsync']['exclude'] ?? [],
-            rsyncIncludes: $globalConfig['rsync']['include'] ?? [],
+            rsyncExcludes: $rsync['exclude'] ?? [],
+            rsyncIncludes: $rsync['include'] ?? [],
+            rsyncOptions: $rsync['options'] ?? ['delete', 'delete-after', 'compress'],
+            rsyncFlags: $rsync['flags'] ?? 'rzc',
+            identityFile: $config['identityFile'] ?? null,
             port: $config['port'] ?? null,
-            identityFile: $config['identity_file'] ?? null,
-            showDiff: $globalConfig['show_diff'] ?? $config['show_diff'] ?? true,
-            confirmChanges: $globalConfig['confirm_changes'] ?? $config['confirm_changes'] ?? true,
-            showUploadProgress: $globalConfig['show_upload_progress'] ?? $config['show_upload_progress'] ?? true,
-            diffDisplayLimit: $globalConfig['diff_display_limit'] ?? $config['diff_display_limit'] ?? 20,
-            phpBinary: $config['bin/php'] ?? $config['php_binary'] ?? 'php',
-            githubToken: $config['github_token'] ?? null,
+            showDiff: $display['showDiff'] ?? $config['showDiff'] ?? true,
+            confirmChanges: $display['confirmChanges'] ?? $config['confirmChanges'] ?? true,
+            showUploadProgress: $display['showUploadProgress'] ?? $config['showUploadProgress'] ?? true,
+            diffDisplayLimit: $display['diffDisplayLimit'] ?? $config['diffDisplayLimit'] ?? 20,
+            phpBinary: $config['phpBinary'] ?? 'php',
+            postDeployCommands: $config['postDeploy'] ?? [],
+            branch: $config['branch'] ?? self::detectCurrentBranch(),
+            githubToken: $config['githubToken'] ?? null,
+            strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
+            assetsFailOnError: $assets['failOnError'] ?? true,
         );
+    }
+
+    /**
+     * Detect current git branch for release logging
+     */
+    private static function detectCurrentBranch(): string
+    {
+        $branch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD 2>/dev/null'));
+
+        return $branch ?: 'main';
     }
 
     public function toArray(): array
@@ -58,14 +84,11 @@ readonly class DeploymentConfig
         return [
             'environment' => $this->environment->value,
             'hostname' => $this->hostname,
-            'remote_user' => $this->remoteUser,
-            'deploy_path' => $this->deployPath,
-            'branch' => $this->branch,
-            'composer_options' => $this->composerOptions,
-            'keep_releases' => $this->keepReleases,
+            'remoteUser' => $this->remoteUser,
+            'deployPath' => $this->deployPath,
+            'composerOptions' => $this->composerOptions,
+            'keepReleases' => $this->keepReleases,
             'local' => $this->isLocal,
-            'application' => $this->application,
-            'port' => $this->port,
         ];
     }
 }

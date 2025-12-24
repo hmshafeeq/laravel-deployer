@@ -37,4 +37,9 @@ class DeploymentException extends Exception
             'Vite bundler is currently running. Please stop the Vite development server before deploying.'
         );
     }
+
+    public static function unknownService(string $service): self
+    {
+        return new self("Unknown service: {$service}");
+    }
 }

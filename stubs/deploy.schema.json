@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/hmshafeeq/laravel-deployer/deploy.schema.json",
+  "title": "Laravel Deployer Configuration",
+  "description": "Configuration schema for Laravel Deployer package",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE support"
+    },
+    "keepReleases": {
+      "type": "integer",
+      "default": 3,
+      "minimum": 1,
+      "description": "Number of releases to keep on the server"
+    },
+    "phpBinary": {
+      "type": "string",
+      "default": "php",
+      "description": "Path to PHP binary on the server"
+    },
+    "display": {
+      "type": "object",
+      "description": "Display and confirmation settings",
+      "properties": {
+        "showDiff": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show files that will be synced before deployment"
+        },
+        "confirmChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before uploading changes"
+        },
+        "showUploadProgress": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show upload progress during deployment"
+        },
+        "diffDisplayLimit": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "description": "Maximum number of files to display per category in diff"
+        }
+      }
+    },
+    "ssh": {
+      "type": "object",
+      "description": "SSH connection settings",
+      "properties": {
+        "strictHostKeyChecking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable SSH strict host key checking (recommended for security)"
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "description": "Frontend asset build settings",
+      "properties": {
+        "failOnError": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fail deployment if asset build fails"
+        }
+      }
+    },
+    "rsync": {
+      "type": "object",
+      "description": "Rsync file synchronization settings",
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Patterns to exclude from sync (e.g., '.git/', 'node_modules/')"
+        },
+        "include": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Patterns to include (processed before excludes)"
+        },
+        "flags": {
+          "type": "string",
+          "default": "rzc",
+          "description": "Rsync flags (r=recursive, z=compress, c=checksum)"
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["delete", "delete-after", "compress"],
+          "description": "Additional rsync options"
+        }
+      }
+    },
+    "composer": {
+      "type": "object",
+      "description": "Composer installation settings",
+      "properties": {
+        "options": {
+          "type": "string",
+          "default": "--prefer-dist --no-interaction --optimize-autoloader",
+          "description": "Composer install options"
+        }
+      }
+    },
+    "environments": {
+      "type": "object",
+      "description": "Environment-specific configurations",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Environment configuration (inherits and overrides global settings)",
+        "properties": {
+          "local": {
+            "type": "boolean",
+            "default": false,
+            "description": "Use local execution instead of SSH"
+          },
+          "deployPath": {
+            "type": "string",
+            "description": "Deployment path on the server"
+          },
+          "composer": {
+            "type": "object",
+            "properties": {
+              "options": {
+                "type": "string",
+                "description": "Override composer options for this environment"
+              }
+            }
+          },
+          "rsync": {
+            "type": "object",
+            "description": "Override rsync settings for this environment"
+          },
+          "display": {
+            "type": "object",
+            "description": "Override display settings for this environment"
+          }
+        }
+      }
+    },
+    "postDeploy": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Artisan commands to run after deployment (e.g., 'config:cache', 'route:cache')"
+    }
+  },
+  "required": ["environments"]
+}

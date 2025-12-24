@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\File;
-use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function () {
     // Set up test deployment configuration
@@ -12,33 +11,30 @@ beforeEach(function () {
         mkdir($this->deployPath, 0755, true);
     }
 
-    // Create deploy.yaml config with correct keys
+    // Create deploy.json config
     $config = [
-        'test' => [
-            'hostname' => 'localhost',
-            'remote_user' => trim(shell_exec('whoami')),
-            'deploy_path' => $this->buildPath,
-            'repository' => base_path(),
-            'branch' => 'main',
-            'local' => true, // Mark as local to skip SSH
-            'shared_dirs' => ['storage'],
-            'shared_files' => ['.env'],
-            'writable_dirs' => ['storage'],
-            'keep_releases' => 2,
-            'rsync' => ['src', 'tests'],
-            'health_checks' => ['endpoints' => []],
+        'keepReleases' => 2,
+        'environments' => [
+            'test' => [
+                'local' => true,
+                'deployPath' => $this->buildPath,
+            ],
+        ],
+        'rsync' => [
+            'exclude' => ['.git/', 'node_modules/', 'vendor/'],
+            'include' => ['composer.json', 'composer.lock'],
         ],
     ];
 
     file_put_contents(
-        $this->deployPath.'/deploy.yaml',
-        Yaml::dump($config)
+        $this->deployPath.'/deploy.json',
+        json_encode($config, JSON_PRETTY_PRINT)
     );
 
-    // Create test .env file with database config
+    // Create test .env file with database config and deploy secrets
     $envContent = <<<'ENV'
-APP_NAME=TestApp
-APP_ENV=testing
+DEPLOY_HOST=localhost
+DEPLOY_USER=test_user
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306

@@ -14,6 +14,8 @@ class RsyncService
 
     private array $includes = [];
 
+    private bool $verbose = false;
+
     public function __construct(
         private DeploymentConfig $config,
         private string $sourcePath,
@@ -21,6 +23,12 @@ class RsyncService
     ) {
         $this->excludes = $config->rsyncExcludes;
         $this->includes = $config->rsyncIncludes;
+        $this->verbose = $cmdService?->isVerbose() ?? false;
+    }
+
+    public function setVerbose(bool $verbose): void
+    {
+        $this->verbose = $verbose;
     }
 
     public function sync(string $destination): void
@@ -43,14 +51,16 @@ class RsyncService
         $process = Process::fromShellCommandline($command, $this->sourcePath);
         $process->setTimeout(Timeouts::RSYNC);
 
-        $process->run(function ($type, $buffer) {
+        $syncedFiles = [];
+        $process->run(function ($type, $buffer) use (&$syncedFiles) {
             if ($type === Process::ERR) {
                 $this->cmdService?->error($buffer);
             } else {
                 $lines = explode("\n", $buffer);
                 foreach ($lines as $line) {
-                    if (! empty(trim($line)) && ! $this->isDirectoryLine($line)) {
-                        $this->cmdService?->line($line);
+                    $trimmedLine = trim($line);
+                    if (! empty($trimmedLine) && ! $this->isDirectoryLine($trimmedLine)) {
+                        $syncedFiles[] = $trimmedLine;
                     }
                 }
             }
@@ -58,6 +68,14 @@ class RsyncService
 
         if (! $process->isSuccessful()) {
             throw RsyncException::failed($process->getErrorOutput());
+        }
+
+        // Show synced files in verbose mode
+        if ($this->verbose && ! empty($syncedFiles)) {
+            $this->cmdService?->info('Synced files:');
+            foreach ($syncedFiles as $file) {
+                $this->cmdService?->line("  → {$file}");
+            }
         }
 
         $this->cmdService?->success('Files synced successfully');
@@ -87,8 +105,12 @@ class RsyncService
     {
         $parts = ['rsync'];
 
-        // Add flags
-        $parts[] = '-'.Commands::RSYNC_FLAGS;
+        // Add flags (include -v for verbose mode to show file list)
+        $flags = Commands::RSYNC_FLAGS;
+        if ($this->verbose) {
+            $flags .= 'v';
+        }
+        $parts[] = '-'.$flags;
 
         // Add SSH options only for remote deployments
         if (! $this->config->isLocal) {

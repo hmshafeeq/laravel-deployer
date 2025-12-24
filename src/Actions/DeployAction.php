@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
@@ -16,6 +17,7 @@ use Shaf\LaravelDeployer\Services\RsyncService;
  */
 class DeployAction
 {
+    use ManagesLocking;
     private string $releaseName;
 
     private string $releasePath;
@@ -119,16 +121,6 @@ class DeployAction
         }
     }
 
-    /**
-     * Lock deployment to prevent concurrent deployments
-     */
-    private function lockDeployment(): void
-    {
-        $this->cmd->task('deployment:lock');
-        $this->deployment->check();
-        $this->deployment->lock();
-        $this->cmd->success('Deployment locked');
-    }
 
     /**
      * Setup deployment directory structure
@@ -196,9 +188,7 @@ class DeployAction
             $this->cmd->local('npm run build');
             $this->cmd->success('Assets built successfully');
         } catch (\Exception $e) {
-            $failOnError = config('laravel-deployer.assets.fail_on_error', true);
-
-            if ($failOnError) {
+            if ($this->config->assetsFailOnError) {
                 throw new \RuntimeException('Asset build failed: '.$e->getMessage(), 0, $e);
             }
 
@@ -473,7 +463,7 @@ class DeployAction
         $this->cmd->task('hooks:post-deploy');
 
         // Run configured post-deployment artisan commands
-        $postDeployCommands = config('laravel-deployer.post_deploy_commands', []);
+        $postDeployCommands = $this->config->postDeployCommands;
 
         if (! empty($postDeployCommands)) {
             $this->cmd->info('Running post-deployment commands...');
@@ -500,13 +490,6 @@ class DeployAction
         }
     }
 
-    /**
-     * Unlock deployment
-     */
-    private function unlockDeployment(): void
-    {
-        $this->deployment->unlock();
-    }
 
     /**
      * Get the release name

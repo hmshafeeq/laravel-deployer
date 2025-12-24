@@ -9,30 +9,23 @@
 
 set -e  # Exit on error
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPONENTS_DIR="$SCRIPT_DIR/components"
+
+# Load common functions (includes color definitions and print_* helpers)
+source "$COMPONENTS_DIR/common.sh"
 
 # Configuration file path (passed as argument)
 CONFIG_FILE="${1:-/tmp/provision-config.sh}"
 
 # Load configuration
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${RED}Error: Configuration file not found: $CONFIG_FILE${NC}"
+    print_error "Configuration file not found: $CONFIG_FILE"
     exit 1
 fi
 
 source "$CONFIG_FILE"
-
-# Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPONENTS_DIR="$SCRIPT_DIR/components"
-
-# Load common functions
-source "$COMPONENTS_DIR/common.sh"
 
 ################################################################################
 # Main Provisioning Flow
@@ -40,7 +33,7 @@ source "$COMPONENTS_DIR/common.sh"
 
 print_header "Laravel Deployer - Server Provisioning"
 
-echo -e "${BLUE}Starting server provisioning...${NC}"
+print_info "Starting server provisioning..."
 echo ""
 
 # Display configuration summary
@@ -159,7 +152,7 @@ systemctl restart php${PHP_VERSION}-fpm
 # Display success message
 print_header "Provisioning Complete!"
 echo ""
-echo -e "${GREEN}✅ Server has been provisioned successfully!${NC}"
+print_success "Server has been provisioned successfully!"
 echo ""
 echo "Installed Software:"
 echo "  • Nginx"
@@ -173,7 +166,7 @@ echo "  • Composer"
 echo ""
 
 if [ $CREATE_USER -eq 1 ]; then
-    echo -e "${YELLOW}Deployment User Information:${NC}"
+    print_warning "Deployment User Information:"
     echo "  User: $DEPLOY_USER"
     echo "  SSH Key: /home/$DEPLOY_USER/.ssh/id_rsa"
     echo "  Public Key: /home/$DEPLOY_USER/.ssh/id_rsa.pub"
@@ -183,5 +176,5 @@ if [ $CREATE_USER -eq 1 ]; then
     echo ""
 fi
 
-echo -e "${GREEN}Your server is ready for Laravel application deployment!${NC}"
+print_success "Your server is ready for Laravel application deployment!"
 echo ""
