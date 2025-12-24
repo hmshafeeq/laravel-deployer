@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
@@ -16,6 +17,7 @@ use Shaf\LaravelDeployer\Services\RsyncService;
  */
 class DeployAction
 {
+    use ManagesLocking;
     private string $releaseName;
 
     private string $releasePath;
@@ -119,16 +121,6 @@ class DeployAction
         }
     }
 
-    /**
-     * Lock deployment to prevent concurrent deployments
-     */
-    private function lockDeployment(): void
-    {
-        $this->cmd->task('deployment:lock');
-        $this->deployment->check();
-        $this->deployment->lock();
-        $this->cmd->success('Deployment locked');
-    }
 
     /**
      * Setup deployment directory structure
@@ -500,13 +492,6 @@ class DeployAction
         }
     }
 
-    /**
-     * Unlock deployment
-     */
-    private function unlockDeployment(): void
-    {
-        $this->deployment->unlock();
-    }
 
     /**
      * Get the release name

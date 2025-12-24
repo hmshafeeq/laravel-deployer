@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\DeploymentException;
 use Shaf\LaravelDeployer\Services\CommandService;
@@ -13,6 +14,7 @@ use Shaf\LaravelDeployer\Services\DeploymentService;
  */
 class RollbackAction
 {
+    use ManagesLocking;
     public function __construct(
         private DeploymentService $deployment,
         private CommandService $cmd,
@@ -70,16 +72,6 @@ class RollbackAction
         }
     }
 
-    /**
-     * Lock deployment
-     */
-    private function lockDeployment(): void
-    {
-        $this->cmd->task('deployment:lock');
-        $this->deployment->check();
-        $this->deployment->lock();
-        $this->cmd->success('Deployment locked');
-    }
 
     /**
      * Symlink current to previous release
@@ -110,11 +102,4 @@ class RollbackAction
         $this->cmd->remote("echo '{$logEntry}' >> {$logFile}");
     }
 
-    /**
-     * Unlock deployment
-     */
-    private function unlockDeployment(): void
-    {
-        $this->deployment->unlock();
-    }
 }

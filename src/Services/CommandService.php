@@ -3,6 +3,7 @@
 namespace Shaf\LaravelDeployer\Services;
 
 use Shaf\LaravelDeployer\Constants\Timeouts;
+use Shaf\LaravelDeployer\Contracts\CommandExecutor;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
 use Shaf\LaravelDeployer\Exceptions\TaskExecutionException;
@@ -12,9 +13,9 @@ use Symfony\Component\Process\Process;
 
 /**
  * Unified service for command execution (local/remote) and output handling.
- * Merges: LocalCommandExecutor, RemoteCommandExecutor, OutputService, ArtisanTaskRunner
+ * Implements CommandExecutor for standardized command execution.
  */
-class CommandService
+class CommandService implements CommandExecutor
 {
     private ?Ssh $ssh = null;
 
@@ -39,6 +40,15 @@ class CommandService
     // ============================================================
     // Command Execution Methods
     // ============================================================
+
+    /**
+     * Execute a command (remote or local based on configuration)
+     * Implements CommandExecutor interface
+     */
+    public function execute(string $command): string
+    {
+        return $this->remote($command);
+    }
 
     /**
      * Execute a remote command via SSH
