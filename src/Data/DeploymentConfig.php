@@ -50,13 +50,6 @@ readonly class DeploymentConfig
         $ssh = $config['ssh'] ?? [];
         $assets = $config['assets'] ?? [];
 
-        // Support both old nested healthCheck config and new simplified healthCheckUrl
-        $healthCheckUrl = $config['healthCheckUrl'] ?? null;
-        if ($healthCheckUrl === null && isset($config['healthCheck']['url'])) {
-            // Backwards compatibility: read from nested config
-            $healthCheckUrl = $config['healthCheck']['url'];
-        }
-
         return new self(
             environment: Environment::fromString($environment),
             hostname: $config['hostname'] ?? 'localhost',
@@ -81,7 +74,7 @@ readonly class DeploymentConfig
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
             assetsFailOnError: $assets['failOnError'] ?? true,
-            healthCheckUrl: $healthCheckUrl,
+            healthCheckUrl: $config['healthCheckUrl'] ?? null,
             maintenanceMode: $config['maintenanceMode'] ?? false,
             maintenanceSecret: $config['maintenanceSecret'] ?? null,
             backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
