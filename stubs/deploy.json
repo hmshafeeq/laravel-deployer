@@ -35,6 +35,7 @@
       "package.json",
       "package-lock.json",
       "yarn.lock",
+      "composer.lock",
       "webpack.mix.js",
       "vite.config.js",
       "*.log",
@@ -51,8 +52,7 @@
       ".zed/"
     ],
     "include": [
-      "composer.json",
-      "composer.lock"
+      "composer.json"
     ],
     "flags": "rzc",
     "options": ["delete", "delete-after", "compress"]
