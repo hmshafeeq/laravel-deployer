@@ -15,6 +15,7 @@ use Shaf\LaravelDeployer\Services\DeploymentService;
 class RollbackAction
 {
     use ManagesLocking;
+
     public function __construct(
         private DeploymentService $deployment,
         private CommandService $cmd,
@@ -72,7 +73,6 @@ class RollbackAction
         }
     }
 
-
     /**
      * Symlink current to previous release
      */
@@ -101,5 +101,4 @@ class RollbackAction
 
         $this->cmd->remote("echo '{$logEntry}' >> {$logFile}");
     }
-
 }

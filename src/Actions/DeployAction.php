@@ -18,6 +18,7 @@ use Shaf\LaravelDeployer\Services\RsyncService;
 class DeployAction
 {
     use ManagesLocking;
+
     private string $releaseName;
 
     private string $releasePath;
@@ -120,7 +121,6 @@ class DeployAction
             $this->unlockDeployment();
         }
     }
-
 
     /**
      * Setup deployment directory structure
@@ -312,24 +312,42 @@ class DeployAction
         $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
 
-        // Build composer command with GitHub token if provided
-        $composerCommand = "cd {$escapedPath}";
-
+        // If GitHub token is provided, write auth.json file (avoids token in command line logs)
+        $authJsonPath = "{$this->releasePath}/auth.json";
         if ($this->config->githubToken) {
-            // Set COMPOSER_AUTH environment variable for GitHub authentication
-            $composerAuth = json_encode([
-                'github-oauth' => [
-                    'github.com' => $this->config->githubToken,
-                ],
-            ]);
-            $composerCommand .= " && COMPOSER_AUTH='{$composerAuth}'";
+            $this->createComposerAuthFile($authJsonPath);
         }
 
-        $composerCommand .= " composer install {$composerOptions}";
-
-        $this->cmd->remote($composerCommand);
+        try {
+            $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
+            $this->cmd->remote($composerCommand);
+        } finally {
+            // Clean up auth.json to avoid leaving credentials on server
+            if ($this->config->githubToken) {
+                $this->cmd->remote('rm -f '.CommandService::escapePath($authJsonPath));
+            }
+        }
 
         $this->cmd->success('Composer dependencies installed');
+    }
+
+    /**
+     * Create auth.json file for Composer authentication.
+     * This avoids exposing tokens in command line logs.
+     */
+    private function createComposerAuthFile(string $authJsonPath): void
+    {
+        $authConfig = json_encode([
+            'github-oauth' => [
+                'github.com' => $this->config->githubToken,
+            ],
+        ], JSON_UNESCAPED_SLASHES);
+
+        $escapedContent = escapeshellarg($authConfig);
+        $escapedPath = CommandService::escapePath($authJsonPath);
+
+        // Write auth.json with secure permissions
+        $this->cmd->remote("echo {$escapedContent} > {$escapedPath} && chmod 600 {$escapedPath}");
     }
 
     /**
@@ -489,7 +507,6 @@ class DeployAction
             $this->cmd->success('Post-deployment script completed');
         }
     }
-
 
     /**
      * Get the release name

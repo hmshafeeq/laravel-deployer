@@ -21,7 +21,7 @@ class ClearCommand extends Command
 
         try {
             // Load configuration
-            $config = ConfigService::load($environment, base_path());
+            $config = ConfigService::load($environment, base_path(), $this->output);
 
             // Initialize services
             $cmd = new CommandService($config, $this->output);

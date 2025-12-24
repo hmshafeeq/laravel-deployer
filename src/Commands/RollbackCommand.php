@@ -23,7 +23,7 @@ class RollbackCommand extends Command
 
         try {
             // Load configuration
-            $config = ConfigService::load($environment, base_path());
+            $config = ConfigService::load($environment, base_path(), $this->output);
 
             // SAFETY: Block rollback in local mode
             if ($config->isLocal) {

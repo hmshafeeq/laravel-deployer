@@ -4,6 +4,7 @@ namespace Shaf\LaravelDeployer\Services;
 
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\ConfigurationException;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Service for loading and managing deployment configuration.
@@ -12,15 +13,16 @@ use Shaf\LaravelDeployer\Exceptions\ConfigurationException;
 class ConfigService
 {
     public function __construct(
-        private string $basePath
+        private string $basePath,
+        private ?OutputInterface $output = null
     ) {}
 
     /**
      * Static helper for easy configuration loading
      */
-    public static function load(string $environment, string $basePath): DeploymentConfig
+    public static function load(string $environment, string $basePath, ?OutputInterface $output = null): DeploymentConfig
     {
-        $service = new self($basePath);
+        $service = new self($basePath, $output);
 
         return $service->loadConfig($environment);
     }
@@ -31,7 +33,10 @@ class ConfigService
     public function loadConfig(string $environment): DeploymentConfig
     {
         $configPath = $this->findConfigFile();
+        $this->verbose("Loading config from: {$configPath}");
+
         $config = $this->parseJson($configPath);
+        $this->verbose("Loading environment: {$environment}");
 
         $this->validateEnvironment($environment, $config);
 
@@ -42,6 +47,8 @@ class ConfigService
         // Load secrets from .env file
         $this->loadEnvFile($environment);
         $mergedConfig = $this->applyEnvSecrets($mergedConfig);
+
+        $this->verbose('Configuration loaded successfully');
 
         return DeploymentConfig::fromArray($environment, $mergedConfig);
     }
@@ -150,11 +157,14 @@ class ConfigService
         $envFile = "{$this->basePath}/.deploy/.env.{$environment}";
 
         if (file_exists($envFile)) {
+            $this->verbose("Loading secrets from: .deploy/.env.{$environment}");
             $dotenv = \Dotenv\Dotenv::createImmutable(
                 "{$this->basePath}/.deploy",
                 ".env.{$environment}"
             );
             $dotenv->load();
+        } else {
+            $this->verbose("No secrets file found: .deploy/.env.{$environment}");
         }
     }
 
@@ -196,5 +206,15 @@ class ConfigService
     private function getEnv(string $key): ?string
     {
         return $_ENV[$key] ?? getenv($key) ?: null;
+    }
+
+    /**
+     * Output verbose message (only when verbose mode is enabled)
+     */
+    private function verbose(string $message): void
+    {
+        if ($this->output?->isVerbose()) {
+            $this->output->writeln("<comment>  [config] {$message}</comment>");
+        }
     }
 }

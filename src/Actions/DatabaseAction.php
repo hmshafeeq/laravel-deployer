@@ -29,15 +29,23 @@ class DatabaseAction
         // Create backups directory
         $this->cmd->remote("mkdir -p {$backupPath}");
 
+        $this->cmd->info('Creating database backup...');
+
         // Get database credentials from .env
         $releasePath = $this->config->deployPath.'/current';
-        $dbName = trim($this->cmd->remote("grep '^DB_DATABASE=' {$releasePath}/.env | cut -d'=' -f2"));
-        $dbUser = trim($this->cmd->remote("grep '^DB_USERNAME=' {$releasePath}/.env | cut -d'=' -f2"));
-        $dbPass = trim($this->cmd->remote("grep '^DB_PASSWORD=' {$releasePath}/.env | cut -d'=' -f2"));
+        $dbCredentials = $this->getRemoteDatabaseCredentials($releasePath);
 
-        // Perform backup
-        $backupFile = "{$backupPath}/{$filename}";
-        $this->cmd->remote("mysqldump -u{$dbUser} -p{$dbPass} {$dbName} > {$backupFile}");
+        // Create temp MySQL config file on server (avoids password in command line)
+        $tempConfig = $this->createRemoteMysqlConfig($dbCredentials);
+
+        try {
+            // Perform backup using config file (password not visible in logs)
+            $backupFile = "{$backupPath}/{$filename}";
+            $this->cmd->remote("mysqldump --defaults-extra-file={$tempConfig} {$dbCredentials['database']} > {$backupFile}");
+        } finally {
+            // Clean up temp config file
+            $this->cmd->remote("rm -f {$tempConfig}");
+        }
 
         $this->cmd->success("Database backed up to: {$backupFile}");
 
@@ -92,14 +100,22 @@ class DatabaseAction
 
         $this->cmd->warning('⚠️  This will overwrite the current database!');
 
+        $this->cmd->info('Restoring database...');
+
         // Get database credentials from .env
         $releasePath = $this->config->deployPath.'/current';
-        $dbName = trim($this->cmd->remote("grep '^DB_DATABASE=' {$releasePath}/.env | cut -d'=' -f2"));
-        $dbUser = trim($this->cmd->remote("grep '^DB_USERNAME=' {$releasePath}/.env | cut -d'=' -f2"));
-        $dbPass = trim($this->cmd->remote("grep '^DB_PASSWORD=' {$releasePath}/.env | cut -d'=' -f2"));
+        $dbCredentials = $this->getRemoteDatabaseCredentials($releasePath);
 
-        // Restore database
-        $this->cmd->remote("mysql -u{$dbUser} -p{$dbPass} {$dbName} < {$backupFile}");
+        // Create temp MySQL config file on server (avoids password in command line)
+        $tempConfig = $this->createRemoteMysqlConfig($dbCredentials);
+
+        try {
+            // Restore database using config file (password not visible in logs)
+            $this->cmd->remote("mysql --defaults-extra-file={$tempConfig} {$dbCredentials['database']} < {$backupFile}");
+        } finally {
+            // Clean up temp config file
+            $this->cmd->remote("rm -f {$tempConfig}");
+        }
 
         $this->cmd->success("Database restored from: {$backupFile}");
     }
@@ -116,5 +132,43 @@ class DatabaseAction
         $this->download($remoteFile, $localFile);
 
         return $localFile;
+    }
+
+    /**
+     * Get database credentials from remote .env file
+     *
+     * @return array{host: string, database: string, username: string, password: string}
+     */
+    private function getRemoteDatabaseCredentials(string $releasePath): array
+    {
+        $envFile = "{$releasePath}/.env";
+
+        return [
+            'host' => trim($this->cmd->remote("grep '^DB_HOST=' {$envFile} | cut -d'=' -f2")) ?: 'localhost',
+            'database' => trim($this->cmd->remote("grep '^DB_DATABASE=' {$envFile} | cut -d'=' -f2")),
+            'username' => trim($this->cmd->remote("grep '^DB_USERNAME=' {$envFile} | cut -d'=' -f2")),
+            'password' => trim($this->cmd->remote("grep '^DB_PASSWORD=' {$envFile} | cut -d'=' -f2")),
+        ];
+    }
+
+    /**
+     * Create a temporary MySQL config file on the remote server.
+     * This avoids passing passwords on the command line (visible in logs/process list).
+     */
+    private function createRemoteMysqlConfig(array $credentials): string
+    {
+        $tempConfig = '/tmp/mysql_deployer_'.uniqid().'.cnf';
+
+        // Create config file with proper escaping
+        $configContent = "[client]\n";
+        $configContent .= "host={$credentials['host']}\n";
+        $configContent .= "user={$credentials['username']}\n";
+        $configContent .= "password={$credentials['password']}\n";
+
+        // Write config file and set secure permissions
+        $escapedContent = escapeshellarg($configContent);
+        $this->cmd->remote("echo {$escapedContent} > {$tempConfig} && chmod 600 {$tempConfig}");
+
+        return $tempConfig;
     }
 }
