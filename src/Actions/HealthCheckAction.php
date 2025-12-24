@@ -2,7 +2,6 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
-use Shaf\LaravelDeployer\Concerns\HandlesRetry;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\HealthCheckException;
 use Shaf\LaravelDeployer\Services\CommandService;
@@ -19,8 +18,6 @@ use Shaf\LaravelDeployer\Services\CommandService;
  */
 class HealthCheckAction extends Action
 {
-    use HandlesRetry;
-
     // Hardcoded sensible defaults (simplifies configuration)
     private const DEFAULT_TIMEOUT = 10;
 
@@ -175,20 +172,34 @@ class HealthCheckAction extends Action
         $timeout = self::DEFAULT_TIMEOUT;
 
         try {
-            $this->retry(
-                operation: fn () => (int) trim($this->cmd->remote(
-                    "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
-                )),
-                isSuccess: fn ($statusCode) => $statusCode === $expectedStatus,
-                maxAttempts: self::DEFAULT_RETRIES,
-                delaySeconds: self::DEFAULT_RETRY_DELAY,
-                operationName: "Health check GET {$url}"
+            retry(
+                times: self::DEFAULT_RETRIES,
+                callback: function (int $attempt) use ($url, $timeout, $expectedStatus): int {
+                    $this->cmd->info("  → Attempt {$attempt}/".self::DEFAULT_RETRIES.": Health check GET {$url}");
+                    $startTime = microtime(true);
+
+                    $statusCode = (int) trim($this->cmd->remote(
+                        "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
+                    ));
+
+                    $duration = (microtime(true) - $startTime) * 1000;
+
+                    if ($statusCode !== $expectedStatus) {
+                        $this->cmd->warning("  ✗ Health check returned {$statusCode}, expected {$expectedStatus}");
+                        throw new \RuntimeException("Status code {$statusCode} != expected {$expectedStatus}");
+                    }
+
+                    $this->cmd->success(sprintf('Health check passed (%dms)', (int) $duration));
+
+                    return $statusCode;
+                },
+                sleepMilliseconds: self::DEFAULT_RETRY_DELAY * 1000
             );
 
             $this->cmd->success("Health check passed ({$url})");
 
             return true;
-        } catch (\RuntimeException $e) {
+        } catch (\Exception $e) {
             throw HealthCheckException::endpointFailed(
                 $url,
                 $expectedStatus,

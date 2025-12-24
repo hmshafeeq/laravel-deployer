@@ -3,7 +3,7 @@
 namespace Shaf\LaravelDeployer\Services;
 
 use Illuminate\Support\Facades\File;
-use Shaf\LaravelDeployer\Support\FileHelper;
+use Illuminate\Support\Number;
 
 class BackupManager
 {
@@ -107,7 +107,7 @@ class BackupManager
         return [
             'name' => basename($backupPath),
             'size' => filesize($backupPath),
-            'size_formatted' => FileHelper::formatFileSize(filesize($backupPath)),
+            'size_formatted' => Number::fileSize(filesize($backupPath)),
             'date' => date('Y-m-d H:i:s', filemtime($backupPath)),
             'timestamp' => filemtime($backupPath),
         ];

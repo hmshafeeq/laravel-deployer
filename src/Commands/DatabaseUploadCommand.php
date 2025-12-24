@@ -5,6 +5,7 @@ namespace Shaf\LaravelDeployer\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Number;
 
 class DatabaseUploadCommand extends Command
 {
@@ -111,7 +112,7 @@ class DatabaseUploadCommand extends Command
 
         foreach ($this->backups as $index => $backup) {
             $name = basename($backup);
-            $size = $this->formatFileSize(filesize($backup));
+            $size = Number::fileSize(filesize($backup));
             $date = date('Y-m-d H:i:s', filemtime($backup));
 
             $this->line(sprintf('   %d. %s (%s) - %s', $index + 1, $name, $size, $date));
@@ -216,7 +217,7 @@ class DatabaseUploadCommand extends Command
     protected function confirmUpload(string $selectedBackup, array $uploadConfig): bool
     {
         $backupName = basename($selectedBackup);
-        $backupSize = $this->formatFileSize(filesize($selectedBackup));
+        $backupSize = Number::fileSize(filesize($selectedBackup));
 
         $this->info("📋 Selected backup: {$backupName} ({$backupSize})");
         $this->line('');
@@ -302,18 +303,5 @@ class DatabaseUploadCommand extends Command
         }
 
         return true;
-    }
-
-    protected function formatFileSize(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $unitIndex = 0;
-
-        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
-            $bytes /= 1024;
-            $unitIndex++;
-        }
-
-        return round($bytes, 2).$units[$unitIndex];
     }
 }

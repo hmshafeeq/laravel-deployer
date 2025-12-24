@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Services;
 
+use Illuminate\Support\Number;
 use Shaf\LaravelDeployer\Constants\Commands;
 use Shaf\LaravelDeployer\Constants\Timeouts;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
@@ -143,7 +144,7 @@ class RsyncService
         }
 
         // Show transfer summary
-        $sizeFormatted = $this->formatBytes($this->totalBytesTransferred);
+        $sizeFormatted = Number::fileSize($this->totalBytesTransferred);
         $this->cmdService?->success("Files synced successfully ({$fileCount} files, {$sizeFormatted})");
     }
 
@@ -180,27 +181,7 @@ class RsyncService
      */
     public function getFormattedTransferSize(): string
     {
-        return $this->formatBytes($this->totalBytesTransferred);
-    }
-
-    /**
-     * Format bytes into human-readable string
-     */
-    private function formatBytes(int $bytes): string
-    {
-        if ($bytes < 1024) {
-            return $bytes.' B';
-        }
-
-        if ($bytes < 1024 * 1024) {
-            return number_format($bytes / 1024, 1).' KB';
-        }
-
-        if ($bytes < 1024 * 1024 * 1024) {
-            return number_format($bytes / (1024 * 1024), 1).' MB';
-        }
-
-        return number_format($bytes / (1024 * 1024 * 1024), 2).' GB';
+        return Number::fileSize($this->totalBytesTransferred);
     }
 
     public function setExcludes(array $excludes): void

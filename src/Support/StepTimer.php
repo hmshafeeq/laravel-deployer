@@ -96,29 +96,10 @@ class StepTimer
         $formatted = [];
 
         foreach ($this->getTimings() as $name => $duration) {
-            $formatted[$name] = $this->formatDuration($duration);
+            $formatted[$name] = format_duration($duration);
         }
 
         return $formatted;
-    }
-
-    /**
-     * Format duration as human-readable string
-     */
-    public function formatDuration(float $seconds): string
-    {
-        if ($seconds < 1) {
-            return number_format($seconds * 1000, 0).'ms';
-        }
-
-        if ($seconds < 60) {
-            return number_format($seconds, 1).'s';
-        }
-
-        $minutes = (int) ($seconds / 60);
-        $secs = $seconds - ($minutes * 60);
-
-        return "{$minutes}m ".number_format($secs, 1).'s';
     }
 
     /**

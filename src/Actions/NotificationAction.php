@@ -66,7 +66,7 @@ class NotificationAction
 
         // Add duration
         if ($duration !== null) {
-            $lines[] = "Duration: {$this->formatDuration($duration)}";
+            $lines[] = 'Duration: '.format_duration($duration);
         }
 
         // Add files changed
@@ -163,21 +163,6 @@ class NotificationAction
             // Silently fail - notifications shouldn't break deployment
             $channel->send($message, $type);
         }
-    }
-
-    /**
-     * Format duration as human-readable string
-     */
-    private function formatDuration(float $seconds): string
-    {
-        if ($seconds < 60) {
-            return number_format($seconds, 1).'s';
-        }
-
-        $minutes = (int) ($seconds / 60);
-        $secs = (int) ($seconds % 60);
-
-        return "{$minutes}m {$secs}s";
     }
 
     /**

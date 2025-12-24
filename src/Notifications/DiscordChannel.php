@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Notifications;
 
+use Illuminate\Support\Facades\Http;
 use Shaf\LaravelDeployer\Contracts\NotificationChannel;
 
 /**
@@ -22,30 +23,20 @@ class DiscordChannel implements NotificationChannel
         try {
             $color = $type === 'success' ? self::COLOR_SUCCESS : self::COLOR_FAILURE;
 
-            $payload = json_encode([
-                'embeds' => [
-                    [
-                        'description' => $message,
-                        'color' => $color,
-                        'footer' => [
-                            'text' => 'Laravel Deployer',
+            return Http::timeout(10)
+                ->post($this->webhook, [
+                    'embeds' => [
+                        [
+                            'description' => $message,
+                            'color' => $color,
+                            'footer' => [
+                                'text' => 'Laravel Deployer',
+                            ],
+                            'timestamp' => date('c'),
                         ],
-                        'timestamp' => date('c'),
                     ],
-                ],
-            ]);
-
-            $ch = curl_init($this->webhook);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            $result = curl_exec($ch);
-            $success = curl_getinfo($ch, CURLINFO_HTTP_CODE) < 400;
-            curl_close($ch);
-
-            return $success && $result !== false;
+                ])
+                ->successful();
         } catch (\Exception $e) {
             return false;
         }

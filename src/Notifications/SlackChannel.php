@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Notifications;
 
+use Illuminate\Support\Facades\Http;
 use Shaf\LaravelDeployer\Contracts\NotificationChannel;
 
 /**
@@ -18,28 +19,18 @@ class SlackChannel implements NotificationChannel
         try {
             $color = $type === 'success' ? 'good' : 'danger';
 
-            $payload = json_encode([
-                'attachments' => [
-                    [
-                        'color' => $color,
-                        'text' => $message,
-                        'footer' => 'Laravel Deployer',
-                        'ts' => time(),
+            return Http::timeout(10)
+                ->post($this->webhook, [
+                    'attachments' => [
+                        [
+                            'color' => $color,
+                            'text' => $message,
+                            'footer' => 'Laravel Deployer',
+                            'ts' => time(),
+                        ],
                     ],
-                ],
-            ]);
-
-            $ch = curl_init($this->webhook);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            $result = curl_exec($ch);
-            $success = curl_getinfo($ch, CURLINFO_HTTP_CODE) < 400;
-            curl_close($ch);
-
-            return $success && $result !== false;
+                ])
+                ->successful();
         } catch (\Exception $e) {
             return false;
         }

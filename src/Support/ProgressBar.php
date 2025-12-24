@@ -2,6 +2,7 @@
 
 namespace Shaf\LaravelDeployer\Support;
 
+use Illuminate\Support\Number;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
@@ -118,8 +119,8 @@ class ProgressBar
                 $this->prefix,
                 $bar,
                 $percent,
-                $this->formatBytes($this->current),
-                $this->formatBytes($this->total),
+                Number::fileSize($this->current),
+                Number::fileSize($this->total),
                 $eta ? " ETA: {$eta}" : ''
             ),
             default => sprintf(
@@ -158,26 +159,6 @@ class ProgressBar
         $seconds = $eta % 60;
 
         return "{$minutes}m {$seconds}s";
-    }
-
-    /**
-     * Format bytes for display
-     */
-    private function formatBytes(int $bytes): string
-    {
-        if ($bytes >= 1073741824) {
-            return number_format($bytes / 1073741824, 2).' GB';
-        }
-
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 2).' MB';
-        }
-
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 2).' KB';
-        }
-
-        return $bytes.' B';
     }
 
     /**

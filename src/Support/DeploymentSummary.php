@@ -49,7 +49,7 @@ class DeploymentSummary
             $rows[] = $this->formatRow('Git', "{$branch} @ {$commit}");
         }
 
-        $rows[] = $this->formatRow('Duration', $this->formatDuration($duration));
+        $rows[] = $this->formatRow('Duration', format_duration($duration));
         $rows[] = $this->formatFilesRow($syncDiff);
 
         if ($migrationsRun > 0) {
@@ -85,7 +85,7 @@ class DeploymentSummary
         arsort($significantTimings);
 
         foreach ($significantTimings as $step => $duration) {
-            $formattedDuration = $this->formatDuration($duration);
+            $formattedDuration = format_duration($duration);
             $paddedStep = str_pad($step, 20);
             $this->output->writeln("  {$paddedStep} <fg=gray>{$formattedDuration}</>");
         }
@@ -104,7 +104,7 @@ class DeploymentSummary
         $this->output->writeln('');
         $this->drawBox('DEPLOYMENT FAILED', 'red', [
             $this->formatRow('Environment', $this->config->environment->value),
-            $this->formatRow('Duration', $this->formatDuration($duration)),
+            $this->formatRow('Duration', format_duration($duration)),
             $failedStep ? $this->formatRow('Failed Step', $failedStep) : null,
             '',
             $this->formatRow('Error', $this->truncate($errorMessage, 40)),
@@ -217,21 +217,6 @@ class DeploymentSummary
         $rightPadding = $width - $textLen - $padding;
 
         return str_repeat(' ', $padding).$text.str_repeat(' ', $rightPadding);
-    }
-
-    /**
-     * Format duration in human-readable format
-     */
-    private function formatDuration(float $seconds): string
-    {
-        if ($seconds < 60) {
-            return number_format($seconds, 1).'s';
-        }
-
-        $minutes = (int) ($seconds / 60);
-        $secs = (int) ($seconds % 60);
-
-        return "{$minutes}m {$secs}s";
     }
 
     /**

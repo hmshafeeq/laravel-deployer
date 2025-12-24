@@ -135,54 +135,57 @@ class DeployAction
             $this->createSharedLinks();
             $this->stepTimer->end('shared:link');
 
-            // 9. Install composer dependencies
+            // 9. Fix shared log file permissions
+            $this->fixSharedLogPermissions();
+
+            // 10. Install composer dependencies
             $this->runHook('before:composer');
             $this->stepTimer->start('composer:install');
             $this->installComposerDependencies();
             $this->stepTimer->end('composer:install');
             $this->runHook('after:composer');
 
-            // 10. Fix module permissions
+            // 11. Fix module permissions
             $this->stepTimer->start('permissions:fix');
             $this->fixModulePermissions();
 
-            // 11. Set writable permissions (must run after fixModulePermissions)
+            // 12. Set writable permissions (must run after fixModulePermissions)
             $this->setWritablePermissions();
             $this->stepTimer->end('permissions:fix');
 
-            // 12. Run database migrations
+            // 13. Run database migrations
             $this->runHook('before:migrate');
             $this->stepTimer->start('artisan:migrate');
             $this->runMigrations();
             $this->stepTimer->end('artisan:migrate');
             $this->runHook('after:migrate');
 
-            // 13. Link .dep directory
+            // 14. Link .dep directory
             $this->linkDepDirectory();
 
-            // 14. Symlink current release
+            // 15. Symlink current release
             $this->runHook('before:symlink');
             $this->stepTimer->start('release:symlink');
             $this->symlinkRelease();
             $this->stepTimer->end('release:symlink');
             $this->runHook('after:symlink');
 
-            // 15. Verify deployment health
+            // 16. Verify deployment health
             if ($this->healthCheck !== null) {
                 $this->stepTimer->start('health:verify');
                 $this->verifyDeploymentHealth();
                 $this->stepTimer->end('health:verify');
             }
 
-            // 16. Cleanup old releases
+            // 17. Cleanup old releases
             $this->stepTimer->start('cleanup:releases');
             $this->cleanupOldReleases();
             $this->stepTimer->end('cleanup:releases');
 
-            // 17. Log deployment success
+            // 18. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 18. Run post-deployment hooks (legacy)
+            // 19. Run post-deployment hooks (legacy)
             $this->stepTimer->start('hooks:post-deploy');
             $this->runPostDeploymentHooks();
             $this->stepTimer->end('hooks:post-deploy');
@@ -190,7 +193,7 @@ class DeployAction
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
 
-            // 19. Generate deployment receipt
+            // 20. Generate deployment receipt
             $this->generateReceipt(success: true);
 
             // Run after:deploy hooks
@@ -356,6 +359,26 @@ class DeployAction
         ]);
 
         $this->cmd->success('Shared directories linked');
+    }
+
+    /**
+     * Fix permissions on shared log files
+     *
+     * Log files created by the web server (www-data) may have restrictive permissions
+     * that prevent proper logging during deployment or by new worker processes.
+     */
+    private function fixSharedLogPermissions(): void
+    {
+        $sharedPath = $this->deployment->getSharedPath();
+        $logsPath = "{$sharedPath}/storage/logs";
+        $escapedLogsPath = CommandService::escapePath($logsPath);
+
+        // Fix permissions on existing log files (if any exist)
+        // Use find with -exec to handle the case where no .log files exist
+        // Set group to www-data and permissions to 664 so both deploy user and web server can write
+        $this->cmd->remote(
+            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp www-data {} + -exec chmod 664 {} + 2>/dev/null || true"
+        );
     }
 
     /**

@@ -4,11 +4,14 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Shaf\LaravelDeployer\Actions\DatabaseAction;
+use Shaf\LaravelDeployer\Concerns\SelectsServer;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 
 class DatabaseBackupCommand extends Command
 {
+    use SelectsServer;
+
     protected $signature = 'database:backup
                             {server? : Server name (staging, production, etc.)}
                             {--select : Show available servers and select interactively}';
@@ -29,12 +32,10 @@ class DatabaseBackupCommand extends Command
         $this->line('');
 
         try {
-            // Load configuration and initialize services
             $config = ConfigService::load($serverName, base_path(), $this->output);
             $cmdService = new CommandService($config, $this->output);
-
-            // Execute backup
             $database = new DatabaseAction($cmdService, $config);
+
             $backupFile = $database->backup();
 
             $this->line('');
@@ -51,33 +52,5 @@ class DatabaseBackupCommand extends Command
 
             return self::FAILURE;
         }
-    }
-
-    private function getServerName(): ?string
-    {
-        $serverName = $this->argument('server');
-
-        if ($serverName) {
-            return $serverName;
-        }
-
-        if ($this->option('select')) {
-            $configService = new ConfigService(base_path());
-            $servers = $configService->getAvailableEnvironments();
-
-            if (empty($servers)) {
-                $this->error('No servers configured in deploy.yaml');
-
-                return null;
-            }
-
-            $serverName = $this->choice('Select a server', $servers);
-
-            return $serverName;
-        }
-
-        $this->error('Please provide a server name or use --select option');
-
-        return null;
     }
 }

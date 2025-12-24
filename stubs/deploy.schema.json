@@ -131,7 +131,7 @@
         "exclude": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Patterns to exclude from sync (e.g., '.git/', 'node_modules/')"
+          "description": "Patterns to exclude from sync. Use leading slash for root-only (e.g., '/vendor/' excludes only root vendor, not public/vendor/)"
         },
         "include": {
           "type": "array",

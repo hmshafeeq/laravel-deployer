@@ -305,26 +305,6 @@ class CommandService implements CommandExecutor
         return $this->artisan('storage:link', $releasePath);
     }
 
-    public function artisanConfigCache(string $releasePath): string
-    {
-        return $this->artisan('config:cache', $releasePath);
-    }
-
-    public function artisanViewCache(string $releasePath): string
-    {
-        return $this->artisan('view:cache', $releasePath);
-    }
-
-    public function artisanRouteCache(string $releasePath): string
-    {
-        return $this->artisan('route:cache', $releasePath);
-    }
-
-    public function artisanOptimize(string $releasePath): string
-    {
-        return $this->artisan('optimize', $releasePath);
-    }
-
     /**
      * Run database migrations with verbose output parsing
      *
@@ -392,11 +372,6 @@ class CommandService implements CommandExecutor
             'count' => count($migrations),
             'migrations' => array_values($migrations),
         ];
-    }
-
-    public function artisanQueueRestart(string $releasePath): string
-    {
-        return $this->artisan('queue:restart', $releasePath);
     }
 
     // ============================================================

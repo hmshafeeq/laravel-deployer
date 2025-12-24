@@ -5,11 +5,14 @@ namespace Shaf\LaravelDeployer\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Shaf\LaravelDeployer\Actions\DatabaseAction;
+use Shaf\LaravelDeployer\Concerns\SelectsServer;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 
 class DatabaseDownloadCommand extends Command
 {
+    use SelectsServer;
+
     protected $signature = 'database:download
                             {server? : Server name (staging, production, etc.)}
                             {--latest : Download the latest backup}
@@ -30,7 +33,6 @@ class DatabaseDownloadCommand extends Command
         $this->info("🌐 Target server: {$serverName}");
         $this->line('');
 
-        // Ensure backups directory exists
         $backupsDir = base_path('.deploy/downloads/backups');
         if (! File::exists($backupsDir)) {
             File::makeDirectory($backupsDir, 0755, true);
@@ -38,11 +40,8 @@ class DatabaseDownloadCommand extends Command
         }
 
         try {
-            // Load configuration and initialize services
             $config = ConfigService::load($serverName, base_path(), $this->output);
             $cmdService = new CommandService($config, $this->output);
-
-            // Use DatabaseAction to backup and download
             $database = new DatabaseAction($cmdService, $config);
 
             $this->info('Creating backup on server...');
@@ -67,33 +66,5 @@ class DatabaseDownloadCommand extends Command
 
             return self::FAILURE;
         }
-    }
-
-    private function getServerName(): ?string
-    {
-        $serverName = $this->argument('server');
-
-        if ($serverName) {
-            return $serverName;
-        }
-
-        if ($this->option('select')) {
-            $configService = new ConfigService(base_path());
-            $servers = $configService->getAvailableEnvironments();
-
-            if (empty($servers)) {
-                $this->error('No servers configured in deploy.yaml');
-
-                return null;
-            }
-
-            $serverName = $this->choice('Select a server', $servers);
-
-            return $serverName;
-        }
-
-        $this->error('Please provide a server name or use --select option');
-
-        return null;
     }
 }

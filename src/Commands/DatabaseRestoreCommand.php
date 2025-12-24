@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Number;
 
 class DatabaseRestoreCommand extends Command
 {
@@ -115,7 +116,7 @@ class DatabaseRestoreCommand extends Command
 
         foreach ($this->backups as $index => $backup) {
             $name = basename($backup);
-            $size = $this->formatFileSize(filesize($backup));
+            $size = Number::fileSize(filesize($backup));
             $date = date('Y-m-d H:i:s', filemtime($backup));
 
             $this->line(sprintf('   %d. %s (%s) - %s', $index + 1, $name, $size, $date));
@@ -342,19 +343,6 @@ class DatabaseRestoreCommand extends Command
             $this->error('❌ Migrations failed:');
             $this->line($result->errorOutput());
         }
-    }
-
-    protected function formatFileSize(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $unitIndex = 0;
-
-        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
-            $bytes /= 1024;
-            $unitIndex++;
-        }
-
-        return round($bytes, 2).$units[$unitIndex];
     }
 
     protected function count(): int
