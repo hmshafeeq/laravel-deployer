@@ -59,7 +59,7 @@ class RsyncService
                 $lines = explode("\n", $buffer);
                 foreach ($lines as $line) {
                     $trimmedLine = trim($line);
-                    if (! empty($trimmedLine) && ! $this->isDirectoryLine($trimmedLine)) {
+                    if (! empty($trimmedLine) && ! $this->isDirectoryLine($trimmedLine) && $this->isActualFileTransfer($trimmedLine)) {
                         $syncedFiles[] = $trimmedLine;
                     }
                 }
@@ -143,5 +143,30 @@ class RsyncService
     {
         // Skip directory-only rsync output lines
         return str_ends_with($line, '/') || empty(trim($line));
+    }
+
+    private function isActualFileTransfer(string $line): bool
+    {
+        // Skip lines that are just dots (unchanged files in rsync verbose output)
+        if (preg_match('/^\.+$/', $line)) {
+            return false;
+        }
+
+        // Skip rsync statistics lines
+        $statsPatterns = [
+            '/^sent \d+/',
+            '/^total size/',
+            '/bytes\/sec$/',
+            '/^sending incremental/',
+            '/^building file list/',
+        ];
+
+        foreach ($statsPatterns as $pattern) {
+            if (preg_match($pattern, $line)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

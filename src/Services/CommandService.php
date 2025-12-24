@@ -84,6 +84,102 @@ class CommandService implements CommandExecutor
     }
 
     /**
+     * Execute a remote command with output streamed at verbose level (-v).
+     * Use this for long-running commands like composer install where
+     * seeing progress is important for debugging.
+     */
+    public function remoteWithOutput(string $command): string
+    {
+        if ($this->config->isLocal) {
+            return $this->localWithOutput($command);
+        }
+
+        $this->logCommand($command);
+
+        try {
+            $process = $this->ssh->execute($command);
+            $output = trim($process->getOutput());
+            $errorOutput = trim($process->getErrorOutput());
+
+            // Show output at verbose level (not just very verbose)
+            if ($this->output->isVerbose()) {
+                $this->streamOutput($output);
+                if (! empty($errorOutput)) {
+                    $this->streamOutput($errorOutput, isError: true);
+                }
+            }
+
+            if (! $process->isSuccessful()) {
+                throw SSHConnectionException::commandFailed(
+                    $command,
+                    $errorOutput ?: $output
+                );
+            }
+
+            return $output;
+        } catch (\Exception $e) {
+            if ($e instanceof SSHConnectionException) {
+                throw $e;
+            }
+            throw SSHConnectionException::commandFailed($command, $e->getMessage());
+        }
+    }
+
+    /**
+     * Execute a local command with output streamed at verbose level (-v).
+     */
+    public function localWithOutput(string $command): string
+    {
+        $this->logCommand($command);
+
+        $process = Process::fromShellCommandline(
+            $command,
+            $this->workingDirectory ?: base_path()
+        );
+        $process->setTimeout($this->timeout);
+        $process->run();
+
+        $output = trim($process->getOutput());
+        $errorOutput = trim($process->getErrorOutput());
+
+        // Show output at verbose level
+        if ($this->output->isVerbose()) {
+            $this->streamOutput($output);
+            if (! empty($errorOutput)) {
+                $this->streamOutput($errorOutput, isError: true);
+            }
+        }
+
+        if (! $process->isSuccessful()) {
+            throw TaskExecutionException::commandFailed($command, $errorOutput ?: $output);
+        }
+
+        return $output;
+    }
+
+    /**
+     * Stream command output line by line with proper formatting.
+     */
+    private function streamOutput(string $output, bool $isError = false): void
+    {
+        if (empty(trim($output))) {
+            return;
+        }
+
+        $lines = explode("\n", trim($output));
+        foreach ($lines as $line) {
+            $trimmedLine = trim($line);
+            if (! empty($trimmedLine)) {
+                if ($isError) {
+                    $this->output->writeln("<comment>{$this->prefix}  {$trimmedLine}</comment>");
+                } else {
+                    $this->output->writeln("{$this->prefix}  {$trimmedLine}");
+                }
+            }
+        }
+    }
+
+    /**
      * Execute multiple commands as a single batched remote call.
      * Commands are joined with && so execution stops on first failure.
      *
@@ -490,8 +586,14 @@ class CommandService implements CommandExecutor
         $command = preg_replace("/-p'[^']*'/", "-p'***'", $command);
         $command = preg_replace('/-p[^\s\'"]+/', '-p***', $command);
 
-        // Mask GitHub tokens (ghp_, gho_, ghs_, ghr_)
+        // Mask GitHub tokens - classic PATs (ghp_, gho_, ghs_, ghr_)
         $command = preg_replace('/gh[pors]_[A-Za-z0-9_]+/', 'gh*_***', $command);
+
+        // Mask GitHub tokens - fine-grained PATs (github_pat_)
+        $command = preg_replace('/github_pat_[A-Za-z0-9_]+/', 'github_pat_***', $command);
+
+        // Mask entire github-oauth JSON blocks (catches any token format in auth.json)
+        $command = preg_replace('/"github-oauth":\s*\{[^}]+\}/', '"github-oauth":{"github.com":"***"}', $command);
 
         // Mask COMPOSER_AUTH JSON containing tokens
         $command = preg_replace('/COMPOSER_AUTH=\'[^\']+\'/', "COMPOSER_AUTH='***'", $command);

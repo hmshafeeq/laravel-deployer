@@ -309,8 +309,12 @@ class DeployAction
         $this->cmd->task('composer:install');
         $this->cmd->info('Installing Composer dependencies...');
 
-        $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
+        $composerOptions = $this->config->composerOptions ?? '--prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
+
+        // Ensure bootstrap/cache exists before composer runs (required for package:discover)
+        $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
+        $this->cmd->remote("mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
 
         // If GitHub token is provided, write auth.json file (avoids token in command line logs)
         $authJsonPath = "{$this->releasePath}/auth.json";
@@ -320,7 +324,8 @@ class DeployAction
 
         try {
             $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
-            $this->cmd->remote($composerCommand);
+            // Use remoteWithOutput so composer output is visible at -v level
+            $this->cmd->remoteWithOutput($composerCommand);
         } finally {
             // Clean up auth.json to avoid leaving credentials on server
             if ($this->config->githubToken) {
