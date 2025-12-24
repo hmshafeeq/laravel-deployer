@@ -47,11 +47,11 @@ class MigrateCommand extends Command
         $force = $this->option('force');
 
         $this->timestamp = date('Ymd-His');
-        $this->releaseName = date('Ym') . '.1';
+        $this->releaseName = date('Ym').'.1';
 
         try {
             // Load configuration
-            $this->config = ConfigService::load($environment, base_path());
+            $this->config = ConfigService::load($environment, base_path(), $this->output);
             $this->cmd = new CommandService($this->config, $this->output);
 
             // SAFETY: Never allow migrate command to run in local mode
@@ -144,7 +144,7 @@ class MigrateCommand extends Command
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->components->error('Migration failed: ' . $e->getMessage());
+            $this->components->error('Migration failed: '.$e->getMessage());
 
             return self::FAILURE;
         }
@@ -731,7 +731,7 @@ class MigrateCommand extends Command
         $this->line('<fg=cyan>Next Steps:</>');
         $this->line('  1. Update nginx configuration (see above)');
         $this->line('  2. Test the site is working');
-        $this->line('  3. Deploy using: <fg=white>php artisan deploy ' . $this->config->environment->value . '</>');
+        $this->line('  3. Deploy using: <fg=white>php artisan deploy '.$this->config->environment->value.'</>');
         $this->newLine();
     }
 

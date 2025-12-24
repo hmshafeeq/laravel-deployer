@@ -475,8 +475,37 @@ class CommandService implements CommandExecutor
     private function logCommand(string $command): void
     {
         if ($this->output->isVerbose()) {
-            $this->output->writeln("<comment>{$this->prefix}run {$command}</comment>");
+            $maskedCommand = $this->maskSecrets($command);
+            $this->output->writeln("<comment>{$this->prefix}run {$maskedCommand}</comment>");
         }
+    }
+
+    /**
+     * Mask sensitive values in command strings before logging.
+     * Prevents accidental exposure of passwords, tokens, and webhooks in verbose output.
+     */
+    private function maskSecrets(string $command): string
+    {
+        // Mask MySQL password: -p'password' or -ppassword
+        $command = preg_replace("/-p'[^']*'/", "-p'***'", $command);
+        $command = preg_replace('/-p[^\s\'"]+/', '-p***', $command);
+
+        // Mask GitHub tokens (ghp_, gho_, ghs_, ghr_)
+        $command = preg_replace('/gh[pors]_[A-Za-z0-9_]+/', 'gh*_***', $command);
+
+        // Mask COMPOSER_AUTH JSON containing tokens
+        $command = preg_replace('/COMPOSER_AUTH=\'[^\']+\'/', "COMPOSER_AUTH='***'", $command);
+
+        // Mask Slack webhook URLs
+        $command = preg_replace('/hooks\.slack\.com\/services\/[^\s"\']+/', 'hooks.slack.com/services/***', $command);
+
+        // Mask Discord webhook URLs
+        $command = preg_replace('/discord\.com\/api\/webhooks\/[^\s"\']+/', 'discord.com/api/webhooks/***', $command);
+
+        // Mask generic password patterns in environment variables
+        $command = preg_replace('/PASSWORD=[^\s]+/', 'PASSWORD=***', $command);
+
+        return $command;
     }
 
     private function logCommandOutput(string $output): void

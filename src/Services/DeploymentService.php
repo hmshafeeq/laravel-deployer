@@ -71,19 +71,26 @@ class DeploymentService
      */
     public function getReleases(): array
     {
+        $this->cmd->debug('Fetching list of releases...');
+
         $releasesPath = "{$this->config->deployPath}/".Paths::RELEASES_DIR;
 
         if (! $this->cmd->directoryExists($releasesPath)) {
+            $this->cmd->debug('Releases directory does not exist');
+
             return [];
         }
 
         $output = $this->cmd->remote("cd {$releasesPath} && ls -t -1 2>/dev/null || echo ''");
 
         if (empty(trim($output))) {
+            $this->cmd->debug('No releases found');
+
             return [];
         }
 
         $releases = array_filter(explode("\n", trim($output)));
+        $this->cmd->debug('Found '.count($releases).' release(s)');
 
         return array_values($releases);
     }
@@ -93,9 +100,13 @@ class DeploymentService
      */
     public function getCurrentRelease(): ?string
     {
+        $this->cmd->debug('Fetching current release...');
+
         $currentPath = "{$this->config->deployPath}/".Paths::CURRENT_SYMLINK;
 
         if (! $this->cmd->symlinkExists($currentPath)) {
+            $this->cmd->debug('No current symlink exists');
+
             return null;
         }
 
@@ -105,7 +116,10 @@ class DeploymentService
             return null;
         }
 
-        return trim($output);
+        $release = trim($output);
+        $this->cmd->debug("Current release: {$release}");
+
+        return $release;
     }
 
     /**
@@ -113,15 +127,21 @@ class DeploymentService
      */
     public function getPreviousRelease(): ?string
     {
+        $this->cmd->debug('Finding previous release for rollback...');
+
         $current = $this->getCurrentRelease();
         $releases = $this->getReleases();
 
         if (empty($releases) || count($releases) < 2) {
+            $this->cmd->debug('No previous release available');
+
             return null;
         }
 
         foreach ($releases as $release) {
             if ($release !== $current) {
+                $this->cmd->debug("Previous release: {$release}");
+
                 return $release;
             }
         }

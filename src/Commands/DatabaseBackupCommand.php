@@ -30,7 +30,7 @@ class DatabaseBackupCommand extends Command
 
         try {
             // Load configuration and initialize services
-            $config = ConfigService::load($serverName, base_path());
+            $config = ConfigService::load($serverName, base_path(), $this->output);
             $cmdService = new CommandService($config, $this->output);
 
             // Execute backup

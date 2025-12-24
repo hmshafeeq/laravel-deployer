@@ -89,17 +89,21 @@ class DiffAction
      */
     private function calculateDiff(): SyncDiff
     {
+        $this->cmd->debug('Calculating sync differences...');
+
         $source = rtrim($this->sourcePath, '/').'/';
         $tempDir = trim($this->cmd->local('mktemp -d'));
 
         try {
             $command = $this->buildDryRunCommand($source, $tempDir);
+            $this->cmd->debug("Dry-run command: {$command}");
 
             $process = Process::fromShellCommandline($command, $this->sourcePath);
             $process->setTimeout(300);
             $process->run();
 
             $output = $process->getOutput();
+            $this->cmd->debug('Parsing rsync output...');
 
             return $this->parseDryRunOutput($output);
         } finally {

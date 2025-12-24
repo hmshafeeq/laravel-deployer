@@ -32,7 +32,7 @@ class DeployCommand extends Command
         $validEnvironments = ['local', 'staging', 'production'];
         if (! in_array($environment, $validEnvironments)) {
             $this->error("Invalid environment: {$environment}");
-            $this->info('Valid environments: ' . implode(', ', $validEnvironments));
+            $this->info('Valid environments: '.implode(', ', $validEnvironments));
 
             return self::FAILURE;
         }
@@ -50,7 +50,7 @@ class DeployCommand extends Command
 
         try {
             // Load configuration
-            $config = ConfigService::load($environment, base_path());
+            $config = ConfigService::load($environment, base_path(), $this->output);
 
             // SAFETY WARNING: Local deployments can be dangerous
             if ($config->isLocal) {
@@ -124,7 +124,7 @@ class DeployCommand extends Command
 
             // Send failure notification
             try {
-                $config = $config ?? ConfigService::load($environment, base_path());
+                $config = $config ?? ConfigService::load($environment, base_path(), $this->output);
                 $notify = new NotificationAction($config);
                 $notify->failure($e);
             } catch (\Exception $notifyError) {
