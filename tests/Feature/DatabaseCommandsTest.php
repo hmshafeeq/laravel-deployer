@@ -46,33 +46,51 @@ ENV;
     file_put_contents($this->deployPath.'/.env.test', $envContent);
 });
 
-test('database backup command is registered', function () {
+test('unified database command is registered', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
-    expect($commands)->toHaveKey('database:backup');
+    expect($commands)->toHaveKey('db');
 });
 
-test('database download command is registered', function () {
-    $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
-
-    expect($commands)->toHaveKey('database:download');
+test('db command shows usage for invalid action', function () {
+    $this->artisan('db', ['action' => 'invalid'])
+        ->assertFailed()
+        ->expectsOutput('Invalid action. Available actions:');
 });
 
-test('database upload command is registered', function () {
-    $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
+test('db list requires backups directory', function () {
+    // Remove any existing backups directory
+    $backupsDir = base_path('.deploy/downloads/backups');
+    if (File::exists($backupsDir)) {
+        File::deleteDirectory($backupsDir);
+    }
 
-    expect($commands)->toHaveKey('database:upload');
+    $this->artisan('db', ['action' => 'list'])
+        ->assertFailed()
+        ->expectsOutput('No backups directory found.');
 });
 
-test('database restore command is registered', function () {
-    $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
+test('db restore requires backup directory', function () {
+    // Remove any existing backups directory
+    $backupsDir = base_path('.deploy/downloads/backups');
+    if (File::exists($backupsDir)) {
+        File::deleteDirectory($backupsDir);
+    }
 
-    expect($commands)->toHaveKey('database:restore');
-});
-
-test('database restore command validates backup file exists', function () {
-    $nonExistentFile = '/tmp/nonexistent_backup.sql.gz';
-
-    $this->artisan('database:restore', ['backup' => $nonExistentFile])
+    $this->artisan('db', ['action' => 'restore'])
         ->assertFailed();
+});
+
+test('db restore validates backup file exists', function () {
+    // Create backups directory with a valid backup
+    $backupsDir = base_path('.deploy/downloads/backups');
+    File::ensureDirectoryExists($backupsDir);
+    file_put_contents($backupsDir.'/db_backup_test.sql.gz', 'dummy');
+
+    // Try to restore non-existent backup by name - should fail
+    $this->artisan('db', ['action' => 'restore', 'target' => 'nonexistent.sql.gz'])
+        ->assertFailed();
+
+    // Clean up
+    File::deleteDirectory($backupsDir);
 });

@@ -36,7 +36,7 @@ class RollbackCommand extends Command
 
             // Initialize services
             $cmdService = new CommandService($config, $this->output);
-            $deployService = new DeploymentService($config, base_path());
+            $deployService = new DeploymentService($config, $cmdService, base_path());
 
             // Get current and previous releases
             $current = $deployService->getCurrentRelease();

@@ -16,7 +16,7 @@
       ".git/",
       ".github/",
       "node_modules/",
-      "vendor/",
+      "/vendor/",
       "storage/",
       "bootstrap/cache/",
       "tests/",

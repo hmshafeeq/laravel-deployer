@@ -30,6 +30,15 @@ readonly class DeploymentConfig
         public ?string $githubToken = null,
         public bool $strictHostKeyChecking = true,
         public bool $assetsFailOnError = true,
+        // Health check configuration (simplified: URL presence = enabled)
+        public ?string $healthCheckUrl = null,
+        // Maintenance mode configuration
+        public bool $maintenanceMode = false,
+        public ?string $maintenanceSecret = null,
+        // Pre-migration backup
+        public bool $backupBeforeMigrate = false,
+        // Hooks configuration
+        public array $hooks = [],
     ) {}
 
     public static function fromArray(string $environment, array $config): self
@@ -38,7 +47,6 @@ readonly class DeploymentConfig
         $display = $config['display'] ?? [];
         $rsync = $config['rsync'] ?? [];
         $composer = $config['composer'] ?? [];
-
         $ssh = $config['ssh'] ?? [];
         $assets = $config['assets'] ?? [];
 
@@ -66,7 +74,20 @@ readonly class DeploymentConfig
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
             assetsFailOnError: $assets['failOnError'] ?? true,
+            healthCheckUrl: $config['healthCheckUrl'] ?? null,
+            maintenanceMode: $config['maintenanceMode'] ?? false,
+            maintenanceSecret: $config['maintenanceSecret'] ?? null,
+            backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
+            hooks: $config['hooks'] ?? [],
         );
+    }
+
+    /**
+     * Check if health check is enabled (URL is set)
+     */
+    public function isHealthCheckEnabled(): bool
+    {
+        return ! empty($this->healthCheckUrl);
     }
 
     /**

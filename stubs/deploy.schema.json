@@ -69,6 +69,61 @@
         }
       }
     },
+    "healthCheck": {
+      "type": "object",
+      "description": "Post-deployment health check configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable health check verification after deployment"
+        },
+        "url": {
+          "type": "string",
+          "description": "Health check URL (relative path like '/health' or full URL)"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Request timeout in seconds"
+        },
+        "expectedStatus": {
+          "type": "integer",
+          "default": 200,
+          "description": "Expected HTTP status code"
+        },
+        "retries": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "description": "Number of retry attempts"
+        },
+        "retryDelay": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "description": "Delay between retries in seconds"
+        },
+        "endpoints": {
+          "type": "array",
+          "description": "Additional endpoints to check (for pre-deployment checks)",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string" },
+                  "status": { "type": "integer", "default": 200 }
+                },
+                "required": ["url"]
+              }
+            ]
+          }
+        }
+      }
+    },
     "rsync": {
       "type": "object",
       "description": "Rsync file synchronization settings",
@@ -76,7 +131,7 @@
         "exclude": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Patterns to exclude from sync (e.g., '.git/', 'node_modules/')"
+          "description": "Patterns to exclude from sync. Use leading slash for root-only (e.g., '/vendor/' excludes only root vendor, not public/vendor/)"
         },
         "include": {
           "type": "array",
@@ -114,6 +169,10 @@
         "type": "object",
         "description": "Environment configuration (inherits and overrides global settings)",
         "properties": {
+          "extends": {
+            "type": "string",
+            "description": "Inherit configuration from another environment (e.g., 'staging' extends 'production')"
+          },
           "local": {
             "type": "boolean",
             "default": false,
@@ -147,6 +206,82 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Artisan commands to run after deployment (e.g., 'config:cache', 'route:cache')"
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Deployment hooks - custom commands to run at specific points during deployment",
+      "properties": {
+        "before:deploy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before deployment starts"
+        },
+        "after:setup": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after deployment structure is created"
+        },
+        "before:build": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before assets are built"
+        },
+        "after:build": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after assets are built"
+        },
+        "before:sync": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before files are synced"
+        },
+        "after:sync": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after files are synced"
+        },
+        "before:composer": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before composer install"
+        },
+        "after:composer": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after composer install"
+        },
+        "before:migrate": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before database migrations"
+        },
+        "after:migrate": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after database migrations"
+        },
+        "before:symlink": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run before release is symlinked"
+        },
+        "after:symlink": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after release is symlinked"
+        },
+        "after:deploy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run after deployment completes"
+        },
+        "on:failure": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Commands to run when deployment fails"
+        }
+      }
     }
   },
   "required": ["environments"]

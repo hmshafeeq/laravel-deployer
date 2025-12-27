@@ -2,14 +2,20 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use Illuminate\Support\Str;
 use Shaf\LaravelDeployer\Concerns\ManagesLocking;
 use Shaf\LaravelDeployer\Constants\Paths;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
+use Shaf\LaravelDeployer\Data\DeploymentReceipt;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
 use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\HooksService;
+use Shaf\LaravelDeployer\Services\ReceiptService;
 use Shaf\LaravelDeployer\Services\RsyncService;
+use Shaf\LaravelDeployer\Support\DeploymentSummary;
+use Shaf\LaravelDeployer\Support\StepTimer;
 
 /**
  * Complete deployment workflow action.
@@ -27,14 +33,34 @@ class DeployAction
 
     private float $duration = 0;
 
+    private ?HooksService $hooks = null;
+
+    private StepTimer $stepTimer;
+
+    private ?string $gitCommitHash = null;
+
+    private ?string $gitCommitMessage = null;
+
+    private ?string $gitAuthor = null;
+
+    private int $migrationsRun = 0;
+
     public function __construct(
         private DeploymentService $deployment,
         private CommandService $cmd,
         private RsyncService $rsync,
         private DiffAction $diff,
-        private DeploymentConfig $config
+        private DeploymentConfig $config,
+        private ?HealthCheckAction $healthCheck = null,
+        private ?ReceiptService $receiptService = null
     ) {
-        $this->deployment->setCommandService($cmd);
+        $this->stepTimer = new StepTimer;
+
+        // Initialize hooks service if hooks are configured
+        if (! empty($config->hooks)) {
+            $this->hooks = new HooksService($cmd, $config);
+            $this->hooks->loadHooks($config->hooks);
+        }
     }
 
     /**
@@ -44,22 +70,46 @@ class DeployAction
     {
         $startTime = microtime(true);
 
+        // Capture git info before starting
+        $this->captureGitInfo();
+
         $this->cmd->info("🚀 Starting deployment to {$this->config->environment->value}");
+
+        // Show git info if available
+        $this->showGitInfo();
+
         $this->cmd->newLine();
+
+        // Run before:deploy hooks
+        $this->runHook('before:deploy');
 
         // 1. Check and lock deployment
         $this->lockDeployment();
 
         try {
             // 2. Setup deployment structure
+            $this->stepTimer->start('deployment:setup');
             $this->setupDeploymentStructure();
+            $this->stepTimer->end('deployment:setup');
+
+            // Run after:setup hooks
+            $this->runHook('after:setup');
 
             // 3. Generate and create release
+            $this->stepTimer->start('release:create');
             $this->createRelease();
+            $this->stepTimer->end('release:create');
+
+            // Set release path for hooks
+            $this->hooks?->setReleasePath($this->releasePath);
 
             // 4. Build assets locally (if not local deployment)
             if (! $this->config->isLocal) {
+                $this->runHook('before:build');
+                $this->stepTimer->start('assets:build');
                 $this->buildAssets();
+                $this->stepTimer->end('assets:build');
+                $this->runHook('after:build');
             }
 
             // 5. Show sync differences
@@ -75,51 +125,97 @@ class DeployAction
             }
 
             // 7. Sync files to server
+            $this->runHook('before:sync');
+            $this->stepTimer->start('files:sync');
             $this->syncFilesWithProgress();
+            $this->stepTimer->end('files:sync');
+            $this->runHook('after:sync');
 
             // 8. Create shared symlinks
+            $this->stepTimer->start('shared:link');
             $this->createSharedLinks();
+            $this->stepTimer->end('shared:link');
 
-            // 9. Install composer dependencies
+            // 9. Fix shared log file permissions
+            $this->fixSharedLogPermissions();
+
+            // 10. Install composer dependencies
+            $this->runHook('before:composer');
+            $this->stepTimer->start('composer:install');
             $this->installComposerDependencies();
+            $this->stepTimer->end('composer:install');
+            $this->runHook('after:composer');
 
-            // 10. Fix module permissions
+            // 11. Fix module permissions
+            $this->stepTimer->start('permissions:fix');
             $this->fixModulePermissions();
 
-            // 11. Set writable permissions (must run after fixModulePermissions)
+            // 12. Set writable permissions (must run after fixModulePermissions)
             $this->setWritablePermissions();
+            $this->stepTimer->end('permissions:fix');
 
-            // 12. Run database migrations
+            // 13. Run database migrations
+            $this->runHook('before:migrate');
+            $this->stepTimer->start('artisan:migrate');
             $this->runMigrations();
+            $this->stepTimer->end('artisan:migrate');
+            $this->runHook('after:migrate');
 
-            // 13. Link .dep directory
+            // 14. Link .dep directory
             $this->linkDepDirectory();
 
-            // 14. Symlink current release
+            // 15. Symlink current release
+            $this->runHook('before:symlink');
+            $this->stepTimer->start('release:symlink');
             $this->symlinkRelease();
+            $this->stepTimer->end('release:symlink');
+            $this->runHook('after:symlink');
 
-            // 15. Cleanup old releases
+            // 16. Verify deployment health
+            if ($this->healthCheck !== null) {
+                $this->stepTimer->start('health:verify');
+                $this->verifyDeploymentHealth();
+                $this->stepTimer->end('health:verify');
+            }
+
+            // 17. Cleanup old releases
+            $this->stepTimer->start('cleanup:releases');
             $this->cleanupOldReleases();
+            $this->stepTimer->end('cleanup:releases');
 
-            // 16. Log deployment success
+            // 18. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 17. Run post-deployment hooks
+            // 19. Run post-deployment hooks (legacy)
+            $this->stepTimer->start('hooks:post-deploy');
             $this->runPostDeploymentHooks();
+            $this->stepTimer->end('hooks:post-deploy');
 
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
-            $formattedDuration = \format_duration($this->duration);
 
-            $this->cmd->newLine();
-            $this->cmd->success('✅ Deployment completed successfully!');
-            $this->cmd->success("🎉 Release {$this->releaseName} is now live on {$this->config->environment->value}");
-            $this->cmd->success("⏱️  Total time: {$formattedDuration}");
+            // 20. Generate deployment receipt
+            $this->generateReceipt(success: true);
 
+            // Run after:deploy hooks
+            $this->runHook('after:deploy');
+
+        } catch (\Exception $e) {
+            // Run on:failure hooks
+            $this->runHook('on:failure');
+            throw $e;
         } finally {
             // Always unlock deployment, even if there's an error
             $this->unlockDeployment();
         }
+    }
+
+    /**
+     * Run a deployment hook if configured
+     */
+    private function runHook(string $hookPoint): void
+    {
+        $this->hooks?->run($hookPoint);
     }
 
     /**
@@ -231,6 +327,10 @@ class DeployAction
         $this->cmd->task('files:sync');
         $this->cmd->info('Syncing files to server...');
 
+        // Pass sync diff and output for progress bar
+        $this->rsync->setSyncDiff($this->syncDiff);
+        $this->rsync->setOutput($this->cmd->getOutput());
+
         // For local deployments, just use the path; RsyncService handles the rest
         $this->rsync->sync($this->releasePath);
 
@@ -260,6 +360,26 @@ class DeployAction
         ]);
 
         $this->cmd->success('Shared directories linked');
+    }
+
+    /**
+     * Fix permissions on shared log files
+     *
+     * Log files created by the web server (www-data) may have restrictive permissions
+     * that prevent proper logging during deployment or by new worker processes.
+     */
+    private function fixSharedLogPermissions(): void
+    {
+        $sharedPath = $this->deployment->getSharedPath();
+        $logsPath = "{$sharedPath}/storage/logs";
+        $escapedLogsPath = CommandService::escapePath($logsPath);
+
+        // Fix permissions on existing log files (if any exist)
+        // Use find with -exec to handle the case where no .log files exist
+        // Set group to www-data and permissions to 664 so both deploy user and web server can write
+        $this->cmd->remote(
+            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp www-data {} + -exec chmod 664 {} + 2>/dev/null || true"
+        );
     }
 
     /**
@@ -309,8 +429,15 @@ class DeployAction
         $this->cmd->task('composer:install');
         $this->cmd->info('Installing Composer dependencies...');
 
-        $composerOptions = $this->config->composerOptions ?? '--verbose --prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
+        // Check for composer.lock file and warn if missing
+        $this->checkComposerLock();
+
+        $composerOptions = $this->config->composerOptions ?? '--prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
+
+        // Ensure bootstrap/cache exists before composer runs (required for package:discover)
+        $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
+        $this->cmd->remote("mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
 
         // If GitHub token is provided, write auth.json file (avoids token in command line logs)
         $authJsonPath = "{$this->releasePath}/auth.json";
@@ -320,7 +447,8 @@ class DeployAction
 
         try {
             $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
-            $this->cmd->remote($composerCommand);
+            // Use remoteWithOutput so composer output is visible at -v level
+            $this->cmd->remoteWithOutput($composerCommand);
         } finally {
             // Clean up auth.json to avoid leaving credentials on server
             if ($this->config->githubToken) {
@@ -373,16 +501,94 @@ class DeployAction
     }
 
     /**
-     * Run database migrations
+     * Run database migrations with optional maintenance mode and backup
      */
     private function runMigrations(): void
     {
         $this->cmd->task('artisan:migrate');
         $this->cmd->info('Running database migrations...');
 
-        $this->cmd->artisanMigrate($this->releasePath, force: true);
+        $maintenanceEnabled = false;
 
-        $this->cmd->success('Migrations completed');
+        try {
+            // Optional: Backup database before migrations
+            if ($this->config->backupBeforeMigrate) {
+                $this->runPreMigrationBackup();
+            }
+
+            // Optional: Enable maintenance mode
+            if ($this->config->maintenanceMode) {
+                $this->enableMaintenanceMode();
+                $maintenanceEnabled = true;
+            }
+
+            // Run migrations
+            $result = $this->cmd->artisanMigrate($this->releasePath, force: true);
+            $this->migrationsRun = $result['count'];
+
+            $this->cmd->success('Migrations completed');
+
+        } finally {
+            // Always disable maintenance mode if we enabled it
+            if ($maintenanceEnabled) {
+                $this->disableMaintenanceMode();
+            }
+        }
+    }
+
+    /**
+     * Run database backup before migrations
+     */
+    private function runPreMigrationBackup(): void
+    {
+        $this->cmd->info('Creating pre-migration database backup...');
+
+        try {
+            // Use the backup command from the release
+            $this->cmd->artisan('backup:run --only-db', $this->releasePath);
+            $this->cmd->success('Pre-migration backup created');
+        } catch (\Exception $e) {
+            // Backup failure is non-critical - warn but continue
+            $this->cmd->warning("Pre-migration backup failed: {$e->getMessage()}");
+            $this->cmd->warning('Continuing with migrations...');
+        }
+    }
+
+    /**
+     * Enable maintenance mode on the current release
+     */
+    private function enableMaintenanceMode(): void
+    {
+        $this->cmd->info('Enabling maintenance mode...');
+
+        $currentPath = "{$this->config->deployPath}/current";
+        $secretOption = $this->config->maintenanceSecret
+            ? " --secret={$this->config->maintenanceSecret}"
+            : '';
+
+        try {
+            $this->cmd->artisan("down{$secretOption}", $currentPath);
+            $this->cmd->success('Maintenance mode enabled');
+        } catch (\Exception $e) {
+            // If current doesn't exist yet (first deploy), skip
+            $this->cmd->warning('Could not enable maintenance mode (may be first deploy)');
+        }
+    }
+
+    /**
+     * Disable maintenance mode
+     */
+    private function disableMaintenanceMode(): void
+    {
+        $this->cmd->info('Disabling maintenance mode...');
+
+        // Use the new release path since it's now current
+        try {
+            $this->cmd->artisan('up', $this->releasePath);
+            $this->cmd->success('Maintenance mode disabled');
+        } catch (\Exception $e) {
+            $this->cmd->warning("Could not disable maintenance mode: {$e->getMessage()}");
+        }
     }
 
     /**
@@ -416,6 +622,18 @@ class DeployAction
         ]);
 
         $this->cmd->success('Release symlinked as current');
+    }
+
+    /**
+     * Verify deployment health after symlink
+     */
+    private function verifyDeploymentHealth(): void
+    {
+        if ($this->healthCheck === null) {
+            return;
+        }
+
+        $this->healthCheck->verifyDeployment();
     }
 
     /**
@@ -530,5 +748,136 @@ class DeployAction
     public function getFormattedDuration(): string
     {
         return \format_duration($this->duration);
+    }
+
+    /**
+     * Get the sync diff for summary
+     */
+    public function getSyncDiff(): ?SyncDiff
+    {
+        return $this->syncDiff;
+    }
+
+    /**
+     * Show the deployment summary dashboard
+     */
+    public function showSummary(): void
+    {
+        $summary = DeploymentSummary::create($this->cmd->getOutput(), $this->config);
+
+        // Build the URL if health check URL is configured
+        $url = null;
+        if ($this->config->healthCheckUrl) {
+            $scheme = $this->config->environment->isProduction() ? 'https' : 'http';
+            $url = "{$scheme}://{$this->config->hostname}";
+        }
+
+        $summary->showSuccess(
+            releaseName: $this->releaseName,
+            duration: $this->duration,
+            syncDiff: $this->syncDiff,
+            migrationsRun: $this->migrationsRun,
+            url: $url,
+            stepTimings: $this->stepTimer->getTimings(),
+            gitInfo: $this->getGitInfo()
+        );
+    }
+
+    /**
+     * Get the step timer for external access
+     */
+    public function getStepTimer(): StepTimer
+    {
+        return $this->stepTimer;
+    }
+
+    /**
+     * Get git info for summary/notifications
+     *
+     * @return array{branch: string, commit: ?string, message: ?string, author: ?string}
+     */
+    public function getGitInfo(): array
+    {
+        return [
+            'branch' => $this->config->branch,
+            'commit' => $this->gitCommitHash,
+            'message' => $this->gitCommitMessage,
+            'author' => $this->gitAuthor,
+        ];
+    }
+
+    /**
+     * Capture git information from the current repository
+     */
+    private function captureGitInfo(): void
+    {
+        // Get short commit hash
+        $this->gitCommitHash = trim((string) shell_exec('git rev-parse --short HEAD 2>/dev/null'));
+
+        // Get commit message (first line only)
+        $this->gitCommitMessage = trim((string) shell_exec('git log -1 --format=%s 2>/dev/null'));
+
+        // Get author name
+        $this->gitAuthor = trim((string) shell_exec('git log -1 --format=%an 2>/dev/null'));
+    }
+
+    /**
+     * Display git information at start of deployment
+     */
+    private function showGitInfo(): void
+    {
+        if (! $this->gitCommitHash) {
+            return;
+        }
+
+        $branch = $this->config->branch;
+        $commit = $this->gitCommitHash;
+        $author = $this->gitAuthor ?: 'Unknown';
+
+        $this->cmd->info("📦 Deploying: {$branch} @ {$commit} ({$author})");
+
+        if ($this->gitCommitMessage) {
+            $message = Str::limit($this->gitCommitMessage, 60);
+            $this->cmd->info("   \"{$message}\"");
+        }
+    }
+
+    /**
+     * Check if composer.lock exists and warn if missing
+     */
+    private function checkComposerLock(): void
+    {
+        $lockFile = "{$this->releasePath}/composer.lock";
+
+        if (! $this->cmd->fileExists($lockFile)) {
+            $this->cmd->warning('⚠️  Warning: composer.lock not found in release!');
+            $this->cmd->warning('   Dependencies resolved fresh (slower). Consider tracking composer.lock.');
+        }
+    }
+
+    /**
+     * Generate and save a deployment receipt
+     */
+    private function generateReceipt(bool $success = true, ?string $errorMessage = null): void
+    {
+        if ($this->receiptService === null) {
+            return;
+        }
+
+        $this->cmd->task('receipt:generate');
+
+        $receipt = DeploymentReceipt::fromDeployment(
+            release: $this->releaseName,
+            environment: $this->config->environment->value,
+            deployedBy: $this->deployment->getUser(),
+            duration: $this->duration,
+            syncDiff: $this->syncDiff,
+            postDeployCommands: $this->config->postDeployCommands,
+            success: $success,
+            errorMessage: $errorMessage
+        );
+
+        $this->receiptService->save($receipt);
+        $this->cmd->success('Deployment receipt saved');
     }
 }

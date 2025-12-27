@@ -14,25 +14,16 @@ use Symfony\Component\Process\Process;
  */
 class DeploymentService
 {
-    private CommandService $cmd;
-
     private string $lockFile;
 
     private string $currentReleaseName = '';
 
     public function __construct(
         private DeploymentConfig $config,
-        private string $basePath
+        private CommandService $cmd,
+        private string $basePath = ''
     ) {
         $this->lockFile = "{$config->deployPath}/".Paths::LOCK_FILE;
-    }
-
-    /**
-     * Set the command service (injected after construction)
-     */
-    public function setCommandService(CommandService $cmd): void
-    {
-        $this->cmd = $cmd;
     }
 
     // ============================================================
@@ -89,10 +80,14 @@ class DeploymentService
             return [];
         }
 
-        $releases = array_filter(explode("\n", trim($output)));
+        $releases = collect(explode("\n", trim($output)))
+            ->filter()
+            ->values()
+            ->all();
+
         $this->cmd->debug('Found '.count($releases).' release(s)');
 
-        return array_values($releases);
+        return $releases;
     }
 
     /**

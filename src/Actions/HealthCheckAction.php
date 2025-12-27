@@ -9,30 +9,49 @@ use Shaf\LaravelDeployer\Services\CommandService;
 /**
  * Health check action.
  * Performs server resource and endpoint health checks.
+ *
+ * Uses sensible defaults:
+ * - Timeout: 10 seconds
+ * - Expected status: 200
+ * - Retries: 3
+ * - Retry delay: 2 seconds
  */
-class HealthCheckAction
+class HealthCheckAction extends Action
 {
+    // Hardcoded sensible defaults (simplifies configuration)
+    private const DEFAULT_TIMEOUT = 10;
+
+    private const DEFAULT_EXPECTED_STATUS = 200;
+
+    private const DEFAULT_RETRIES = 3;
+
+    private const DEFAULT_RETRY_DELAY = 2;
+
     public function __construct(
-        private CommandService $cmd,
-        private DeploymentConfig $config
-    ) {}
+        CommandService $cmd,
+        DeploymentConfig $config
+    ) {
+        parent::__construct($cmd, $config);
+    }
 
     /**
-     * Perform complete health check
+     * Perform complete health check (server resources + configured URL)
      */
     public function check(): bool
     {
         $this->cmd->task('health:check');
 
         $resourcesOk = $this->checkServerResources();
-        $endpointsOk = true;
+        $endpointOk = true;
 
-        // Check endpoints if configured
-        if (! empty($this->config->healthCheckEndpoints)) {
-            $endpointsOk = $this->checkEndpoints($this->config->healthCheckEndpoints);
+        // Check health URL if configured
+        if ($this->config->isHealthCheckEnabled()) {
+            $endpointOk = $this->checkEndpoints([
+                ['url' => $this->buildHealthCheckUrl(), 'status' => self::DEFAULT_EXPECTED_STATUS],
+            ]);
         }
 
-        if ($resourcesOk && $endpointsOk) {
+        if ($resourcesOk && $endpointOk) {
             $this->cmd->success('All health checks passed');
 
             return true;
@@ -133,5 +152,79 @@ class HealthCheckAction
         }
 
         return $allPassed;
+    }
+
+    /**
+     * Verify application health after deployment (with retries).
+     * This runs POST-deployment to ensure the new release is working.
+     */
+    public function verifyDeployment(): bool
+    {
+        if (! $this->config->isHealthCheckEnabled()) {
+            return true;
+        }
+
+        $this->cmd->task('health:verify');
+        $this->cmd->info('Verifying deployment health...');
+
+        $url = $this->buildHealthCheckUrl();
+        $expectedStatus = self::DEFAULT_EXPECTED_STATUS;
+        $timeout = self::DEFAULT_TIMEOUT;
+
+        try {
+            retry(
+                times: self::DEFAULT_RETRIES,
+                callback: function (int $attempt) use ($url, $timeout, $expectedStatus): int {
+                    $this->cmd->info("  → Attempt {$attempt}/".self::DEFAULT_RETRIES.": Health check GET {$url}");
+                    $startTime = microtime(true);
+
+                    $statusCode = (int) trim($this->cmd->remote(
+                        "curl -s -o /dev/null -w '%{http_code}' --max-time {$timeout} '{$url}'"
+                    ));
+
+                    $duration = (microtime(true) - $startTime) * 1000;
+
+                    if ($statusCode !== $expectedStatus) {
+                        $this->cmd->warning("  ✗ Health check returned {$statusCode}, expected {$expectedStatus}");
+                        throw new \RuntimeException("Status code {$statusCode} != expected {$expectedStatus}");
+                    }
+
+                    $this->cmd->success(sprintf('Health check passed (%dms)', (int) $duration));
+
+                    return $statusCode;
+                },
+                sleepMilliseconds: self::DEFAULT_RETRY_DELAY * 1000
+            );
+
+            $this->cmd->success("Health check passed ({$url})");
+
+            return true;
+        } catch (\Exception $e) {
+            throw HealthCheckException::endpointFailed(
+                $url,
+                $expectedStatus,
+                $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Build the full health check URL from config
+     */
+    private function buildHealthCheckUrl(): string
+    {
+        $url = $this->config->healthCheckUrl;
+
+        // If it's already a full URL, return it
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        // Build URL from hostname
+        $scheme = $this->config->environment->isProduction() ? 'https' : 'http';
+        $host = $this->config->hostname;
+        $path = ltrim($url, '/');
+
+        return "{$scheme}://{$host}/{$path}";
     }
 }

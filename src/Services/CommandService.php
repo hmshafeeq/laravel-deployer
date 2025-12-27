@@ -25,6 +25,8 @@ class CommandService implements CommandExecutor
 
     private ?string $lastError = null;
 
+    private ?float $sshConnectionTime = null;
+
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
@@ -35,6 +37,14 @@ class CommandService implements CommandExecutor
         }
 
         $this->prefix = "[{$config->environment->value}] ";
+    }
+
+    /**
+     * Get SSH connection establishment time (if available)
+     */
+    public function getSshConnectionTime(): ?float
+    {
+        return $this->sshConnectionTime;
     }
 
     // ============================================================
@@ -80,6 +90,102 @@ class CommandService implements CommandExecutor
                 throw $e;
             }
             throw SSHConnectionException::commandFailed($command, $e->getMessage());
+        }
+    }
+
+    /**
+     * Execute a remote command with output streamed at verbose level (-v).
+     * Use this for long-running commands like composer install where
+     * seeing progress is important for debugging.
+     */
+    public function remoteWithOutput(string $command): string
+    {
+        if ($this->config->isLocal) {
+            return $this->localWithOutput($command);
+        }
+
+        $this->logCommand($command);
+
+        try {
+            $process = $this->ssh->execute($command);
+            $output = trim($process->getOutput());
+            $errorOutput = trim($process->getErrorOutput());
+
+            // Show output at verbose level (not just very verbose)
+            if ($this->output->isVerbose()) {
+                $this->streamOutput($output);
+                if (! empty($errorOutput)) {
+                    $this->streamOutput($errorOutput, isError: true);
+                }
+            }
+
+            if (! $process->isSuccessful()) {
+                throw SSHConnectionException::commandFailed(
+                    $command,
+                    $errorOutput ?: $output
+                );
+            }
+
+            return $output;
+        } catch (\Exception $e) {
+            if ($e instanceof SSHConnectionException) {
+                throw $e;
+            }
+            throw SSHConnectionException::commandFailed($command, $e->getMessage());
+        }
+    }
+
+    /**
+     * Execute a local command with output streamed at verbose level (-v).
+     */
+    public function localWithOutput(string $command): string
+    {
+        $this->logCommand($command);
+
+        $process = Process::fromShellCommandline(
+            $command,
+            $this->workingDirectory ?: base_path()
+        );
+        $process->setTimeout($this->timeout);
+        $process->run();
+
+        $output = trim($process->getOutput());
+        $errorOutput = trim($process->getErrorOutput());
+
+        // Show output at verbose level
+        if ($this->output->isVerbose()) {
+            $this->streamOutput($output);
+            if (! empty($errorOutput)) {
+                $this->streamOutput($errorOutput, isError: true);
+            }
+        }
+
+        if (! $process->isSuccessful()) {
+            throw TaskExecutionException::commandFailed($command, $errorOutput ?: $output);
+        }
+
+        return $output;
+    }
+
+    /**
+     * Stream command output line by line with proper formatting.
+     */
+    private function streamOutput(string $output, bool $isError = false): void
+    {
+        if (empty(trim($output))) {
+            return;
+        }
+
+        $lines = explode("\n", trim($output));
+        foreach ($lines as $line) {
+            $trimmedLine = trim($line);
+            if (! empty($trimmedLine)) {
+                if ($isError) {
+                    $this->output->writeln("<comment>{$this->prefix}  {$trimmedLine}</comment>");
+                } else {
+                    $this->output->writeln("{$this->prefix}  {$trimmedLine}");
+                }
+            }
         }
     }
 
@@ -199,34 +305,92 @@ class CommandService implements CommandExecutor
         return $this->artisan('storage:link', $releasePath);
     }
 
-    public function artisanConfigCache(string $releasePath): string
+    /**
+     * Run database migrations with verbose output parsing
+     *
+     * @return array{output: string, count: int, migrations: array<string>}
+     */
+    public function artisanMigrate(string $releasePath, bool $force = true): array
     {
-        return $this->artisan('config:cache', $releasePath);
+        $optionsString = $force ? ' --force' : '';
+        $fullCommand = "{$this->config->phpBinary} {$releasePath}/artisan migrate{$optionsString}";
+
+        $this->info('Running artisan migrate');
+
+        try {
+            $output = $this->remote($fullCommand);
+            $result = $this->parseMigrationOutput($output);
+
+            // Show verbose migration details if enabled
+            if ($this->output->isVerbose() && ! empty($result['migrations'])) {
+                foreach ($result['migrations'] as $migration) {
+                    $this->output->writeln("{$this->prefix}  → {$migration}");
+                }
+            }
+
+            if ($result['count'] > 0) {
+                $this->success("{$result['count']} migration(s) executed");
+            } else {
+                $this->info('Nothing to migrate');
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            throw TaskExecutionException::artisanFailed('migrate', $e->getMessage());
+        }
     }
 
-    public function artisanViewCache(string $releasePath): string
+    /**
+     * Parse migration command output to extract executed migrations
+     *
+     * @return array{output: string, count: int, migrations: array<string>}
+     */
+    private function parseMigrationOutput(string $output): array
     {
-        return $this->artisan('view:cache', $releasePath);
+        $migrations = [];
+        $lines = explode("\n", $output);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Match migration lines like "2025_01_15_create_users_table ... DONE"
+            // or "Running migration: 2025_01_15_create_users_table"
+            if (preg_match('/(\d{4}_\d{2}_\d{2}_\d{6}_[a-z_]+)/i', $line, $matches)) {
+                $migrations[] = $matches[1];
+            }
+            // Also match Laravel's newer format "Migrating: ..."
+            elseif (preg_match('/(?:Migrating|Running):\s*(.+)/i', $line, $matches)) {
+                $migrations[] = trim($matches[1]);
+            }
+        }
+
+        // Remove duplicates (migration might appear in both "Running" and "Done" lines)
+        $migrations = array_unique($migrations);
+
+        return [
+            'output' => $output,
+            'count' => count($migrations),
+            'migrations' => array_values($migrations),
+        ];
     }
 
-    public function artisanRouteCache(string $releasePath): string
-    {
-        return $this->artisan('route:cache', $releasePath);
-    }
+    // ============================================================
+    // Service Control Methods
+    // ============================================================
 
-    public function artisanOptimize(string $releasePath): string
+    /**
+     * Restart PHP-FPM service (auto-detects version)
+     */
+    public function restartPhpFpm(): void
     {
-        return $this->artisan('optimize', $releasePath);
-    }
+        $phpFpmService = trim($this->remote(
+            'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
+        ));
 
-    public function artisanMigrate(string $releasePath, bool $force = true): string
-    {
-        return $this->artisan('migrate', $releasePath, [], $force);
-    }
-
-    public function artisanQueueRestart(string $releasePath): string
-    {
-        return $this->artisan('queue:restart', $releasePath);
+        if (! empty($phpFpmService)) {
+            $this->remote("sudo systemctl restart {$phpFpmService}");
+            $this->success("Restarted {$phpFpmService}");
+        }
     }
 
     // ============================================================
@@ -265,70 +429,88 @@ class CommandService implements CommandExecutor
     // Output Methods
     // ============================================================
 
-    public function info(string $message): void
+    public function info(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<info>{$this->prefix}{$message}</info>");
         }
+
+        return $this;
     }
 
-    public function success(string $message): void
+    public function success(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<info>{$this->prefix}✓ {$message}</info>");
         }
+
+        return $this;
     }
 
-    public function error(string $message): void
+    public function error(string $message): self
     {
         $this->output->writeln("<error>{$this->prefix}{$message}</error>");
+
+        return $this;
     }
 
-    public function warning(string $message): void
+    public function warning(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<comment>{$this->prefix}⚠ {$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function comment(string $message): void
+    public function comment(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln("<comment>{$this->prefix}{$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function debug(string $message): void
+    public function debug(string $message): self
     {
         if ($this->output->isDebug()) {
             $this->output->writeln("<comment>{$this->prefix}[DEBUG] {$message}</comment>");
         }
+
+        return $this;
     }
 
-    public function task(string $name): void
+    public function task(string $name): self
     {
         if ($this->output->isVerbose()) {
             $this->output->writeln("\n<fg=cyan>task {$name}</>");
         }
+
+        return $this;
     }
 
-    public function line(string $message): void
+    public function line(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->writeln($this->prefix.$message);
         }
+
+        return $this;
     }
 
-    public function newLine(int $count = 1): void
+    public function newLine(int $count = 1): self
     {
         if ($this->shouldShowNormal()) {
             for ($i = 0; $i < $count; $i++) {
                 $this->output->writeln('');
             }
         }
+
+        return $this;
     }
 
-    public function section(string $title): void
+    public function section(string $title): self
     {
         if ($this->shouldShowNormal()) {
             $this->newLine();
@@ -337,13 +519,17 @@ class CommandService implements CommandExecutor
             $this->output->writeln('<fg=cyan>═══════════════════════════════════════════════════════════</>');
             $this->newLine();
         }
+
+        return $this;
     }
 
-    public function write(string $message): void
+    public function write(string $message): self
     {
         if ($this->shouldShowNormal()) {
             $this->output->write($message);
         }
+
+        return $this;
     }
 
     public function confirm(string $question, bool $default = false): bool
@@ -362,17 +548,21 @@ class CommandService implements CommandExecutor
     // Configuration Methods
     // ============================================================
 
-    public function setTimeout(int $timeout): void
+    public function setTimeout(int $timeout): self
     {
         $this->timeout = $timeout;
         if ($this->ssh) {
             $this->ssh->setTimeout($timeout);
         }
+
+        return $this;
     }
 
-    public function setPrefix(string $prefix): void
+    public function setPrefix(string $prefix): self
     {
         $this->prefix = $prefix;
+
+        return $this;
     }
 
     public function isLocal(): bool
@@ -383,6 +573,14 @@ class CommandService implements CommandExecutor
     public function getWorkingDirectory(): string
     {
         return $this->workingDirectory;
+    }
+
+    /**
+     * Get the output interface
+     */
+    public function getOutput(): OutputInterface
+    {
+        return $this->output;
     }
 
     // ============================================================
@@ -443,6 +641,33 @@ class CommandService implements CommandExecutor
     }
 
     /**
+     * Test SSH connection and measure connection time.
+     * Runs a simple command to establish the connection and times it.
+     */
+    public function testConnection(): bool
+    {
+        if ($this->config->isLocal) {
+            return true;
+        }
+
+        $startTime = microtime(true);
+
+        try {
+            $this->remote('echo "connected"');
+            $this->sshConnectionTime = microtime(true) - $startTime;
+
+            if ($this->output->isVerbose()) {
+                $formatted = number_format($this->sshConnectionTime, 2);
+                $this->output->writeln("{$this->prefix}SSH connected in {$formatted}s");
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * Escape a path for safe use in shell commands.
      * Prevents command injection vulnerabilities.
      */
@@ -490,8 +715,14 @@ class CommandService implements CommandExecutor
         $command = preg_replace("/-p'[^']*'/", "-p'***'", $command);
         $command = preg_replace('/-p[^\s\'"]+/', '-p***', $command);
 
-        // Mask GitHub tokens (ghp_, gho_, ghs_, ghr_)
+        // Mask GitHub tokens - classic PATs (ghp_, gho_, ghs_, ghr_)
         $command = preg_replace('/gh[pors]_[A-Za-z0-9_]+/', 'gh*_***', $command);
+
+        // Mask GitHub tokens - fine-grained PATs (github_pat_)
+        $command = preg_replace('/github_pat_[A-Za-z0-9_]+/', 'github_pat_***', $command);
+
+        // Mask entire github-oauth JSON blocks (catches any token format in auth.json)
+        $command = preg_replace('/"github-oauth":\s*\{[^}]+\}/', '"github-oauth":{"github.com":"***"}', $command);
 
         // Mask COMPOSER_AUTH JSON containing tokens
         $command = preg_replace('/COMPOSER_AUTH=\'[^\']+\'/', "COMPOSER_AUTH='***'", $command);

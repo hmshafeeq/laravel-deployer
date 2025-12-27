@@ -12,13 +12,20 @@ A lightweight, zero-downtime deployment package for Laravel applications.
 - 🔒 **Deployment Locking** - Prevents concurrent deployments
 - 💾 **Database Operations** - Backup, download, upload, and restore
 - 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
-- ❤️ **Health Checks** - Pre-deployment resource and endpoint verification
+- ❤️ **Health Checks** - Pre and post-deployment verification with retries
 - 🔑 **SSH Key Generator** - Interactive key generation and server setup
 - 🖥️ **Server Provisioning** - Automated LEMP stack setup with security hardening
 - 🎨 **Beautiful Output** - Clear, colored progress indicators
 - 📢 **Notifications** - Slack and Discord integration
 - 🔍 **Diff Display** - See exactly what files will be deployed with color-coded changes
 - ✅ **Confirmation Prompts** - Prevent accidents with configurable confirmation before deployment
+- 🧪 **Dry-Run Mode** - Preview deployment plan without executing
+- 📋 **Deployment Receipts** - JSON audit trail for every deployment
+- 🔗 **Environment Inheritance** - Reduce config duplication with `extends`
+- 🎛️ **Interactive Mode** - Step-by-step prompts for deployment options
+- 📊 **Progress Bar** - Real-time file sync progress with ETA
+- 📈 **Summary Dashboard** - Beautiful deployment completion summary
+- 🪝 **Deployment Hooks** - Custom commands at any deployment step
 
 ## 📋 Requirements
 
@@ -364,6 +371,112 @@ php artisan deploy production --no-confirm
 
 # Skip health checks
 php artisan deploy staging --skip-health-check
+
+# Preview deployment without executing (dry-run)
+php artisan deploy production --dry-run
+```
+
+### Dry-Run Mode
+
+Preview what would happen during deployment without actually executing any commands:
+
+```bash
+php artisan deploy staging --dry-run
+```
+
+**Output example:**
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    DRY RUN - No changes made                  ║
+╠══════════════════════════════════════════════════════════════╣
+║ Environment:  staging                                         ║
+║ Server:       staging.example.com                             ║
+║ Deploy Path:  /var/www/staging                                ║
+╠══════════════════════════════════════════════════════════════╣
+║                   Deployment Steps                            ║
+╠══════════════════════════════════════════════════════════════╣
+║  1. Lock deployment           Prevent concurrent deployments  ║
+║  2. Create release directory  202501.X (auto-generated)       ║
+║  3. Build frontend assets     npm run build                   ║
+║  4. Calculate file diff       Compare local → server          ║
+║  5. Sync files via rsync      Upload changed files            ║
+║  ...                                                          ║
+╠══════════════════════════════════════════════════════════════╣
+║                    Files to Deploy                            ║
+╠══════════════════════════════════════════════════════════════╣
+║   + 5 new files                                               ║
+║   ~ 12 modified files                                         ║
+║   - 2 deleted files                                           ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+Use dry-run to:
+- Preview deployments before executing
+- Verify configuration is correct
+- Review file changes that would be synced
+
+### Interactive Mode
+
+Interactive mode allows you to configure each deployment option through prompts:
+
+```bash
+php artisan deploy staging --interactive
+```
+
+**Output example:**
+```
+═══════════════════════════════════════════════════════════
+                   INTERACTIVE MODE
+═══════════════════════════════════════════════════════════
+
+  Environment: staging
+  Server:      staging.example.com
+
+  Configure your deployment options below:
+
+  Build frontend assets locally? [Y/n] Y
+  Run database migrations? [Y/n] Y
+  Clear Laravel caches after deployment? [Y/n] Y
+  Optimize application (config:cache, route:cache)? [Y/n] Y
+  Show file changes before uploading? [Y/n] Y
+  Require confirmation before uploading? [Y/n] n
+
+═══════════════════════════════════════════════════════════
+
+  Selected options:
+
+    ✓ Build assets
+    ✓ Run migrations
+    ✓ Clear caches
+    ✓ Optimize app
+    ✓ Show diff
+    ✗ Confirm changes
+
+  Proceed with deployment? [Y/n]
+```
+
+### Progress Bar
+
+During file sync, a progress bar shows real-time upload status:
+
+```
+[staging] [████████████████████░░░░░░░░░░] 67% (85/127 files) ETA: 12s
+```
+
+### Deployment Summary Dashboard
+
+After successful deployment, a summary dashboard is displayed:
+
+```
+╔════════════════════════════════════════════════════════════╗
+║                    DEPLOYMENT COMPLETE                      ║
+╠════════════════════════════════════════════════════════════╣
+║ Environment:  staging                                       ║
+║ Release:      202501.4                                      ║
+║ Duration:     45.2s                                         ║
+║ Files:        +5 ~12 -2 (19 total)                          ║
+║ URL:          https://staging.example.com                   ║
+╚════════════════════════════════════════════════════════════╝
 ```
 
 **What happens during deployment:**
@@ -393,6 +506,41 @@ php artisan deploy:rollback production
 # Skip confirmation
 php artisan deploy:rollback staging --no-confirm
 ```
+
+### Deployment Receipts
+
+Every successful deployment generates a JSON receipt for audit trails and debugging. Receipts are stored on the server at `.dep/receipts/{release}.json`.
+
+**Receipt structure:**
+```json
+{
+  "release": "202501.5",
+  "environment": "staging",
+  "deployed_at": "2025-01-27T14:30:00+00:00",
+  "deployed_by": "john",
+  "duration_seconds": 45.2,
+  "git": {
+    "commit": "abc123def456",
+    "branch": "main",
+    "message": "feat: add user authentication"
+  },
+  "stats": {
+    "files_synced": 127,
+    "files_added": 5,
+    "files_modified": 12,
+    "files_deleted": 2,
+    "bytes_transferred": 3355443
+  },
+  "post_deploy_commands": ["config:cache", "route:cache"],
+  "success": true
+}
+```
+
+**Use receipts to:**
+- Track who deployed what and when
+- Debug deployment issues with git commit info
+- Monitor deployment duration and file changes
+- Create deployment history reports
 
 ### Database Operations
 
@@ -431,6 +579,121 @@ php artisan database:restore --latest
 ```
 
 ## 📖 Advanced Configuration
+
+### Environment Inheritance
+
+Environments can inherit configuration from other environments using the `extends` key. This reduces duplication when environments share similar settings:
+
+```json
+{
+  "environments": {
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    },
+    "staging": {
+      "extends": "production",
+      "deployPath": "/var/www/staging"
+    }
+  }
+}
+```
+
+In this example, `staging` inherits all settings from `production` but overrides `deployPath`. The staging environment will use production's composer options.
+
+**Inheritance rules:**
+- Child environments inherit all settings from parent
+- Child settings override parent settings
+- Deep merging is performed for nested objects
+- Circular inheritance is detected and prevented
+
+### Post-Deployment Health Check
+
+Verify your application is responding correctly after deployment:
+
+```json
+{
+  "healthCheck": {
+    "enabled": true,
+    "url": "/health",
+    "timeout": 10,
+    "expectedStatus": 200,
+    "retries": 3,
+    "retryDelay": 2
+  }
+}
+```
+
+**Configuration options:**
+- `enabled` - Enable/disable post-deployment health check (default: `false`)
+- `url` - Health check endpoint (relative path or full URL)
+- `timeout` - Request timeout in seconds (default: `10`)
+- `expectedStatus` - Expected HTTP status code (default: `200`)
+- `retries` - Number of retry attempts (default: `3`)
+- `retryDelay` - Delay between retries in seconds (default: `2`)
+
+**What happens:**
+1. After the symlink swap, the deployer waits briefly for the app to initialize
+2. Makes an HTTP request to the health check URL
+3. Retries if the check fails (up to configured retries)
+4. Deployment is marked successful only if health check passes
+
+### Deployment Hooks
+
+Define custom commands to run at specific points during deployment:
+
+```json
+{
+  "hooks": {
+    "before:deploy": ["local:git fetch --all"],
+    "after:setup": [],
+    "before:build": ["local:npm ci"],
+    "after:build": [],
+    "before:sync": [],
+    "after:sync": ["artisan storage:link"],
+    "before:composer": [],
+    "after:composer": ["artisan package:discover"],
+    "before:migrate": ["artisan backup:run --only-db"],
+    "after:migrate": [],
+    "before:symlink": [],
+    "after:symlink": ["artisan horizon:terminate", "artisan queue:restart"],
+    "after:deploy": ["notify:slack"],
+    "on:failure": ["artisan cache:clear"]
+  }
+}
+```
+
+**Hook points:**
+
+| Hook | When it runs |
+|------|-------------|
+| `before:deploy` | Before deployment starts (pre-lock) |
+| `after:setup` | After deployment structure is created |
+| `before:build` | Before frontend assets are built |
+| `after:build` | After frontend assets are built |
+| `before:sync` | Before files are synced to server |
+| `after:sync` | After files are synced to server |
+| `before:composer` | Before composer install runs |
+| `after:composer` | After composer install runs |
+| `before:migrate` | Before database migrations run |
+| `after:migrate` | After database migrations run |
+| `before:symlink` | Before release is symlinked as current |
+| `after:symlink` | After release is symlinked as current |
+| `after:deploy` | After deployment completes successfully |
+| `on:failure` | When deployment fails |
+
+**Command prefixes:**
+- `artisan <command>` - Run a Laravel Artisan command on the server
+- `local:<command>` - Run a command locally (not on server)
+- No prefix - Run a shell command on the server in the release directory
+
+**Example use cases:**
+- **`after:symlink`**: Restart queue workers, terminate Horizon
+- **`before:migrate`**: Create database backup before migrations
+- **`on:failure`**: Clean up caches, send failure notification
+- **`before:build`**: Ensure dependencies are installed locally
 
 ### Deployment Diff & Confirmation
 
@@ -660,16 +923,18 @@ This package uses a **simple, cohesive action-based architecture**:
 **Actions** (Complete workflows):
 - `DeployAction` - Full deployment process
 - `RollbackAction` - Rollback to previous release
+- `DiffAction` - File diff calculation and display
 - `DatabaseAction` - Database operations
-- `HealthCheckAction` - Health verification
+- `HealthCheckAction` - Pre and post-deployment health verification
 - `OptimizeAction` - Cache & service optimization
 - `NotificationAction` - Deployment notifications
 
 **Services** (Core functionality):
 - `CommandService` - Execute local/remote commands
 - `DeploymentService` - Release & lock management
-- `ConfigService` - Configuration loading
+- `ConfigService` - Configuration loading with environment inheritance
 - `RsyncService` - File synchronization
+- `ReceiptService` - Deployment receipt generation and storage
 
 ## 🤝 Contributing
 

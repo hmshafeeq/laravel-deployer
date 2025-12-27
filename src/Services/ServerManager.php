@@ -22,23 +22,21 @@ class ServerManager
             return [];
         }
 
-        try {
-            $envFiles = File::glob($deployDir.'/.env.*');
-            $servers = [];
+        return rescue(fn () => $this->extractServersFromEnvFiles($deployDir), []);
+    }
 
-            foreach ($envFiles as $file) {
-                $filename = basename($file);
-                if (preg_match('/^\.env\.(.+?)(?:\.example)?$/', $filename, $matches)) {
-                    if (! str_ends_with($filename, '.example')) {
-                        $servers[] = $matches[1];
-                    }
-                }
-            }
-
-            return $servers;
-        } catch (\Exception $e) {
-            return [];
-        }
+    /**
+     * Extract server names from .env.* files in deploy directory
+     */
+    private function extractServersFromEnvFiles(string $deployDir): array
+    {
+        return collect(File::glob($deployDir.'/.env.*'))
+            ->map(fn ($file) => basename($file))
+            ->filter(fn ($filename) => ! str_ends_with($filename, '.example'))
+            ->map(fn ($filename) => preg_match('/^\.env\.(.+)$/', $filename, $m) ? $m[1] : null)
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /**

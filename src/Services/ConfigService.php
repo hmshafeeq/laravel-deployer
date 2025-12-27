@@ -40,8 +40,10 @@ class ConfigService
 
         $this->validateEnvironment($environment, $config);
 
-        // Deep merge global config with environment-specific config
-        $envConfig = $config['environments'][$environment] ?? [];
+        // Resolve environment inheritance chain
+        $envConfig = $this->resolveEnvironmentInheritance($environment, $config);
+
+        // Deep merge global config with resolved environment config
         $mergedConfig = $this->deepMerge($config, $envConfig);
 
         // Load secrets from .env file
@@ -51,6 +53,51 @@ class ConfigService
         $this->verbose('Configuration loaded successfully');
 
         return DeploymentConfig::fromArray($environment, $mergedConfig);
+    }
+
+    /**
+     * Resolve environment inheritance chain
+     *
+     * @param  array<string>  $visited  Track visited environments to detect circular dependencies
+     */
+    private function resolveEnvironmentInheritance(string $environment, array $config, array $visited = []): array
+    {
+        // Detect circular dependency
+        throw_if(
+            in_array($environment, $visited),
+            fn () => ConfigurationException::circularInheritance(
+                implode(' → ', [...$visited, $environment])
+            )
+        );
+
+        $envConfig = $config['environments'][$environment] ?? [];
+
+        // Check if this environment extends another
+        if (! isset($envConfig['extends'])) {
+            return $envConfig;
+        }
+
+        $parentEnv = $envConfig['extends'];
+        $this->verbose("Environment '{$environment}' extends '{$parentEnv}'");
+
+        // Validate parent environment exists
+        throw_unless(
+            isset($config['environments'][$parentEnv]),
+            fn () => ConfigurationException::parentEnvironmentNotFound($parentEnv, $environment)
+        );
+
+        // Resolve parent's inheritance chain first
+        $parentConfig = $this->resolveEnvironmentInheritance(
+            $parentEnv,
+            $config,
+            [...$visited, $environment]
+        );
+
+        // Remove 'extends' key from current config before merging
+        unset($envConfig['extends']);
+
+        // Merge: parent config first, then current env overrides
+        return $this->deepMerge($parentConfig, $envConfig);
     }
 
     /**
