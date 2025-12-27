@@ -615,6 +615,11 @@ class CommandService implements CommandExecutor
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
+        // Set custom SSH port if configured
+        if ($this->config->port) {
+            $this->ssh->usePort($this->config->port);
+        }
+
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
         if (! $this->config->strictHostKeyChecking) {
