@@ -29,6 +29,8 @@ class CommandService implements CommandExecutor
 
     private ?bool $hasSudo = null;
 
+    private ?string $webServerGroup = null;
+
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
@@ -729,6 +731,50 @@ class CommandService implements CommandExecutor
 
         // Fallback: try without sudo (works on shared hosting)
         return $this->remote($command);
+    }
+
+    /**
+     * Get the appropriate web server group for the current environment.
+     * Returns www-data on VPS/dedicated servers, or the current user's group on shared hosting.
+     * Caches the result to avoid repeated checks.
+     */
+    public function getWebServerGroup(): string
+    {
+        // Return cached result if already determined
+        if ($this->webServerGroup !== null) {
+            return $this->webServerGroup;
+        }
+
+        try {
+            // First, check if www-data group exists (common on VPS/dedicated servers)
+            $wwwDataExists = $this->test('getent group www-data >/dev/null 2>&1');
+
+            if ($wwwDataExists) {
+                $this->webServerGroup = 'www-data';
+
+                return $this->webServerGroup;
+            }
+
+            // Fallback: use the current user's primary group (shared hosting)
+            // This is typically the same group that owns the files
+            $currentGroup = trim($this->remote('id -gn'));
+
+            if (! empty($currentGroup)) {
+                $this->webServerGroup = $currentGroup;
+
+                return $this->webServerGroup;
+            }
+
+            // Last resort: fall back to www-data (may fail, but maintains backward compatibility)
+            $this->webServerGroup = 'www-data';
+
+            return $this->webServerGroup;
+        } catch (\Exception $e) {
+            // If all detection fails, use www-data as default
+            $this->webServerGroup = 'www-data';
+
+            return $this->webServerGroup;
+        }
     }
 
     /**
