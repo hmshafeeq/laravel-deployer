@@ -19,13 +19,13 @@ class DatabaseAction extends Action
     }
 
     /**
-     * Backup the database
+     * Backup the database (gzipped)
      */
     public function backup(?string $filename = null): string
     {
         $this->cmd->task('database:backup');
 
-        $filename = $filename ?? 'backup-'.date('Y-m-d-His').'.sql';
+        $filename = $filename ?? 'backup-'.date('Y-m-d-His').'.sql.gz';
         $backupPath = "{$this->config->deployPath}/shared/backups";
 
         // Create backups directory
@@ -41,9 +41,9 @@ class DatabaseAction extends Action
         $tempConfig = $this->createRemoteMysqlConfig($dbCredentials);
 
         try {
-            // Perform backup using config file (password not visible in logs)
+            // Perform backup using config file, pipe through gzip for compression
             $backupFile = "{$backupPath}/{$filename}";
-            $this->cmd->remote("mysqldump --defaults-extra-file={$tempConfig} {$dbCredentials['database']} > {$backupFile}");
+            $this->cmd->remote("mysqldump --defaults-extra-file={$tempConfig} --single-transaction {$dbCredentials['database']} | gzip > {$backupFile}");
         } finally {
             // Clean up temp config file
             $this->cmd->remote("rm -f {$tempConfig}");
@@ -63,8 +63,11 @@ class DatabaseAction extends Action
 
         $this->cmd->info('Downloading database backup...');
 
-        $scpCommand = "scp {$this->config->remoteUser}@{$this->config->hostname}:{$remoteFile} {$localPath}";
-        $this->cmd->local($scpCommand);
+        // Use rsync for faster transfers with progress display
+        // -h = human readable, -P = progress + partial (allows resume)
+        // Disable SSH compression since .sql.gz is already compressed
+        $rsyncCommand = "rsync -hP -e 'ssh -o Compression=no' {$this->config->remoteUser}@{$this->config->hostname}:{$remoteFile} {$localPath}";
+        $this->cmd->local($rsyncCommand);
 
         $this->cmd->success("Database backup downloaded to: {$localPath}");
     }
@@ -134,6 +137,57 @@ class DatabaseAction extends Action
         $this->download($remoteFile, $localFile);
 
         return $localFile;
+    }
+
+    /**
+     * List available backups on the remote server
+     *
+     * @return array<int, array{name: string, path: string, size: string, date: string}>
+     */
+    public function listRemoteBackups(): array
+    {
+        $backupPath = "{$this->config->deployPath}/shared/backups";
+
+        // Get list of backup files sorted by modification time (newest first)
+        // Using -t flag to sort by mtime on server, avoiding strtotime year ambiguity
+        $output = $this->cmd->remote("ls -lht {$backupPath}/*.sql {$backupPath}/*.sql.gz 2>/dev/null || true");
+
+        if (empty(trim($output))) {
+            return [];
+        }
+
+        $backups = [];
+        $lines = array_filter(explode("\n", trim($output)));
+
+        foreach ($lines as $line) {
+            // Parse ls -lh output: -rw-r--r-- 1 user group 123M Jan  4 12:34 filename.sql
+            if (preg_match('/\S+\s+\d+\s+\S+\s+\S+\s+(\S+)\s+(\S+\s+\d+\s+[\d:]+)\s+(.+)$/', $line, $matches)) {
+                $size = $matches[1];
+                $date = $matches[2];
+                $path = $matches[3];
+                $name = basename($path);
+
+                $backups[] = [
+                    'name' => $name,
+                    'path' => $path,
+                    'size' => $size,
+                    'date' => $date,
+                ];
+            }
+        }
+
+        // Already sorted by ls -t (newest first)
+        return $backups;
+    }
+
+    /**
+     * Get the latest backup on the remote server
+     */
+    public function getLatestRemoteBackup(): ?array
+    {
+        $backups = $this->listRemoteBackups();
+
+        return $backups[0] ?? null;
     }
 
     /**

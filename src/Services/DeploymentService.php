@@ -248,6 +248,11 @@ class DeploymentService
     // Path Helper Methods
     // ============================================================
 
+    public function getLockFile(): string
+    {
+        return $this->lockFile;
+    }
+
     public function getDeployPath(): string
     {
         return $this->config->deployPath;

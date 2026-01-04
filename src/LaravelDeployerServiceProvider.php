@@ -11,6 +11,7 @@ use Shaf\LaravelDeployer\Commands\MigrateCommand;
 use Shaf\LaravelDeployer\Commands\ProvisionCommand;
 use Shaf\LaravelDeployer\Commands\RollbackCommand;
 use Shaf\LaravelDeployer\Commands\SshKeyGenerateCommand;
+use Shaf\LaravelDeployer\Commands\SyncCommand;
 
 class LaravelDeployerServiceProvider extends ServiceProvider
 {
@@ -27,6 +28,7 @@ class LaravelDeployerServiceProvider extends ServiceProvider
             $this->commands([
                 InstallCommand::class,
                 DeployCommand::class,
+                SyncCommand::class,
                 ProvisionCommand::class,
                 RollbackCommand::class,
                 ClearCommand::class,

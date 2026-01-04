@@ -93,7 +93,7 @@ class DiffAction
     }
 
     /**
-     * Calculate sync differences using rsync dry-run
+     * Calculate sync differences using rsync dry-run (local temp comparison)
      */
     private function calculateDiff(): SyncDiff
     {
@@ -120,7 +120,67 @@ class DiffAction
     }
 
     /**
-     * Build rsync dry-run command
+     * Calculate sync differences against a remote destination
+     */
+    public function calculateRemoteDiff(string $remotePath): SyncDiff
+    {
+        $this->cmd->debug('Calculating remote sync differences...');
+
+        $source = rtrim($this->sourcePath, '/').'/';
+
+        // Build destination path for remote
+        if ($this->config->isLocal) {
+            $destination = rtrim($remotePath, '/').'/';
+        } else {
+            $destination = "{$this->config->remoteUser}@{$this->config->hostname}:{$remotePath}/";
+        }
+
+        $command = $this->buildRemoteDryRunCommand($source, $destination);
+        $this->cmd->debug("Remote dry-run command: {$command}");
+
+        $process = Process::fromShellCommandline($command, $this->sourcePath);
+        $process->setTimeout(300);
+        $process->run();
+
+        $output = $process->getOutput();
+        $stderr = $process->getErrorOutput();
+
+        $this->cmd->debug("Rsync exit code: {$process->getExitCode()}");
+        $this->cmd->debug("Rsync stdout length: ".strlen($output));
+        if ($stderr) {
+            $this->cmd->debug("Rsync stderr: {$stderr}");
+        }
+        if ($output) {
+            $this->cmd->debug("Rsync output (first 500 chars): ".substr($output, 0, 500));
+        }
+
+        return $this->parseDryRunOutput($output);
+    }
+
+    /**
+     * Show sync differences against a remote destination
+     */
+    public function showRemoteDiff(string $remotePath): SyncDiff
+    {
+        $this->cmd->section('SYNC DIFFERENCE - FILES TO DEPLOY');
+
+        $diff = $this->calculateRemoteDiff($remotePath);
+
+        if ($diff->isEmpty()) {
+            $this->cmd->info('  ✨ No changes detected - everything is already in sync!');
+            $this->cmd->newLine();
+
+            return $diff;
+        }
+
+        $this->displayStatistics($diff);
+        $this->displayChanges($diff);
+
+        return $diff;
+    }
+
+    /**
+     * Build rsync dry-run command (local comparison)
      */
     private function buildDryRunCommand(string $source, string $destination): string
     {
@@ -137,6 +197,37 @@ class DiffAction
         $parts[] = '--delete';
         $parts[] = "'{$source}/'";
         $parts[] = "'{$destination}/'";
+
+        return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |>f|>d|cd)' || echo ''";
+    }
+
+    /**
+     * Build rsync dry-run command for remote comparison
+     */
+    private function buildRemoteDryRunCommand(string $source, string $destination): string
+    {
+        $parts = ['rsync', '-avn', '--itemize-changes'];
+
+        // Add SSH options for remote
+        if (! $this->config->isLocal) {
+            $sshOptions = '-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10';
+            if ($this->config->identityFile) {
+                $sshOptions .= " -i {$this->config->identityFile}";
+            }
+            $parts[] = "-e 'ssh {$sshOptions}'";
+        }
+
+        foreach ($this->config->rsyncIncludes as $include) {
+            $parts[] = "--include='{$include}'";
+        }
+
+        foreach ($this->config->rsyncExcludes as $exclude) {
+            $parts[] = "--exclude='{$exclude}'";
+        }
+
+        $parts[] = '--delete';
+        $parts[] = "'{$source}'";
+        $parts[] = "'{$destination}'";
 
         return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |>f|>d|cd)' || echo ''";
     }

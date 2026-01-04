@@ -21,6 +21,7 @@ class DatabaseCommand extends Command
                             {target? : Server name for backup/download, or backup file for restore}
                             {--select : Show available servers and select interactively}
                             {--latest : Use the latest backup}
+                            {--backup : Create a new backup before downloading (for download action)}
                             {--target-server= : Remote server for upload (user@host)}
                             {--key= : SSH key path for upload}
                             {--path= : Remote destination path for upload}
@@ -108,13 +109,44 @@ class DatabaseCommand extends Command
             $cmdService = new CommandService($config, $this->output);
             $database = new DatabaseAction($cmdService, $config);
 
-            $this->info('Creating backup on server...');
-            $remoteFile = $database->backup();
+            // If --backup flag is passed, create a new backup first
+            if ($this->option('backup')) {
+                $this->info('Creating backup on server...');
+                $remoteFile = $database->backup();
+            } else {
+                // Otherwise, select from existing backups
+                $remoteFile = $this->selectRemoteBackup($database);
+                if (! $remoteFile) {
+                    return self::FAILURE;
+                }
+            }
 
             $this->line('');
             $this->info('Downloading backup...');
             $localFile = $backupsDir.'/'.basename($remoteFile);
-            $database->download($remoteFile, $localFile);
+
+            // Use rsync with streaming output for progress display
+            // -h = human readable, -P = progress + partial (allows resume)
+            // Disable SSH compression since .sql.gz is already compressed
+            $rsyncCommand = sprintf(
+                "rsync -hP -e 'ssh -o Compression=no' %s@%s:%s %s",
+                $config->remoteUser,
+                $config->hostname,
+                escapeshellarg($remoteFile),
+                escapeshellarg($localFile)
+            );
+
+            $result = Process::timeout(3600)
+                ->path(base_path())
+                ->run($rsyncCommand, function ($type, $buffer) {
+                    echo $buffer;
+                });
+
+            if (! $result->successful()) {
+                $this->error('Download failed: '.$result->errorOutput());
+
+                return self::FAILURE;
+            }
 
             $this->line('');
             $this->info('Database download completed successfully!');
@@ -128,6 +160,67 @@ class DatabaseCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * Select a backup from the remote server
+     */
+    protected function selectRemoteBackup(DatabaseAction $database): ?string
+    {
+        // If --latest flag, get the latest backup
+        if ($this->option('latest')) {
+            $latest = $database->getLatestRemoteBackup();
+            if (! $latest) {
+                $this->error('No backups found on server.');
+                $this->line('');
+                $this->info('Create one first: php artisan db backup '.$this->argument('target'));
+                $this->info('Or use --backup flag: php artisan db download '.$this->argument('target').' --backup');
+
+                return null;
+            }
+            $this->info("Using latest backup: {$latest['name']} ({$latest['size']})");
+
+            return $latest['path'];
+        }
+
+        // List available backups
+        $this->info('Fetching available backups...');
+        $backups = $database->listRemoteBackups();
+
+        if (empty($backups)) {
+            $this->error('No backups found on server.');
+            $this->line('');
+            $this->info('Create one first: php artisan db backup '.$this->argument('target'));
+            $this->info('Or use --backup flag: php artisan db download '.$this->argument('target').' --backup');
+
+            return null;
+        }
+
+        $this->line('');
+        $this->info('Available backups:');
+        $this->line('');
+
+        $choices = [];
+        foreach ($backups as $index => $backup) {
+            $num = $index + 1;
+            $this->line("  [{$num}] {$backup['name']} ({$backup['size']}) - {$backup['date']}");
+            $choices[$num] = $backup;
+        }
+
+        $this->line('');
+        $selection = $this->ask('Select backup number (or press Enter for latest)', '1');
+
+        $selectedIndex = (int) $selection;
+        if (! isset($choices[$selectedIndex])) {
+            $this->error('Invalid selection.');
+
+            return null;
+        }
+
+        $selected = $choices[$selectedIndex];
+        $this->info("Selected: {$selected['name']}");
+
+        return $selected['path'];
     }
 
     // =========================================================================
@@ -483,14 +576,16 @@ class DatabaseCommand extends Command
         $this->error('Invalid action. Available actions:');
         $this->line('');
         $this->line('  php artisan db backup {server}     Create backup on remote server');
-        $this->line('  php artisan db download {server}   Download backup from remote server');
+        $this->line('  php artisan db download {server}   Download existing backup from server');
         $this->line('  php artisan db upload              Upload backup to remote server');
         $this->line('  php artisan db restore             Restore backup locally');
         $this->line('  php artisan db list                List available local backups');
         $this->line('');
         $this->line('Examples:');
         $this->line('  php artisan db backup staging');
-        $this->line('  php artisan db download production');
+        $this->line('  php artisan db download production              # Select from existing backups');
+        $this->line('  php artisan db download production --latest     # Download latest backup');
+        $this->line('  php artisan db download production --backup     # Create new backup & download');
         $this->line('  php artisan db upload --latest --target-server=user@host');
         $this->line('  php artisan db restore --latest');
 

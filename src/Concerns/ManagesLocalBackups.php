@@ -45,8 +45,12 @@ trait ManagesLocalBackups
 
     protected function findBackupFiles(string $backupsDir): array
     {
-        $files = File::glob($backupsDir.'/db_backup_*.sql.gz');
+        // Match both old format (db_backup_*) and new format (backup-*)
+        $gzFiles = File::glob($backupsDir.'/*.sql.gz');
+        $sqlFiles = File::glob($backupsDir.'/*.sql');
+        $files = array_merge($gzFiles, $sqlFiles);
 
+        // Sort by modification time (newest first)
         usort($files, fn ($a, $b) => filemtime($b) - filemtime($a));
 
         return $files;
