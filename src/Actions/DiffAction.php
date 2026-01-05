@@ -190,7 +190,8 @@ class DiffAction
      */
     private function buildDryRunCommand(string $source, string $destination): string
     {
-        $parts = ['rsync', '-avn'];
+        // Use -c (checksum) to match actual sync behavior - compare by content, not timestamp
+        $parts = ['rsync', '-avnc'];
 
         foreach ($this->config->rsyncIncludes as $include) {
             $parts[] = "--include='{$include}'";
@@ -214,7 +215,8 @@ class DiffAction
      */
     private function buildRemoteDryRunCommand(string $source, string $destination): string
     {
-        $parts = ['rsync', '-avn', '--itemize-changes'];
+        // Use -c (checksum) to match actual sync behavior - compare by content, not timestamp
+        $parts = ['rsync', '-avnc', '--itemize-changes'];
 
         // Add SSH options for remote
         if (! $this->config->isLocal) {

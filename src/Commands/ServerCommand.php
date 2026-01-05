@@ -4,11 +4,17 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\DeploymentService;
 
-class ProvisionCommand extends Command
+class ServerCommand extends Command
 {
-    protected $signature = 'laravel-deployer:provision
-                            {--host= : Server hostname or IP address}
+    protected $signature = 'deployer:server
+                            {action : Action to perform (clear, provision)}
+                            {environment? : The deployment environment (required for clear)}
+                            {--no-confirm : Skip confirmation prompt}
+                            {--host= : Server hostname or IP address (for provision)}
                             {--port=22 : SSH port}
                             {--user=ubuntu : SSH user (default: ubuntu)}
                             {--password= : SSH password (if not using key)}
@@ -22,7 +28,7 @@ class ProvisionCommand extends Command
                             {--with-redis : Install Redis}
                             {--non-interactive : Run in non-interactive mode}';
 
-    protected $description = 'Provision a fresh Ubuntu server with LEMP stack and deployment tools';
+    protected $description = 'Server management: clear caches, provision new servers';
 
     protected array $config = [];
 
@@ -31,6 +37,123 @@ class ProvisionCommand extends Command
     protected string $remoteScriptsDir = '/tmp/laravel-deployer-provision';
 
     public function handle(): int
+    {
+        $action = $this->argument('action');
+
+        return match ($action) {
+            'clear' => $this->handleClear(),
+            'provision' => $this->handleProvision(),
+            default => $this->showUsage(),
+        };
+    }
+
+    // =========================================================================
+    // CLEAR - Clear caches and restart services
+    // =========================================================================
+
+    protected function handleClear(): int
+    {
+        $environment = $this->argument('environment');
+
+        if (! $environment) {
+            $this->error('Environment is required for clear action.');
+            $this->line('');
+            $this->line('Usage: php artisan deployer:server clear {environment}');
+
+            return self::FAILURE;
+        }
+
+        $noConfirm = $this->option('no-confirm');
+
+        try {
+            // Load configuration
+            $config = ConfigService::load($environment, base_path(), $this->output);
+
+            // Initialize services
+            $cmd = new CommandService($config, $this->output);
+            $deployment = new DeploymentService($config, $cmd, base_path());
+
+            // Show confirmation for non-local environments
+            if (! $config->isLocal && ! $noConfirm) {
+                $this->warn("⚠️  You are about to clear caches and restart services on {$environment}");
+
+                if (! $this->confirm('Do you want to continue?', false)) {
+                    $this->info('Operation cancelled.');
+
+                    return self::SUCCESS;
+                }
+            }
+
+            $this->info("Clearing caches and restarting services on {$environment}...");
+            $this->newLine();
+
+            // Get current release path
+            $currentPath = $deployment->getCurrentPath();
+
+            // Clear Laravel caches
+            $this->info('🗑️  Clearing Laravel caches...');
+
+            $results = [
+                'config' => $this->runArtisanCommand($cmd, $currentPath, 'config:clear'),
+                'view' => $this->runArtisanCommand($cmd, $currentPath, 'view:clear'),
+                'route' => $this->runArtisanCommand($cmd, $currentPath, 'route:clear'),
+                'queue' => $this->runArtisanCommand($cmd, $currentPath, 'queue:restart'),
+            ];
+
+            // Display results
+            $this->info($results['config'] ? '  ✓ Config cache cleared' : '  ⚠ Config cache operation failed');
+            $this->info($results['view'] ? '  ✓ View cache cleared' : '  ⚠ View cache operation failed');
+            $this->info($results['route'] ? '  ✓ Route cache cleared' : '  ⚠ Route cache operation failed');
+
+            // Restart queue workers
+            $this->newLine();
+            $this->info('🔄 Restarting queue workers...');
+            $this->info($results['queue'] ? '  ✓ Queue workers restarted' : '  ⚠ Queue restart failed');
+
+            // Restart PHP-FPM (if not local)
+            if (! $config->isLocal) {
+                $this->newLine();
+                $this->info('🔄 Restarting PHP-FPM...');
+
+                try {
+                    $cmd->restartPhpFpm();
+                } catch (\Exception $e) {
+                    $this->warn('  ⚠ PHP-FPM restart failed: '.$e->getMessage());
+                }
+            }
+
+            $this->newLine();
+            $this->info('✅ System clear completed successfully!');
+
+            return self::SUCCESS;
+        } catch (\Exception $e) {
+            $this->newLine();
+            $this->error('❌ System clear failed!');
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+    }
+
+    /**
+     * Run an artisan command on the remote server
+     */
+    private function runArtisanCommand(CommandService $cmd, string $path, string $command): bool
+    {
+        try {
+            $cmd->artisan($command, $path);
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    // =========================================================================
+    // PROVISION - Provision a fresh Ubuntu server
+    // =========================================================================
+
+    protected function handleProvision(): int
     {
         $this->scriptsDir = dirname(__DIR__, 2).'/scripts';
 
@@ -514,8 +637,23 @@ class ProvisionCommand extends Command
 
         $this->newLine();
         $this->info('Next Steps:');
-        $this->line('1. Update your deploy.yaml with the server details');
+        $this->line('1. Update your deploy.json with the server details');
         $this->line('2. Configure your .deploy/.env files');
-        $this->line('3. Run: php artisan laravel-deployer:deploy');
+        $this->line('3. Run: php artisan deployer staging');
+    }
+
+    protected function showUsage(): int
+    {
+        $this->error('Invalid action. Available actions:');
+        $this->line('');
+        $this->line('  php artisan deployer:server clear {env}       Clear caches and restart services');
+        $this->line('  php artisan deployer:server provision         Provision a fresh Ubuntu server');
+        $this->line('');
+        $this->line('Examples:');
+        $this->line('  php artisan deployer:server clear staging');
+        $this->line('  php artisan deployer:server clear production --no-confirm');
+        $this->line('  php artisan deployer:server provision --host=1.2.3.4 --user=ubuntu');
+
+        return self::FAILURE;
     }
 }

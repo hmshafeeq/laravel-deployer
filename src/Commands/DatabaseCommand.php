@@ -16,7 +16,7 @@ class DatabaseCommand extends Command
 {
     use ManagesLocalBackups, SelectsServer;
 
-    protected $signature = 'db
+    protected $signature = 'deployer:db
                             {action : Action to perform (backup, download, upload, restore, list)}
                             {target? : Server name for backup/download, or backup file for restore}
                             {--select : Show available servers and select interactively}
@@ -451,9 +451,25 @@ class DatabaseCommand extends Command
 
             $this->info('Database connection successful.');
             $this->line('');
+
+            // Drop all tables first to avoid conflicts with generated columns, constraints, etc.
+            $this->info('Dropping existing tables...');
+            $dropResult = Process::run('php artisan db:wipe --force');
+            if (! $dropResult->successful()) {
+                $this->error('Failed to drop tables: '.$dropResult->errorOutput());
+
+                return false;
+            }
+            $this->info('Tables dropped.');
+            $this->line('');
+
             $this->info('Starting restoration...');
 
             $startTime = time();
+
+            // If restore fails with "generated column" error (e.g., notifications.format_indexed),
+            // use this command instead to skip INSERT statements for problematic tables:
+            // 'gunzip -c %s | sed "/^INSERT INTO \`notifications\`/d" | mysql --defaults-file=%s %s'
             $command = sprintf(
                 'gunzip -c %s | mysql --defaults-file=%s %s',
                 escapeshellarg($selectedBackup),

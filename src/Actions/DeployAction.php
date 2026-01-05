@@ -109,13 +109,16 @@ class DeployAction
             // Set release path for hooks
             $this->hooks?->setReleasePath($this->releasePath);
 
-            // 4. Build assets locally (if not local deployment)
-            if (! $this->config->isLocal) {
+            // 4. Build assets locally (if not local deployment and not skipping build folder)
+            $skipAssetBuild = in_array('public/build/', $this->config->rsyncExcludes, true);
+            if (! $this->config->isLocal && ! $skipAssetBuild) {
                 $this->runHook('before:build');
                 $this->stepTimer->start('assets:build');
                 $this->buildAssets();
                 $this->stepTimer->end('assets:build');
                 $this->runHook('after:build');
+            } elseif ($skipAssetBuild) {
+                $this->cmd->info('Skipping asset build (public/build excluded)');
             }
 
             // 5. Show sync differences (compare against current release for accuracy)

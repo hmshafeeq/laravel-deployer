@@ -105,7 +105,8 @@ class RsyncService
         $fileCount = 0;
         $fullOutput = '';
 
-        $process->run(function ($type, $buffer) use (&$syncedFiles, &$fileCount, &$fullOutput, $progressBar, $showProgress) {
+        $progressCount = 0;
+        $process->run(function ($type, $buffer) use (&$syncedFiles, &$fileCount, &$fullOutput, &$progressCount, $progressBar, $showProgress, $totalFiles) {
             $fullOutput .= $buffer;
 
             if ($type === Process::ERR) {
@@ -117,8 +118,10 @@ class RsyncService
                     if (! empty($trimmedLine) && ! $this->isDirectoryLine($trimmedLine) && $this->isActualFileTransfer($trimmedLine)) {
                         $syncedFiles[] = $trimmedLine;
                         $fileCount++;
-                        if ($showProgress && $progressBar) {
+                        // Cap progress bar at expected total to avoid inflated counts
+                        if ($showProgress && $progressBar && $progressCount < $totalFiles) {
                             $progressBar->advance();
+                            $progressCount++;
                         }
                     }
                 }

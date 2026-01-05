@@ -19,9 +19,10 @@ use Symfony\Component\Process\Process;
 
 class DeployCommand extends Command
 {
-    protected $signature = 'deploy {environment=staging : The deployment environment (local, staging, production)}
+    protected $signature = 'deployer {environment=staging : The deployment environment (local, staging, production)}
                             {--no-confirm : Skip deployment confirmation}
                             {--skip-health-check : Skip health check before deployment}
+                            {--skip-preview : Skip early diff preview}
                             {--dry-run : Show deployment plan without executing}
                             {--interactive : Interactive mode - prompt for each deployment option}';
 
@@ -32,6 +33,7 @@ class DeployCommand extends Command
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
         $skipHealthCheck = $this->option('skip-health-check');
+        $skipPreview = $this->option('skip-preview');
         $dryRun = $this->option('dry-run');
         $interactive = $this->option('interactive');
 
@@ -45,19 +47,22 @@ class DeployCommand extends Command
         }
 
         // Check if Vite is running (skip in dry-run mode)
+        $skipBuildFolder = false;
         if (! $dryRun && $this->isViteRunning()) {
-            $this->newLine();
-            $this->components->error('Vite bundler is currently running!');
-            $this->newLine();
-            $this->components->warn('Please stop the Vite development server before deploying. 💡 Press Ctrl+C in the terminal where Vite is running to stop it.');
-            $this->newLine();
-
-            return self::FAILURE;
+            if (! $this->components->confirm('Vite is running. Skip public/build & public/hot and continue?', true)) {
+                return self::FAILURE;
+            }
+            $skipBuildFolder = true;
         }
 
         try {
             // Load configuration
             $config = ConfigService::load($environment, base_path(), $this->output);
+
+            // Add Vite dev files to excludes if skipping
+            if ($skipBuildFolder) {
+                $config = $this->addViteDevExcludes($config);
+            }
 
             // Handle dry-run mode
             if ($dryRun) {
@@ -97,6 +102,18 @@ class DeployCommand extends Command
             $deployService = new DeploymentService($config, $cmdService, base_path());
             $rsyncService = new RsyncService($config, base_path(), $cmdService);
             $diffAction = new DiffAction($cmdService, $config, base_path());
+
+            // Show early diff preview (compare local vs current release on server)
+            $previewShown = false;
+            if (! $skipPreview && $config->showPreview) {
+                $this->showEarlyDiffPreview($config, $cmdService, $diffAction);
+                $previewShown = true;
+            }
+
+            // If preview was shown, disable showDiff during deployment to avoid duplicate
+            if ($previewShown && $config->showDiff) {
+                $config = $this->disableShowDiff($config);
+            }
 
             // Show deployment confirmation
             if (! $noConfirm && ! $this->confirmDeployment($config)) {
@@ -200,7 +217,82 @@ class DeployCommand extends Command
             identityFile: $config->identityFile,
             port: $config->port,
             showDiff: $options['showDiff'] ?? $config->showDiff,
+            showPreview: $options['showPreview'] ?? $config->showPreview,
             confirmChanges: $options['confirmChanges'] ?? $config->confirmChanges,
+            showUploadProgress: $config->showUploadProgress,
+            diffDisplayLimit: $config->diffDisplayLimit,
+            phpBinary: $config->phpBinary,
+            postDeployCommands: $config->postDeployCommands,
+            branch: $config->branch,
+            githubToken: $config->githubToken,
+            strictHostKeyChecking: $config->strictHostKeyChecking,
+            assetsFailOnError: $config->assetsFailOnError,
+            healthCheckUrl: $config->healthCheckUrl,
+            hooks: $config->hooks,
+        );
+    }
+
+    /**
+     * Disable showDiff in config (to avoid duplicate diff display)
+     */
+    private function disableShowDiff(DeploymentConfig $config): DeploymentConfig
+    {
+        return new DeploymentConfig(
+            environment: $config->environment,
+            hostname: $config->hostname,
+            remoteUser: $config->remoteUser,
+            deployPath: $config->deployPath,
+            composerOptions: $config->composerOptions,
+            keepReleases: $config->keepReleases,
+            isLocal: $config->isLocal,
+            rsyncExcludes: $config->rsyncExcludes,
+            rsyncIncludes: $config->rsyncIncludes,
+            rsyncOptions: $config->rsyncOptions,
+            rsyncFlags: $config->rsyncFlags,
+            identityFile: $config->identityFile,
+            port: $config->port,
+            showDiff: false,
+            showPreview: $config->showPreview,
+            confirmChanges: $config->confirmChanges,
+            showUploadProgress: $config->showUploadProgress,
+            diffDisplayLimit: $config->diffDisplayLimit,
+            phpBinary: $config->phpBinary,
+            postDeployCommands: $config->postDeployCommands,
+            branch: $config->branch,
+            githubToken: $config->githubToken,
+            strictHostKeyChecking: $config->strictHostKeyChecking,
+            assetsFailOnError: $config->assetsFailOnError,
+            healthCheckUrl: $config->healthCheckUrl,
+            hooks: $config->hooks,
+        );
+    }
+
+    /**
+     * Add Vite dev files to rsync excludes (public/build/ and public/hot)
+     */
+    private function addViteDevExcludes(DeploymentConfig $config): DeploymentConfig
+    {
+        $excludes = $config->rsyncExcludes;
+        $excludes[] = 'public/build/';
+        $excludes[] = 'public/hot';
+
+        return new DeploymentConfig(
+            environment: $config->environment,
+            hostname: $config->hostname,
+            remoteUser: $config->remoteUser,
+            deployPath: $config->deployPath,
+            composerOptions: $config->composerOptions,
+            keepReleases: $config->keepReleases,
+            isLocal: $config->isLocal,
+            rsyncExcludes: $excludes,
+            rsyncIncludes: $config->rsyncIncludes,
+            rsyncOptions: $config->rsyncOptions,
+            rsyncFlags: $config->rsyncFlags,
+            identityFile: $config->identityFile,
+            port: $config->port,
+            showDiff: $config->showDiff,
+            showPreview: $config->showPreview,
+            confirmChanges: $config->confirmChanges,
             showUploadProgress: $config->showUploadProgress,
             diffDisplayLimit: $config->diffDisplayLimit,
             phpBinary: $config->phpBinary,
@@ -245,6 +337,36 @@ class DeployCommand extends Command
         $this->newLine();
 
         return $this->confirm('  Do you want to continue with this deployment?', true);
+    }
+
+    /**
+     * Show early diff preview before confirmation
+     */
+    private function showEarlyDiffPreview(
+        DeploymentConfig $config,
+        CommandService $cmdService,
+        DiffAction $diffAction
+    ): void {
+        $currentPath = "{$config->deployPath}/current";
+
+        // Check if current symlink exists on server
+        if ($config->isLocal) {
+            $exists = is_link($currentPath);
+        } else {
+            $exists = trim($cmdService->remote("test -L {$currentPath} && echo 'yes' || echo 'no'")) === 'yes';
+        }
+
+        if (! $exists) {
+            $this->newLine();
+            $cmdService->info('  First deployment - no existing release to compare');
+            $this->newLine();
+
+            return;
+        }
+
+        // Show diff against current release
+        $this->newLine();
+        $diffAction->showRemoteDiff($currentPath);
     }
 
     /**
