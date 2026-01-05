@@ -4,6 +4,7 @@ namespace Shaf\LaravelDeployer\Support;
 
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SyncDiff;
+use Shaf\LaravelDeployer\Data\SyncStats;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
@@ -25,15 +26,18 @@ class DeploymentSummary
      *
      * @param  array<string, float>  $stepTimings
      * @param  array{branch: string, commit: ?string, message: ?string, author: ?string}|null  $gitInfo
+     * @param  array<array{category: string, message: string}>  $warnings
      */
     public function showSuccess(
         string $releaseName,
         float $duration,
         ?SyncDiff $syncDiff = null,
+        ?SyncStats $syncStats = null,
         int $migrationsRun = 0,
         ?string $url = null,
         array $stepTimings = [],
-        ?array $gitInfo = null
+        ?array $gitInfo = null,
+        array $warnings = []
     ): void {
         $this->output->writeln('');
 
@@ -44,13 +48,13 @@ class DeploymentSummary
 
         // Add git info if available
         if ($gitInfo !== null && ! empty($gitInfo['commit'])) {
-            $branch = $gitInfo['branch'] ?? 'unknown';
+            $branch = $gitInfo['branch'];
             $commit = $gitInfo['commit'];
             $rows[] = $this->formatRow('Git', "{$branch} @ {$commit}");
         }
 
         $rows[] = $this->formatRow('Duration', format_duration($duration));
-        $rows[] = $this->formatFilesRow($syncDiff);
+        $rows[] = $this->formatFilesRow($syncDiff, $syncStats);
 
         if ($migrationsRun > 0) {
             $rows[] = $this->formatRow('Migrations', "{$migrationsRun} executed");
@@ -58,6 +62,12 @@ class DeploymentSummary
 
         if ($url) {
             $rows[] = $this->formatRow('URL', $url);
+        }
+
+        // Add warnings section if any
+        if (! empty($warnings)) {
+            $rows[] = '__separator__'; // Draw separator line
+            $rows = array_merge($rows, $this->formatWarningsSection($warnings));
         }
 
         $this->drawBox('DEPLOYMENT COMPLETE', 'green', $rows);
@@ -141,6 +151,13 @@ class DeploymentSummary
                 continue;
             }
 
+            if ($row === '__separator__') {
+                // Draw separator line (for warnings section, etc.)
+                $this->output->writeln("<fg={$color}>╠".str_repeat('═', $innerWidth).'╣</>');
+
+                continue;
+            }
+
             $this->output->writeln("<fg={$color}>║</> {$row} <fg={$color}>║</>");
         }
 
@@ -165,34 +182,50 @@ class DeploymentSummary
     }
 
     /**
-     * Format the files sync row with colored counts
+     * Format the files sync row with colored counts and transfer size
      */
-    private function formatFilesRow(?SyncDiff $syncDiff): ?string
+    private function formatFilesRow(?SyncDiff $syncDiff, ?SyncStats $syncStats = null): string
     {
         $labelWidth = 14;
         $contentWidth = self::INNER_WIDTH - 2;
         $valueWidth = $contentWidth - $labelWidth;
 
-        if ($syncDiff === null || $syncDiff->isEmpty()) {
+        // Use actual stats if available, fall back to diff for display
+        $hasChanges = ($syncStats !== null && $syncStats->hasChanges())
+            || ($syncDiff !== null && ! $syncDiff->isEmpty());
+
+        if (! $hasChanges) {
             return $this->formatRow('Files', 'No changes');
         }
 
         $parts = [];
 
-        if ($syncDiff->hasNew()) {
-            $parts[] = "<fg=green>+{$syncDiff->newCount()}</>";
+        // Use syncDiff for +/~/- counts (shows intent)
+        if ($syncDiff !== null) {
+            if ($syncDiff->hasNew()) {
+                $parts[] = "<fg=green>+{$syncDiff->newCount()}</>";
+            }
+
+            if ($syncDiff->hasModified()) {
+                $parts[] = "<fg=yellow>~{$syncDiff->modifiedCount()}</>";
+            }
+
+            if ($syncDiff->hasDeleted()) {
+                $parts[] = "<fg=red>-{$syncDiff->deletedCount()}</>";
+            }
         }
 
-        if ($syncDiff->hasModified()) {
-            $parts[] = "<fg=yellow>~{$syncDiff->modifiedCount()}</>";
+        // Build summary with actual transfer info from syncStats
+        if ($syncStats !== null && $syncStats->hasChanges()) {
+            $summary = implode(' ', $parts);
+            if (! empty($parts)) {
+                $summary .= ' ';
+            }
+            $summary .= "<fg=gray>({$syncStats->filesSynced} synced, {$syncStats->getFormattedSize()})</>";
+        } else {
+            $total = $syncDiff?->totalCount() ?? 0;
+            $summary = implode(' ', $parts)." <fg=gray>({$total} total)</>";
         }
-
-        if ($syncDiff->hasDeleted()) {
-            $parts[] = "<fg=red>-{$syncDiff->deletedCount()}</>";
-        }
-
-        $total = $syncDiff->totalCount();
-        $summary = implode(' ', $parts)." <fg=gray>({$total} total)</>";
 
         $labelFormatted = str_pad('Files:', $labelWidth);
 
@@ -201,6 +234,33 @@ class DeploymentSummary
         $padding = $valueWidth - mb_strlen($visibleValue);
 
         return "<fg=gray>{$labelFormatted}</>{$summary}".str_repeat(' ', max(0, $padding));
+    }
+
+    /**
+     * Format the warnings section
+     *
+     * @param  array<array{category: string, message: string}>  $warnings
+     * @return array<string|null>
+     */
+    private function formatWarningsSection(array $warnings): array
+    {
+        $contentWidth = self::INNER_WIDTH - 2;
+        $rows = [];
+
+        // Warning header
+        $header = '<fg=yellow>⚠ Warnings</>';
+        $headerVisible = '⚠ Warnings';
+        $padding = $contentWidth - mb_strlen($headerVisible);
+        $rows[] = $header.str_repeat(' ', max(0, $padding));
+
+        // Each warning
+        foreach ($warnings as $warning) {
+            $bullet = "  • {$warning['message']}";
+            $rows[] = "<fg=yellow>{$this->truncate($bullet, $contentWidth)}</>".
+                str_repeat(' ', max(0, $contentWidth - mb_strlen($this->truncate($bullet, $contentWidth))));
+        }
+
+        return $rows;
     }
 
     /**

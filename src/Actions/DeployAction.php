@@ -9,6 +9,7 @@ use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\DeploymentReceipt;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
 use Shaf\LaravelDeployer\Data\SyncDiff;
+use Shaf\LaravelDeployer\Data\SyncStats;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 use Shaf\LaravelDeployer\Services\HooksService;
@@ -31,6 +32,8 @@ class DeployAction
 
     private ?SyncDiff $syncDiff = null;
 
+    private ?SyncStats $syncStats = null;
+
     private float $duration = 0;
 
     private ?HooksService $hooks = null;
@@ -44,6 +47,9 @@ class DeployAction
     private ?string $gitAuthor = null;
 
     private int $migrationsRun = 0;
+
+    /** @var array<array{category: string, message: string}> */
+    private array $warnings = [];
 
     public function __construct(
         private DeploymentService $deployment,
@@ -112,9 +118,16 @@ class DeployAction
                 $this->runHook('after:build');
             }
 
-            // 5. Show sync differences
+            // 5. Show sync differences (compare against current release for accuracy)
             if ($this->config->showDiff) {
-                $this->syncDiff = $this->diff->show();
+                $currentPath = $this->deployment->getCurrentPath();
+                if ($this->cmd->symlinkExists($currentPath)) {
+                    // Compare against current release for accurate diff
+                    $this->syncDiff = $this->diff->showRemoteDiff($currentPath);
+                } else {
+                    // First deployment - use local temp comparison
+                    $this->syncDiff = $this->diff->show();
+                }
             }
 
             // 6. Confirm changes
@@ -338,6 +351,9 @@ class DeployAction
         // For local deployments, just use the path; RsyncService handles the rest
         $this->rsync->sync($this->releasePath);
 
+        // Capture actual sync stats from rsync (not theoretical diff)
+        $this->syncStats = SyncStats::fromRsync($this->rsync, $this->syncDiff);
+
         $this->cmd->success('Files synced successfully');
     }
 
@@ -474,9 +490,12 @@ class DeployAction
         $composerOptions = $this->config->composerOptions ?? '--prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
 
-        // Ensure bootstrap/cache exists before composer runs (required for package:discover)
+        // Clear bootstrap/cache before composer runs.
+        // When using hardlink copy from previous release, cached files may contain
+        // stale absolute paths to old releases. This must be cleared before
+        // artisan package:discover runs to prevent path resolution errors.
         $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
-        $this->cmd->remote("mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
+        $this->cmd->remote("rm -rf {$bootstrapCache} && mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
 
         // If GitHub token is provided, write auth.json file (avoids token in command line logs)
         $authJsonPath = "{$this->releasePath}/auth.json";
@@ -487,7 +506,10 @@ class DeployAction
         try {
             $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
             // Use remoteWithOutput so composer output is visible at -v level
-            $this->cmd->remoteWithOutput($composerCommand);
+            $output = $this->cmd->remoteWithOutput($composerCommand);
+
+            // Parse Composer output for warnings
+            $this->parseComposerWarnings($output);
         } finally {
             // Clean up auth.json to avoid leaving credentials on server
             if ($this->config->githubToken) {
@@ -496,6 +518,43 @@ class DeployAction
         }
 
         $this->cmd->success('Composer dependencies installed');
+    }
+
+    /**
+     * Parse Composer output for known warnings
+     */
+    private function parseComposerWarnings(string $output): void
+    {
+        // Check for lock file out of sync warning
+        if (str_contains($output, 'lock file is not up to date')) {
+            $this->addWarning('composer', 'Lock file not up to date with composer.json');
+        }
+
+        // Check for abandoned packages
+        if (preg_match('/Package\s+\S+\s+is abandoned/i', $output)) {
+            $this->addWarning('composer', 'One or more packages are abandoned');
+        }
+    }
+
+    /**
+     * Add a deployment warning
+     */
+    private function addWarning(string $category, string $message): void
+    {
+        $this->warnings[] = [
+            'category' => $category,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Get all deployment warnings
+     *
+     * @return array<array{category: string, message: string}>
+     */
+    public function getWarnings(): array
+    {
+        return $this->warnings;
     }
 
     /**
@@ -765,7 +824,8 @@ class DeployAction
                 $postDeployCommands
             );
 
-            $this->cmd->remote(implode(' && ', $batchedCommands));
+            // Use remoteWithOutput so errors are visible
+            $this->cmd->remoteWithOutput(implode(' && ', $batchedCommands));
 
             $this->cmd->success('Post-deployment commands completed');
         }
@@ -834,10 +894,12 @@ class DeployAction
             releaseName: $this->releaseName,
             duration: $this->duration,
             syncDiff: $this->syncDiff,
+            syncStats: $this->syncStats,
             migrationsRun: $this->migrationsRun,
             url: $url,
             stepTimings: $this->stepTimer->getTimings(),
-            gitInfo: $this->getGitInfo()
+            gitInfo: $this->getGitInfo(),
+            warnings: $this->warnings
         );
     }
 
@@ -910,6 +972,7 @@ class DeployAction
         if (! $this->cmd->fileExists($lockFile)) {
             $this->cmd->warning('⚠️  Warning: composer.lock not found in release!');
             $this->cmd->warning('   Dependencies resolved fresh (slower). Consider tracking composer.lock.');
+            $this->addWarning('composer', 'composer.lock not found - dependencies resolved fresh');
         }
     }
 
@@ -929,7 +992,7 @@ class DeployAction
             environment: $this->config->environment->value,
             deployedBy: $this->deployment->getUser(),
             duration: $this->duration,
-            syncDiff: $this->syncDiff,
+            syncStats: $this->syncStats,
             postDeployCommands: $this->config->postDeployCommands,
             success: $success,
             errorMessage: $errorMessage
