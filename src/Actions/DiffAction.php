@@ -146,12 +146,12 @@ class DiffAction
         $stderr = $process->getErrorOutput();
 
         $this->cmd->debug("Rsync exit code: {$process->getExitCode()}");
-        $this->cmd->debug("Rsync stdout length: ".strlen($output));
+        $this->cmd->debug('Rsync stdout length: '.strlen($output));
         if ($stderr) {
             $this->cmd->debug("Rsync stderr: {$stderr}");
         }
         if ($output) {
-            $this->cmd->debug("Rsync output (first 500 chars): ".substr($output, 0, 500));
+            $this->cmd->debug('Rsync output (first 500 chars): '.substr($output, 0, 500));
         }
 
         return $this->parseDryRunOutput($output);

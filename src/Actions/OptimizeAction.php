@@ -69,24 +69,57 @@ class OptimizeAction extends Action
     }
 
     /**
-     * Restart all configured services (PHP-FPM, Nginx, Supervisor)
-     * Each service is restarted independently so one failure doesn't block others
+     * Restart all configured services (PHP-FPM, Nginx, Supervisor) in a single SSH call.
+     * Uses subshells with || true so one failure doesn't block others.
      */
     private function restartServices(): void
     {
         $this->cmd->info('Restarting services...');
 
-        // Restart PHP-FPM
-        $this->restartPhpFpm();
+        // Detect PHP-FPM version first
+        $phpFpmService = trim($this->cmd->remote(
+            'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
+        ));
 
-        // Reload Nginx
-        $this->restartNginx();
+        // Build batched command for all service restarts
+        // Each command is wrapped in (cmd || true) so failures don't stop the batch
+        $commands = [];
 
-        // Reload Supervisor
-        $this->restartSupervisor();
+        if (! empty($phpFpmService)) {
+            $commands[] = "(sudo systemctl restart {$phpFpmService} && echo 'PHP_OK' || echo 'PHP_FAIL')";
+        }
 
-        // Reset OPcache if available
-        $this->resetOpcache();
+        $commands[] = "(sudo systemctl reload nginx && echo 'NGINX_OK' || echo 'NGINX_FAIL')";
+        $commands[] = "(sudo supervisorctl reread && sudo supervisorctl update && echo 'SUPERVISOR_OK' || echo 'SUPERVISOR_FAIL')";
+        $commands[] = "({$this->config->phpBinary} -r \"if (function_exists('opcache_reset')) { opcache_reset(); echo 'OPCACHE_OK'; } else { echo 'OPCACHE_SKIP'; }\" 2>/dev/null || echo 'OPCACHE_FAIL')";
+
+        // Execute all in single SSH call
+        $output = $this->cmd->remote(implode(' ; ', $commands));
+
+        // Parse results and show status
+        if (! empty($phpFpmService)) {
+            if (str_contains($output, 'PHP_OK')) {
+                $this->cmd->info("  ✓ Restarted {$phpFpmService}");
+            } else {
+                $this->cmd->warning('  ⚠  PHP-FPM restart failed');
+            }
+        }
+
+        if (str_contains($output, 'NGINX_OK')) {
+            $this->cmd->info('  ✓ Reloaded nginx');
+        } else {
+            $this->cmd->warning('  ⚠  Nginx reload failed');
+        }
+
+        if (str_contains($output, 'SUPERVISOR_OK')) {
+            $this->cmd->info('  ✓ Reloaded supervisor');
+        } else {
+            $this->cmd->warning('  ⚠  Supervisor reload failed');
+        }
+
+        if (str_contains($output, 'OPCACHE_OK')) {
+            $this->cmd->info('  ✓ Reset OPcache (CLI)');
+        }
 
         $this->cmd->success('Service restart completed');
     }

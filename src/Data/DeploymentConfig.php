@@ -39,6 +39,8 @@ readonly class DeploymentConfig
         public bool $backupBeforeMigrate = false,
         // Hooks configuration
         public array $hooks = [],
+        // Skip permission fix (useful when server umask is correctly configured)
+        public bool $skipPermissionFix = false,
     ) {}
 
     public static function fromArray(string $environment, array $config): self
@@ -79,6 +81,7 @@ readonly class DeploymentConfig
             maintenanceSecret: $config['maintenanceSecret'] ?? null,
             backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
             hooks: $config['hooks'] ?? [],
+            skipPermissionFix: $config['skipPermissionFix'] ?? false,
         );
     }
 

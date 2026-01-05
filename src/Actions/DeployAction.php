@@ -140,6 +140,7 @@ class DeployAction
             $this->fixSharedLogPermissions();
 
             // 10. Install composer dependencies
+            // Note: vendor already exists from hardlink copy in syncFiles()
             $this->runHook('before:composer');
             $this->stepTimer->start('composer:install');
             $this->installComposerDependencies();
@@ -186,7 +187,7 @@ class DeployAction
             // 18. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 19. Run post-deployment hooks (legacy)
+            // 19. Run post-deployment hooks
             $this->stepTimer->start('hooks:post-deploy');
             $this->runPostDeploymentHooks();
             $this->stepTimer->end('hooks:post-deploy');
@@ -256,18 +257,17 @@ class DeployAction
 
     /**
      * Generate release name and create release directory
+     * Note: Directory is created in generateReleaseName() for performance
      */
     private function createRelease(): void
     {
         $this->cmd->task('release:create');
 
+        // generateReleaseName() also creates the release directory in the same SSH call
         $this->releaseName = $this->deployment->generateReleaseName();
         $this->deployment->setCurrentReleaseName($this->releaseName);
 
         $this->releasePath = $this->deployment->getReleasePath($this->releaseName);
-        $escapedPath = CommandService::escapePath($this->releasePath);
-
-        $this->cmd->remote("mkdir -p {$escapedPath}");
 
         $this->cmd->success("Release {$this->releaseName} created");
     }
@@ -327,6 +327,10 @@ class DeployAction
         $this->cmd->task('files:sync');
         $this->cmd->info('Syncing files to server...');
 
+        // Copy previous release with hardlinks before rsync
+        // This dramatically speeds up rsync - it only needs to update changed files
+        $this->copyPreviousReleaseWithHardlinks();
+
         // Pass sync diff and output for progress bar
         $this->rsync->setSyncDiff($this->syncDiff);
         $this->rsync->setOutput($this->cmd->getOutput());
@@ -335,6 +339,41 @@ class DeployAction
         $this->rsync->sync($this->releasePath);
 
         $this->cmd->success('Files synced successfully');
+    }
+
+    /**
+     * Copy previous release to new release directory using hardlinks.
+     * This makes rsync much faster as it only needs to update changed files.
+     */
+    private function copyPreviousReleaseWithHardlinks(): void
+    {
+        $previousRelease = $this->deployment->getCurrentRelease();
+        if (! $previousRelease) {
+            $this->cmd->debug('No previous release found, skipping hardlink copy');
+
+            return;
+        }
+
+        $previousReleasePath = $this->deployment->getReleasePath($previousRelease);
+
+        // Check if previous release exists
+        if (! $this->cmd->directoryExists($previousReleasePath)) {
+            $this->cmd->debug('Previous release directory does not exist, skipping hardlink copy');
+
+            return;
+        }
+
+        $this->cmd->info('Copying previous release with hardlinks...');
+
+        $escapedPrevious = CommandService::escapePath($previousReleasePath);
+        $escapedNew = CommandService::escapePath($this->releasePath);
+
+        // Remove the empty new release directory first, then copy with hardlinks
+        // cp -al creates hardlinks for files (instant, no disk space used)
+        // The trailing /. copies contents, not the directory itself
+        $this->cmd->remote("rm -rf {$escapedNew} && cp -al {$escapedPrevious} {$escapedNew}");
+
+        $this->cmd->success('Previous release copied with hardlinks');
     }
 
     /**
@@ -480,10 +519,18 @@ class DeployAction
 
     /**
      * Fix module permissions
+     * Can be skipped via skipPermissionFix config when server umask is correctly configured
      */
     private function fixModulePermissions(): void
     {
         $this->cmd->task('permissions:modules');
+
+        // Skip if configured (useful when server umask is correctly set to 022)
+        if ($this->config->skipPermissionFix) {
+            $this->cmd->info('Skipping permission fix (skipPermissionFix is enabled)');
+
+            return;
+        }
 
         $escapedPath = CommandService::escapePath($this->releasePath);
         $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
@@ -693,6 +740,7 @@ class DeployAction
 
     /**
      * Run post-deployment hooks if they exist
+     * Batches all artisan commands into a single SSH call for performance.
      */
     private function runPostDeploymentHooks(): void
     {
@@ -704,10 +752,20 @@ class DeployAction
         if (! empty($postDeployCommands)) {
             $this->cmd->info('Running post-deployment commands...');
 
+            // Show what will be run
             foreach ($postDeployCommands as $command) {
                 $this->cmd->info("  → artisan {$command}");
-                $this->cmd->artisan($command, $this->releasePath);
             }
+
+            // Batch all artisan commands into a single SSH call
+            $phpBinary = $this->config->phpBinary;
+            $artisanPath = "{$this->releasePath}/artisan";
+            $batchedCommands = array_map(
+                fn ($cmd) => "{$phpBinary} {$artisanPath} {$cmd}",
+                $postDeployCommands
+            );
+
+            $this->cmd->remote(implode(' && ', $batchedCommands));
 
             $this->cmd->success('Post-deployment commands completed');
         }
