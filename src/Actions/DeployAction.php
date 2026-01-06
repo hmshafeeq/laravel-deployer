@@ -801,31 +801,37 @@ class DeployAction
     }
 
     /**
-     * Run post-deployment hooks if they exist
-     * Batches all artisan commands into a single SSH call for performance.
+     * Run post-deployment hooks if they exist.
+     * Supports both artisan shortcuts (e.g., "config:cache") and full shell commands (e.g., "npm run build").
+     * Batches all commands into a single SSH call for performance.
      */
     private function runPostDeploymentHooks(): void
     {
         $this->cmd->task('hooks:post-deploy');
 
-        // Run configured post-deployment artisan commands
+        // Run configured post-deployment commands
         $postDeployCommands = $this->config->postDeployCommands;
 
         if (! empty($postDeployCommands)) {
             $this->cmd->info('Running post-deployment commands...');
 
-            // Show what will be run
-            foreach ($postDeployCommands as $command) {
-                $this->cmd->info("  → artisan {$command}");
-            }
-
-            // Batch all artisan commands into a single SSH call
             $phpBinary = $this->config->phpBinary;
             $artisanPath = "{$this->releasePath}/artisan";
-            $batchedCommands = array_map(
-                fn ($cmd) => "{$phpBinary} {$artisanPath} {$cmd}",
-                $postDeployCommands
-            );
+
+            // Build commands - detect if already full command or artisan shortcut
+            $batchedCommands = [];
+            foreach ($postDeployCommands as $command) {
+                if ($this->isArtisanShortcut($command)) {
+                    // Artisan shortcut (e.g., "config:cache") - wrap with php artisan
+                    $fullCommand = "{$phpBinary} {$artisanPath} {$command}";
+                    $this->cmd->info("  → artisan {$command}");
+                } else {
+                    // Full command - run as-is (e.g., "php artisan migrate", "npm run build")
+                    $fullCommand = "cd {$this->releasePath} && {$command}";
+                    $this->cmd->info("  → {$command}");
+                }
+                $batchedCommands[] = $fullCommand;
+            }
 
             // Use remoteWithOutput so errors are visible
             $this->cmd->remoteWithOutput(implode(' && ', $batchedCommands));
@@ -1003,5 +1009,22 @@ class DeployAction
 
         $this->receiptService->save($receipt);
         $this->cmd->success('Deployment receipt saved');
+    }
+
+    /**
+     * Check if command is an artisan shortcut (e.g., "config:cache")
+     * vs a full shell command (e.g., "php artisan config:cache", "npm run build")
+     */
+    private function isArtisanShortcut(string $command): bool
+    {
+        // If command contains spaces, it's likely a full command
+        // Artisan shortcuts are single words like "config:cache", "route:cache"
+        if (str_contains($command, ' ')) {
+            return false;
+        }
+
+        // Artisan commands typically contain a colon (namespace:command)
+        // or are simple commands like "migrate", "optimize"
+        return true;
     }
 }
