@@ -423,7 +423,7 @@ class DeployAction
     /**
      * Fix permissions on shared log files
      *
-     * Log files created by the web server (www-data) may have restrictive permissions
+     * Log files created by the web server may have restrictive permissions
      * that prevent proper logging during deployment or by new worker processes.
      */
     private function fixSharedLogPermissions(): void
@@ -432,11 +432,13 @@ class DeployAction
         $logsPath = "{$sharedPath}/storage/logs";
         $escapedLogsPath = CommandService::escapePath($logsPath);
 
+        $webGroup = $this->cmd->getWebServerGroup();
+
         // Fix permissions on existing log files (if any exist)
         // Use find with -exec to handle the case where no .log files exist
-        // Set group to www-data and permissions to 664 so both deploy user and web server can write
+        // Set group to web server group and permissions to 664 so both deploy user and web server can write
         $this->cmd->remote(
-            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp www-data {} + -exec chmod 664 {} + 2>/dev/null || true"
+            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp {$webGroup} {} + -exec chmod 664 {} + 2>/dev/null || true"
         );
     }
 
@@ -452,13 +454,14 @@ class DeployAction
             "{$this->releasePath}/storage",
         ];
 
+        $webGroup = $this->cmd->getWebServerGroup();
         $commands = [];
 
         foreach ($writableDirs as $dir) {
             $escapedDir = CommandService::escapePath($dir);
 
             // Skip symlinks - shared directories (like storage) are already properly configured
-            // and may contain files owned by www-data that the deploy user can't chmod
+            // and may contain files owned by the web server that the deploy user can't chmod
             if ($this->cmd->symlinkExists($dir)) {
                 $this->cmd->info("  Skipping {$dir} (symlink to shared)");
 
@@ -466,9 +469,9 @@ class DeployAction
             }
 
             // Create directory if it doesn't exist (e.g., bootstrap/cache is often gitignored)
-            // Set group to www-data and permissions to 775 so web server can write
+            // Set group to web server group and permissions to 775 so web server can write
             $commands[] = "mkdir -p {$escapedDir}";
-            $commands[] = "chgrp -R www-data {$escapedDir}";
+            $commands[] = "chgrp -R {$webGroup} {$escapedDir}";
             $commands[] = "chmod -R 775 {$escapedDir}";
         }
 

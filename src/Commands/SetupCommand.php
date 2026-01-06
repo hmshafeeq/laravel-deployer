@@ -39,7 +39,7 @@ class SetupCommand extends Command
 
     private bool $cleanupOnly = false;
 
-    private string $backupPath = '/var/www/backups';
+    private ?string $backupPath = null;
 
     private array $dbCredentials = [];
 
@@ -237,6 +237,10 @@ GITIGNORE;
             // Load configuration
             $this->config = ConfigService::load($environment, base_path(), $this->output);
             $this->cmd = new CommandService($this->config, $this->output);
+
+            // Set backup path based on deploy path (for shared hosting compatibility)
+            $deployParent = dirname($this->config->deployPath);
+            $this->backupPath = "{$deployParent}/backups";
 
             // SAFETY: Never allow migrate command to run in local mode
             if ($this->config->isLocal) {
@@ -578,13 +582,13 @@ GITIGNORE;
         $backupFile = "{$domain}-files-{$this->timestamp}.tar.gz";
         $backupFullPath = "{$this->backupPath}/{$backupFile}";
 
+        // Create backup directory
         $this->components->task('Creating backup directory', function () {
             if ($this->dryRun) {
                 return true;
             }
 
-            $deployUser = $this->config->remoteUser;
-            $this->cmd->remote("sudo mkdir -p {$this->backupPath} && sudo chown {$deployUser}:{$deployUser} {$this->backupPath}");
+            $this->cmd->remote("mkdir -p {$this->backupPath}");
 
             return true;
         });
@@ -597,7 +601,8 @@ GITIGNORE;
             $basePath = dirname($sitePath);
             $excludes = "--exclude='{$domain}/vendor' --exclude='{$domain}/node_modules' --exclude='{$domain}/.git' --exclude='{$domain}/storage/logs/*.log'";
 
-            $this->cmd->remote("cd {$basePath} && sudo tar -czf {$backupFullPath} {$excludes} {$domain}");
+            // Use sudo if available for reading all files, but don't require it (shared hosting)
+            $this->cmd->runWithSudo("cd {$basePath} && tar -czf {$backupFullPath} {$excludes} {$domain}", requireSudo: false);
 
             return $this->cmd->fileExists($backupFullPath);
         });
@@ -682,7 +687,7 @@ GITIGNORE;
             ];
 
             foreach ($dirs as $dir) {
-                $this->cmd->remote("sudo mkdir -p {$dir}");
+                $this->cmd->remote("mkdir -p {$dir}");
             }
 
             return true;
@@ -696,10 +701,11 @@ GITIGNORE;
             $items = ['app', 'bootstrap', 'config', 'database', 'lang', 'public', 'resources', 'routes', 'vendor', 'artisan', 'composer.json', 'composer.lock'];
 
             foreach ($items as $item) {
-                $this->cmd->remote("if [ -e '{$sitePath}/{$item}' ]; then sudo mv '{$sitePath}/{$item}' '{$releasePath}/'; fi");
+                $this->cmd->remote("if [ -e '{$sitePath}/{$item}' ]; then mv '{$sitePath}/{$item}' '{$releasePath}/'; fi");
             }
 
-            $this->cmd->remote("sudo mv {$sitePath}/*.php {$releasePath}/ 2>/dev/null || true");
+            // Move any PHP files in root
+            $this->cmd->remote("mv {$sitePath}/*.php {$releasePath}/ 2>/dev/null || true");
 
             return true;
         });
@@ -709,14 +715,19 @@ GITIGNORE;
                 return true;
             }
 
-            $this->cmd->remote("if [ -d '{$releasePath}/storage' ]; then sudo cp -an '{$releasePath}/storage/'* '{$sitePath}/shared/storage/' 2>/dev/null || true; fi");
-            $this->cmd->remote("sudo rm -rf '{$releasePath}/storage'");
+            // Copy storage to shared
+            $this->cmd->remote("if [ -d '{$releasePath}/storage' ]; then cp -an '{$releasePath}/storage/'* '{$sitePath}/shared/storage/' 2>/dev/null || true; fi");
+            $this->cmd->remote("rm -rf '{$releasePath}/storage'");
 
-            $this->cmd->remote("if [ -f '{$sitePath}/.env' ]; then sudo cp '{$sitePath}/.env' '{$sitePath}/shared/.env'; fi");
-            $this->cmd->remote("if [ -f '{$releasePath}/.env' ]; then sudo mv '{$releasePath}/.env' '{$sitePath}/shared/.env'; fi");
+            // Copy .env from site root to shared (primary location for traditional deployments)
+            $this->cmd->remote("if [ -f '{$sitePath}/.env' ]; then cp '{$sitePath}/.env' '{$sitePath}/shared/.env'; fi");
 
-            $this->cmd->remote("sudo ln -sfn '{$sitePath}/shared/storage' '{$releasePath}/storage'");
-            $this->cmd->remote("sudo ln -sfn '{$sitePath}/shared/.env' '{$releasePath}/.env'");
+            // Also check release path as fallback
+            $this->cmd->remote("if [ -f '{$releasePath}/.env' ]; then mv '{$releasePath}/.env' '{$sitePath}/shared/.env'; fi");
+
+            // Create symlinks
+            $this->cmd->remote("ln -sfn '{$sitePath}/shared/storage' '{$releasePath}/storage'");
+            $this->cmd->remote("ln -sfn '{$sitePath}/shared/.env' '{$releasePath}/.env'");
 
             return true;
         });
@@ -726,7 +737,7 @@ GITIGNORE;
                 return true;
             }
 
-            $this->cmd->remote("sudo ln -sfn '{$releasePath}' '{$sitePath}/current'");
+            $this->cmd->remote("ln -sfn '{$releasePath}' '{$sitePath}/current'");
 
             return true;
         });
@@ -742,17 +753,33 @@ GITIGNORE;
 
         $sitePath = $this->config->deployPath;
         $deployUser = $this->config->remoteUser;
-        $webUser = 'www-data';
 
-        $this->components->task('Setting ownership and permissions', function () use ($sitePath, $deployUser, $webUser) {
+        $this->components->task('Setting permissions', function () use ($sitePath, $deployUser) {
             if ($this->dryRun) {
                 return true;
             }
 
-            $this->cmd->remote("sudo chown -R {$deployUser}:{$webUser} {$sitePath}");
-            $this->cmd->remote("sudo chmod -R 775 {$sitePath}/shared/storage");
-            $this->cmd->remote("sudo chown -R {$webUser}:{$webUser} {$sitePath}/shared/storage");
-            $this->cmd->remote("sudo chown {$deployUser}:{$webUser} {$sitePath}/.dep");
+            // Check if sudo is available
+            $hasSudo = $this->cmd->hasSudo();
+
+            if ($hasSudo) {
+                // VPS/dedicated server with sudo: set proper ownership and permissions
+                $webUser = 'www-data';
+
+                // Set ownership
+                $this->cmd->runWithSudo("chown -R {$deployUser}:{$webUser} {$sitePath}");
+
+                // Storage writable by web server
+                $this->cmd->runWithSudo("chmod -R 775 {$sitePath}/shared/storage");
+                $this->cmd->runWithSudo("chown -R {$webUser}:{$webUser} {$sitePath}/shared/storage");
+
+                // .dep directory
+                $this->cmd->runWithSudo("chown {$deployUser}:{$webUser} {$sitePath}/.dep");
+            } else {
+                // Shared hosting without sudo: set permissions only (ownership managed by hosting)
+                $this->cmd->remote("chmod -R 775 {$sitePath}/shared/storage 2>/dev/null || chmod -R 755 {$sitePath}/shared/storage");
+                $this->cmd->remote("chmod 755 {$sitePath}/.dep 2>/dev/null || true");
+            }
 
             return true;
         });
@@ -777,7 +804,7 @@ GITIGNORE;
             $excludes = implode(' ', array_map(fn ($item) => "-not -name '{$item}'", $keepItems));
 
             $this->cmd->remote(
-                "cd {$sitePath} && find . -maxdepth 1 {$excludes} -not -name '.' -exec sudo rm -rf {} \\; 2>/dev/null || true"
+                "cd {$sitePath} && find . -maxdepth 1 {$excludes} -not -name '.' -exec rm -rf {} \\; 2>/dev/null || true"
             );
 
             return true;

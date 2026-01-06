@@ -27,6 +27,10 @@ class CommandService implements CommandExecutor
 
     private ?float $sshConnectionTime = null;
 
+    private ?bool $hasSudo = null;
+
+    private ?string $webServerGroup = null;
+
     public function __construct(
         private DeploymentConfig $config,
         private OutputInterface $output,
@@ -616,6 +620,11 @@ class CommandService implements CommandExecutor
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
+        // Set custom SSH port if configured
+        if ($this->config->port) {
+            $this->ssh->usePort($this->config->port);
+        }
+
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
         if (! $this->config->strictHostKeyChecking) {
@@ -665,6 +674,107 @@ class CommandService implements CommandExecutor
             return true;
         } catch (\Exception $e) {
             return false;
+        }
+    }
+
+    /**
+     * Check if sudo is available and the user has sudo privileges.
+     * Caches the result to avoid repeated checks.
+     */
+    public function hasSudo(): bool
+    {
+        // Return cached result if already checked
+        if ($this->hasSudo !== null) {
+            return $this->hasSudo;
+        }
+
+        // Local environments typically have sudo, but we check to be sure
+        if ($this->config->isLocal) {
+            $this->hasSudo = $this->test('command -v sudo >/dev/null && sudo -n true 2>/dev/null');
+
+            return $this->hasSudo;
+        }
+
+        // For remote: check if sudo command exists and user has sudo privileges
+        // Using 'sudo -n true' checks if user can run sudo without password prompt
+        // The -n flag means "non-interactive" so it won't hang waiting for password
+        try {
+            $this->hasSudo = $this->test('command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null');
+        } catch (\Exception $e) {
+            $this->hasSudo = false;
+        }
+
+        return $this->hasSudo;
+    }
+
+    /**
+     * Execute a command with sudo if available, otherwise without sudo.
+     * Automatically detects sudo availability and falls back gracefully.
+     *
+     * @param  string  $command  The command to run (without sudo prefix)
+     * @param  bool  $requireSudo  If true, throws exception when sudo is needed but unavailable
+     * @return string Command output
+     *
+     * @throws \RuntimeException If sudo is required but not available
+     */
+    public function runWithSudo(string $command, bool $requireSudo = false): string
+    {
+        if ($this->hasSudo()) {
+            return $this->remote("sudo {$command}");
+        }
+
+        if ($requireSudo) {
+            throw new \RuntimeException(
+                "This operation requires sudo privileges, but sudo is not available.\n".
+                "Please configure sudo access for user '{$this->config->remoteUser}' or run the operation manually."
+            );
+        }
+
+        // Fallback: try without sudo (works on shared hosting)
+        return $this->remote($command);
+    }
+
+    /**
+     * Get the appropriate web server group for the current environment.
+     * Returns www-data on VPS/dedicated servers, or the current user's group on shared hosting.
+     * Caches the result to avoid repeated checks.
+     */
+    public function getWebServerGroup(): string
+    {
+        // Return cached result if already determined
+        if ($this->webServerGroup !== null) {
+            return $this->webServerGroup;
+        }
+
+        try {
+            // First, check if www-data group exists (common on VPS/dedicated servers)
+            $wwwDataExists = $this->test('getent group www-data >/dev/null 2>&1');
+
+            if ($wwwDataExists) {
+                $this->webServerGroup = 'www-data';
+
+                return $this->webServerGroup;
+            }
+
+            // Fallback: use the current user's primary group (shared hosting)
+            // This is typically the same group that owns the files
+            $currentGroup = trim($this->remote('id -gn'));
+
+            if (! empty($currentGroup)) {
+                $this->webServerGroup = $currentGroup;
+
+                return $this->webServerGroup;
+            }
+
+            // Last resort: fall back to www-data (may fail, but maintains backward compatibility)
+            $this->webServerGroup = 'www-data';
+
+            return $this->webServerGroup;
+        } catch (\Exception $e) {
+            // If all detection fails, use www-data as default
+            $this->webServerGroup = 'www-data';
+
+            return $this->webServerGroup;
         }
     }
 

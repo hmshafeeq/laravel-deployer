@@ -91,7 +91,9 @@ If your site already uses `releases/` and `current` symlinks, it's already migra
 ### Server Requirements
 
 1. **SSH key configured** on the server
-2. **sudo access** for the SSH user (passwordless sudo recommended)
+2. **sudo access** (optional, but recommended for VPS/dedicated servers)
+   - **VPS/Dedicated Servers**: Passwordless sudo recommended for full permissions control
+   - **Shared Hosting**: Works without sudo (permissions managed by hosting provider)
 
 ### Generate SSH Key (if needed)
 
@@ -182,6 +184,7 @@ ssh-copy-id ubuntu@your-server.com
 - Checks if already migrated
 - Detects Laravel installation
 - Auto-reads database credentials from `.env`
+- **Auto-detects sudo availability** (adapts behavior for shared hosting vs VPS)
 
 ### Step 2: Backup Project Files
 - Creates `/var/www/backups/` directory
@@ -205,8 +208,9 @@ ssh-copy-id ubuntu@your-server.com
 - Creates `current` symlink
 
 ### Step 5: Set Permissions
-- Sets ownership for deploy and web users
-- Makes storage writable by web server
+- **With sudo (VPS/Dedicated)**: Sets ownership for deploy and web users, configures proper permissions
+- **Without sudo (Shared Hosting)**: Sets basic permissions (ownership managed by hosting provider)
+- Automatically adapts based on sudo availability
 
 ## Release Naming
 
@@ -330,6 +334,22 @@ ssh ubuntu@server.com "grep DB_ /var/www/example.com/.env"
 ssh ubuntu@server.com "ls -la /var/www/example.com/"
 ssh ubuntu@server.com "ls -la /var/www/example.com/current/"
 ```
+
+### Shared Hosting Specific Issues
+
+**Backup Path Permissions**
+- Backups are created in `{parent-of-deploy-path}/backups/` (e.g., `/home/username/domains/example.com/backups/`)
+- No sudo required - uses regular user permissions
+
+**Permission Warnings**
+- On shared hosting, you may see permission warnings during migration
+- This is normal - the hosting provider manages file ownership automatically
+- The migration will complete successfully without sudo
+
+**Nginx/Apache Configuration**
+- On shared hosting, update the document root through your hosting control panel (cPanel, Plesk, etc.)
+- Point it to: `{deploy-path}/current/public`
+- Example: `/home/username/domains/example.com/public_html/current/public`
 
 ## Script Location
 

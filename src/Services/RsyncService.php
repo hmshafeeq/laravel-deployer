@@ -234,7 +234,12 @@ class RsyncService
 
         // Add SSH options only for remote deployments
         if (! $this->config->isLocal) {
-            $parts[] = "-e '".Commands::RSYNC_SSH_OPTIONS."'";
+            $sshOptions = Commands::RSYNC_SSH_OPTIONS;
+            // Add custom port if configured
+            if ($this->config->port) {
+                $sshOptions .= " -p {$this->config->port}";
+            }
+            $parts[] = "-e '{$sshOptions}'";
         }
 
         // Add rsync options
