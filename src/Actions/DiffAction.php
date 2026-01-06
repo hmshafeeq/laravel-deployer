@@ -93,7 +93,7 @@ class DiffAction
     }
 
     /**
-     * Calculate sync differences using rsync dry-run
+     * Calculate sync differences using rsync dry-run (local temp comparison)
      */
     private function calculateDiff(): SyncDiff
     {
@@ -120,11 +120,78 @@ class DiffAction
     }
 
     /**
-     * Build rsync dry-run command
+     * Calculate sync differences against a remote destination
+     */
+    public function calculateRemoteDiff(string $remotePath): SyncDiff
+    {
+        $this->cmd->debug('Calculating remote sync differences...');
+
+        $source = rtrim($this->sourcePath, '/').'/';
+
+        // Build destination path for remote
+        if ($this->config->isLocal) {
+            $destination = rtrim($remotePath, '/').'/';
+        } else {
+            $destination = "{$this->config->remoteUser}@{$this->config->hostname}:{$remotePath}/";
+        }
+
+        $command = $this->buildRemoteDryRunCommand($source, $destination);
+        $this->cmd->debug("Remote dry-run command: {$command}");
+
+        $process = Process::fromShellCommandline($command, $this->sourcePath);
+        $process->setTimeout(300);
+        $process->run();
+
+        $output = $process->getOutput();
+        $stderr = $process->getErrorOutput();
+
+        $this->cmd->debug("Rsync exit code: {$process->getExitCode()}");
+        $this->cmd->debug('Rsync stdout length: '.strlen($output));
+        if ($stderr) {
+            $this->cmd->debug("Rsync stderr: {$stderr}");
+        }
+        if ($output) {
+            $this->cmd->debug('Rsync output (first 500 chars): '.substr($output, 0, 500));
+        }
+
+        // If rsync failed with non-zero exit (and not just grep returning 1 for no matches),
+        // log a warning - the || echo '' at the end means exit code is usually 0
+        if ($process->getExitCode() !== 0 && empty($output) && ! empty($stderr)) {
+            $this->cmd->warning("Remote diff failed: {$stderr}");
+        }
+
+        return $this->parseDryRunOutput($output);
+    }
+
+    /**
+     * Show sync differences against a remote destination
+     */
+    public function showRemoteDiff(string $remotePath): SyncDiff
+    {
+        $this->cmd->section('SYNC DIFFERENCE - FILES TO DEPLOY');
+
+        $diff = $this->calculateRemoteDiff($remotePath);
+
+        if ($diff->isEmpty()) {
+            $this->cmd->info('  ✨ No changes detected - everything is already in sync!');
+            $this->cmd->newLine();
+
+            return $diff;
+        }
+
+        $this->displayStatistics($diff);
+        $this->displayChanges($diff);
+
+        return $diff;
+    }
+
+    /**
+     * Build rsync dry-run command (local comparison)
      */
     private function buildDryRunCommand(string $source, string $destination): string
     {
-        $parts = ['rsync', '-avn'];
+        // Use -c (checksum) to match actual sync behavior - compare by content, not timestamp
+        $parts = ['rsync', '-avnc'];
 
         foreach ($this->config->rsyncIncludes as $include) {
             $parts[] = "--include='{$include}'";
@@ -138,11 +205,59 @@ class DiffAction
         $parts[] = "'{$source}/'";
         $parts[] = "'{$destination}/'";
 
-        return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |>f|>d|cd)' || echo ''";
+        // Filter rsync itemize-changes output:
+        // <f = file being sent (upload), cd = new directory, deleting = file removal
+        return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |<f|cd)' || echo ''";
+    }
+
+    /**
+     * Build rsync dry-run command for remote comparison
+     */
+    private function buildRemoteDryRunCommand(string $source, string $destination): string
+    {
+        // Use -c (checksum) to match actual sync behavior - compare by content, not timestamp
+        $parts = ['rsync', '-avnc', '--itemize-changes'];
+
+        // Add SSH options for remote
+        if (! $this->config->isLocal) {
+            $sshOptions = '-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10';
+            if ($this->config->identityFile) {
+                // Expand ~ to home directory for identity file
+                $identityFile = $this->config->identityFile;
+                if (str_starts_with($identityFile, '~')) {
+                    $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
+                    $identityFile = str_replace('~', $home, $identityFile);
+                }
+                $sshOptions .= " -i {$identityFile}";
+            }
+            $parts[] = "-e 'ssh {$sshOptions}'";
+        }
+
+        foreach ($this->config->rsyncIncludes as $include) {
+            $parts[] = "--include='{$include}'";
+        }
+
+        foreach ($this->config->rsyncExcludes as $exclude) {
+            $parts[] = "--exclude='{$exclude}'";
+        }
+
+        $parts[] = '--delete';
+        $parts[] = "'{$source}'";
+        $parts[] = "'{$destination}'";
+
+        // Filter rsync itemize-changes output:
+        // <f = file being sent (upload), cd = new directory, deleting = file removal
+        return implode(' ', $parts)." 2>&1 | grep -E '^(deleting |<f|cd)' || echo ''";
     }
 
     /**
      * Parse rsync dry-run output
+     *
+     * Rsync itemize-changes format:
+     * - <f++++++++ = new file being uploaded
+     * - <f.st..... = modified file being uploaded (size/time change)
+     * - cd++++++++ = new directory being created
+     * - deleting X = file/directory being deleted
      */
     private function parseDryRunOutput(string $output): SyncDiff
     {
@@ -163,9 +278,11 @@ class DiffAction
                 if (! str_ends_with($file, '/')) {
                     $deletedFiles[] = $file;
                 }
-            } elseif (preg_match('/^>f\+{9}\s+(.+)$/', $line, $matches)) {
+            } elseif (preg_match('/^<f\+{7,}\s+(.+)$/', $line, $matches)) {
+                // New file: <f++++++++ filename (7+ plus signs)
                 $newFiles[] = $matches[1];
-            } elseif (preg_match('/^>f\./', $line)) {
+            } elseif (preg_match('/^<f[^+]/', $line)) {
+                // Modified file: <f.st..... or similar (not all plus signs)
                 $parts = preg_split('/\s+/', $line, 2);
                 if (isset($parts[1])) {
                     $modifiedFiles[] = $parts[1];

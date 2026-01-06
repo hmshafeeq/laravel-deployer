@@ -97,14 +97,27 @@ Changes to the deployment recipe affect all projects immediately (symlinked). Te
 
 ### Commands
 ```bash
-php artisan deploy staging          # Deploy to staging
-php artisan deploy production       # Deploy to production
-php artisan deploy:rollback         # Rollback release
-php artisan deploy:key-generate     # Generate SSH keys
-php artisan deployer:migrate staging    # Migrate existing site to deployer structure
-php artisan deployer:clear          # Clear caches on server
-php artisan laravel-deployer:install    # Install/regenerate config
-php artisan laravel-deployer:provision  # Provision new server
+# Main deployment
+php artisan deployer staging              # Deploy to staging
+php artisan deployer production           # Deploy to production
+
+# Release management
+php artisan deployer:release rollback staging   # Rollback to previous release
+
+# Server management
+php artisan deployer:server clear staging       # Clear caches on server
+php artisan deployer:server provision           # Provision new server
+
+# Setup and initialization
+php artisan deployer:setup install              # Install/regenerate config
+php artisan deployer:setup init staging         # Migrate existing site to deployer structure
+php artisan deployer:setup keygen               # Generate SSH keys
+
+# Database operations
+php artisan deployer:db backup staging          # Backup database on server
+php artisan deployer:db download staging        # Download backup from server
+php artisan deployer:db restore                 # Restore backup locally
+php artisan deployer:db list                    # List available local backups
 ```
 
 ### File Locations
@@ -127,7 +140,7 @@ vendor/bin/pest
 
 # Test deploy command in each project
 cd /path/to/project
-php artisan deploy staging --dry-run
+php artisan deployer staging --dry-run
 ```
 
 ---

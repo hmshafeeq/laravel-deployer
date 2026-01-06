@@ -205,7 +205,7 @@
     "postDeploy": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Artisan commands to run after deployment (e.g., 'config:cache', 'route:cache')"
+      "description": "Commands to run after deployment. Supports artisan shortcuts (e.g., 'config:cache') or full shell commands (e.g., 'php artisan migrate', 'npm run build')"
     },
     "hooks": {
       "type": "object",

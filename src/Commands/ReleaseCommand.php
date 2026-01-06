@@ -9,14 +9,26 @@ use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 
-class RollbackCommand extends Command
+class ReleaseCommand extends Command
 {
-    protected $signature = 'deploy:rollback {environment : The deployment environment}
+    protected $signature = 'deployer:release
+                            {action : Action to perform (rollback)}
+                            {environment : The deployment environment}
                             {--no-confirm : Skip confirmation prompt}';
 
-    protected $description = 'Rollback to the previous release';
+    protected $description = 'Release management: rollback to previous release';
 
     public function handle(): int
+    {
+        $action = $this->argument('action');
+
+        return match ($action) {
+            'rollback' => $this->handleRollback(),
+            default => $this->showUsage(),
+        };
+    }
+
+    protected function handleRollback(): int
     {
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
@@ -112,5 +124,18 @@ class RollbackCommand extends Command
         $this->newLine();
 
         return $this->confirm('Do you want to rollback to this release?', false);
+    }
+
+    protected function showUsage(): int
+    {
+        $this->error('Invalid action. Available actions:');
+        $this->line('');
+        $this->line('  php artisan deployer:release rollback {env}   Rollback to previous release');
+        $this->line('');
+        $this->line('Examples:');
+        $this->line('  php artisan deployer:release rollback staging');
+        $this->line('  php artisan deployer:release rollback production --no-confirm');
+
+        return self::FAILURE;
     }
 }

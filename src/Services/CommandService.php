@@ -78,12 +78,13 @@ class CommandService implements CommandExecutor
         try {
             $process = $this->ssh->execute($command);
             $output = trim($process->getOutput());
+            $errorOutput = trim($process->getErrorOutput());
 
             if (! $process->isSuccessful()) {
-                throw SSHConnectionException::commandFailed(
-                    $command,
-                    $process->getErrorOutput()
-                );
+                // Include both stdout and stderr for better error context
+                // Artisan commands often output errors to stdout, not stderr
+                $errorContext = $errorOutput ?: $output;
+                throw SSHConnectionException::commandFailed($command, $errorContext);
             }
 
             $this->logCommandOutput($output);

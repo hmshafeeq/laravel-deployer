@@ -21,6 +21,7 @@ readonly class DeploymentConfig
         public ?string $identityFile = null,
         public ?int $port = null,
         public bool $showDiff = true,
+        public bool $showPreview = true,
         public bool $confirmChanges = true,
         public bool $showUploadProgress = true,
         public int $diffDisplayLimit = 20,
@@ -39,6 +40,8 @@ readonly class DeploymentConfig
         public bool $backupBeforeMigrate = false,
         // Hooks configuration
         public array $hooks = [],
+        // Skip permission fix (useful when server umask is correctly configured)
+        public bool $skipPermissionFix = false,
     ) {}
 
     public static function fromArray(string $environment, array $config): self
@@ -65,6 +68,7 @@ readonly class DeploymentConfig
             identityFile: $config['identityFile'] ?? null,
             port: $config['port'] ?? null,
             showDiff: $display['showDiff'] ?? $config['showDiff'] ?? true,
+            showPreview: $display['showPreview'] ?? $config['showPreview'] ?? true,
             confirmChanges: $display['confirmChanges'] ?? $config['confirmChanges'] ?? true,
             showUploadProgress: $display['showUploadProgress'] ?? $config['showUploadProgress'] ?? true,
             diffDisplayLimit: $display['diffDisplayLimit'] ?? $config['diffDisplayLimit'] ?? 20,
@@ -79,6 +83,7 @@ readonly class DeploymentConfig
             maintenanceSecret: $config['maintenanceSecret'] ?? null,
             backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
             hooks: $config['hooks'] ?? [],
+            skipPermissionFix: $config['skipPermissionFix'] ?? false,
         );
     }
 

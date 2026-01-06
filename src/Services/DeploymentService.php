@@ -18,6 +18,10 @@ class DeploymentService
 
     private string $currentReleaseName = '';
 
+    private ?string $cachedCurrentRelease = null;
+
+    private bool $currentReleaseFetched = false;
+
     public function __construct(
         private DeploymentConfig $config,
         private CommandService $cmd,
@@ -31,23 +35,30 @@ class DeploymentService
     // ============================================================
 
     /**
-     * Generate a unique release name (format: YYYYMM.N)
+     * Generate a unique release name (format: YYYYMM.N) and create the release directory.
+     * Batches all SSH operations into a single call for performance.
      */
     public function generateReleaseName(): string
     {
         $yearMonth = date('Ym');
         $counterDir = "{$this->config->deployPath}/".Paths::COUNTER_DIR;
         $counterFile = "{$counterDir}/{$yearMonth}.txt";
+        $releasesDir = "{$this->config->deployPath}/".Paths::RELEASES_DIR;
 
-        // Ensure the folder exists
-        $this->cmd->remote("mkdir -p {$counterDir}");
-
-        // Read counter or start from 0
-        $count = $this->cmd->remote("if [ -f {$counterFile} ]; then cat {$counterFile}; else echo 0; fi");
-        $count = (int) $count + 1;
-
-        // Save updated counter
-        $this->cmd->remote("echo {$count} > {$counterFile}");
+        // Batch all operations into a single SSH call:
+        // 1. Create counter directory if needed
+        // 2. Read current counter (or default to 0)
+        // 3. Increment and save new counter
+        // 4. Create release directory
+        // 5. Output the new counter value
+        $count = (int) trim($this->cmd->remote(
+            "mkdir -p {$counterDir} && ".
+            "count=\$(cat {$counterFile} 2>/dev/null || echo 0) && ".
+            'count=$((count + 1)) && '.
+            "echo \$count > {$counterFile} && ".
+            "mkdir -p {$releasesDir}/{$yearMonth}.\$count && ".
+            'echo $count'
+        ));
 
         $releaseName = "{$yearMonth}.{$count}";
         $this->currentReleaseName = $releaseName;
@@ -91,16 +102,23 @@ class DeploymentService
     }
 
     /**
-     * Get the currently active release name
+     * Get the currently active release name (cached to avoid duplicate SSH calls)
      */
     public function getCurrentRelease(): ?string
     {
+        // Return cached value if already fetched
+        if ($this->currentReleaseFetched) {
+            return $this->cachedCurrentRelease;
+        }
+
         $this->cmd->debug('Fetching current release...');
 
         $currentPath = "{$this->config->deployPath}/".Paths::CURRENT_SYMLINK;
 
         if (! $this->cmd->symlinkExists($currentPath)) {
             $this->cmd->debug('No current symlink exists');
+            $this->currentReleaseFetched = true;
+            $this->cachedCurrentRelease = null;
 
             return null;
         }
@@ -108,11 +126,18 @@ class DeploymentService
         $output = $this->cmd->remote("basename \$(readlink -f {$currentPath}) 2>/dev/null || echo ''");
 
         if (empty(trim($output))) {
+            $this->currentReleaseFetched = true;
+            $this->cachedCurrentRelease = null;
+
             return null;
         }
 
         $release = trim($output);
         $this->cmd->debug("Current release: {$release}");
+
+        // Cache the result
+        $this->currentReleaseFetched = true;
+        $this->cachedCurrentRelease = $release;
 
         return $release;
     }
@@ -247,6 +272,11 @@ class DeploymentService
     // ============================================================
     // Path Helper Methods
     // ============================================================
+
+    public function getLockFile(): string
+    {
+        return $this->lockFile;
+    }
 
     public function getDeployPath(): string
     {

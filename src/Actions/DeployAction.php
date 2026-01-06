@@ -9,6 +9,7 @@ use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\DeploymentReceipt;
 use Shaf\LaravelDeployer\Data\ReleaseInfo;
 use Shaf\LaravelDeployer\Data\SyncDiff;
+use Shaf\LaravelDeployer\Data\SyncStats;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 use Shaf\LaravelDeployer\Services\HooksService;
@@ -31,6 +32,8 @@ class DeployAction
 
     private ?SyncDiff $syncDiff = null;
 
+    private ?SyncStats $syncStats = null;
+
     private float $duration = 0;
 
     private ?HooksService $hooks = null;
@@ -44,6 +47,9 @@ class DeployAction
     private ?string $gitAuthor = null;
 
     private int $migrationsRun = 0;
+
+    /** @var array<array{category: string, message: string}> */
+    private array $warnings = [];
 
     public function __construct(
         private DeploymentService $deployment,
@@ -103,18 +109,28 @@ class DeployAction
             // Set release path for hooks
             $this->hooks?->setReleasePath($this->releasePath);
 
-            // 4. Build assets locally (if not local deployment)
-            if (! $this->config->isLocal) {
+            // 4. Build assets locally (if not local deployment and not skipping build folder)
+            $skipAssetBuild = in_array('public/build/', $this->config->rsyncExcludes, true);
+            if (! $this->config->isLocal && ! $skipAssetBuild) {
                 $this->runHook('before:build');
                 $this->stepTimer->start('assets:build');
                 $this->buildAssets();
                 $this->stepTimer->end('assets:build');
                 $this->runHook('after:build');
+            } elseif ($skipAssetBuild) {
+                $this->cmd->info('Skipping asset build (public/build excluded)');
             }
 
-            // 5. Show sync differences
+            // 5. Show sync differences (compare against current release for accuracy)
             if ($this->config->showDiff) {
-                $this->syncDiff = $this->diff->show();
+                $currentPath = $this->deployment->getCurrentPath();
+                if ($this->cmd->symlinkExists($currentPath)) {
+                    // Compare against current release for accurate diff
+                    $this->syncDiff = $this->diff->showRemoteDiff($currentPath);
+                } else {
+                    // First deployment - use local temp comparison
+                    $this->syncDiff = $this->diff->show();
+                }
             }
 
             // 6. Confirm changes
@@ -140,6 +156,7 @@ class DeployAction
             $this->fixSharedLogPermissions();
 
             // 10. Install composer dependencies
+            // Note: vendor already exists from hardlink copy in syncFiles()
             $this->runHook('before:composer');
             $this->stepTimer->start('composer:install');
             $this->installComposerDependencies();
@@ -186,7 +203,7 @@ class DeployAction
             // 18. Log deployment success
             $this->logDeploymentSuccess();
 
-            // 19. Run post-deployment hooks (legacy)
+            // 19. Run post-deployment hooks
             $this->stepTimer->start('hooks:post-deploy');
             $this->runPostDeploymentHooks();
             $this->stepTimer->end('hooks:post-deploy');
@@ -256,18 +273,17 @@ class DeployAction
 
     /**
      * Generate release name and create release directory
+     * Note: Directory is created in generateReleaseName() for performance
      */
     private function createRelease(): void
     {
         $this->cmd->task('release:create');
 
+        // generateReleaseName() also creates the release directory in the same SSH call
         $this->releaseName = $this->deployment->generateReleaseName();
         $this->deployment->setCurrentReleaseName($this->releaseName);
 
         $this->releasePath = $this->deployment->getReleasePath($this->releaseName);
-        $escapedPath = CommandService::escapePath($this->releasePath);
-
-        $this->cmd->remote("mkdir -p {$escapedPath}");
 
         $this->cmd->success("Release {$this->releaseName} created");
     }
@@ -327,6 +343,10 @@ class DeployAction
         $this->cmd->task('files:sync');
         $this->cmd->info('Syncing files to server...');
 
+        // Copy previous release with hardlinks before rsync
+        // This dramatically speeds up rsync - it only needs to update changed files
+        $this->copyPreviousReleaseWithHardlinks();
+
         // Pass sync diff and output for progress bar
         $this->rsync->setSyncDiff($this->syncDiff);
         $this->rsync->setOutput($this->cmd->getOutput());
@@ -334,7 +354,45 @@ class DeployAction
         // For local deployments, just use the path; RsyncService handles the rest
         $this->rsync->sync($this->releasePath);
 
+        // Capture actual sync stats from rsync (not theoretical diff)
+        $this->syncStats = SyncStats::fromRsync($this->rsync, $this->syncDiff);
+
         $this->cmd->success('Files synced successfully');
+    }
+
+    /**
+     * Copy previous release to new release directory using hardlinks.
+     * This makes rsync much faster as it only needs to update changed files.
+     */
+    private function copyPreviousReleaseWithHardlinks(): void
+    {
+        $previousRelease = $this->deployment->getCurrentRelease();
+        if (! $previousRelease) {
+            $this->cmd->debug('No previous release found, skipping hardlink copy');
+
+            return;
+        }
+
+        $previousReleasePath = $this->deployment->getReleasePath($previousRelease);
+
+        // Check if previous release exists
+        if (! $this->cmd->directoryExists($previousReleasePath)) {
+            $this->cmd->debug('Previous release directory does not exist, skipping hardlink copy');
+
+            return;
+        }
+
+        $this->cmd->info('Copying previous release with hardlinks...');
+
+        $escapedPrevious = CommandService::escapePath($previousReleasePath);
+        $escapedNew = CommandService::escapePath($this->releasePath);
+
+        // Remove the empty new release directory first, then copy with hardlinks
+        // cp -al creates hardlinks for files (instant, no disk space used)
+        // The trailing /. copies contents, not the directory itself
+        $this->cmd->remote("rm -rf {$escapedNew} && cp -al {$escapedPrevious} {$escapedNew}");
+
+        $this->cmd->success('Previous release copied with hardlinks');
     }
 
     /**
@@ -438,9 +496,12 @@ class DeployAction
         $composerOptions = $this->config->composerOptions ?? '--prefer-dist --no-interaction --no-scripts --no-plugins --no-dev --optimize-autoloader';
         $escapedPath = CommandService::escapePath($this->releasePath);
 
-        // Ensure bootstrap/cache exists before composer runs (required for package:discover)
+        // Clear bootstrap/cache before composer runs.
+        // When using hardlink copy from previous release, cached files may contain
+        // stale absolute paths to old releases. This must be cleared before
+        // artisan package:discover runs to prevent path resolution errors.
         $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
-        $this->cmd->remote("mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
+        $this->cmd->remote("rm -rf {$bootstrapCache} && mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache}");
 
         // If GitHub token is provided, write auth.json file (avoids token in command line logs)
         $authJsonPath = "{$this->releasePath}/auth.json";
@@ -451,7 +512,10 @@ class DeployAction
         try {
             $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
             // Use remoteWithOutput so composer output is visible at -v level
-            $this->cmd->remoteWithOutput($composerCommand);
+            $output = $this->cmd->remoteWithOutput($composerCommand);
+
+            // Parse Composer output for warnings
+            $this->parseComposerWarnings($output);
         } finally {
             // Clean up auth.json to avoid leaving credentials on server
             if ($this->config->githubToken) {
@@ -460,6 +524,43 @@ class DeployAction
         }
 
         $this->cmd->success('Composer dependencies installed');
+    }
+
+    /**
+     * Parse Composer output for known warnings
+     */
+    private function parseComposerWarnings(string $output): void
+    {
+        // Check for lock file out of sync warning
+        if (str_contains($output, 'lock file is not up to date')) {
+            $this->addWarning('composer', 'Lock file not up to date with composer.json');
+        }
+
+        // Check for abandoned packages
+        if (preg_match('/Package\s+\S+\s+is abandoned/i', $output)) {
+            $this->addWarning('composer', 'One or more packages are abandoned');
+        }
+    }
+
+    /**
+     * Add a deployment warning
+     */
+    private function addWarning(string $category, string $message): void
+    {
+        $this->warnings[] = [
+            'category' => $category,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Get all deployment warnings
+     *
+     * @return array<array{category: string, message: string}>
+     */
+    public function getWarnings(): array
+    {
+        return $this->warnings;
     }
 
     /**
@@ -483,10 +584,18 @@ class DeployAction
 
     /**
      * Fix module permissions
+     * Can be skipped via skipPermissionFix config when server umask is correctly configured
      */
     private function fixModulePermissions(): void
     {
         $this->cmd->task('permissions:modules');
+
+        // Skip if configured (useful when server umask is correctly set to 022)
+        if ($this->config->skipPermissionFix) {
+            $this->cmd->info('Skipping permission fix (skipPermissionFix is enabled)');
+
+            return;
+        }
 
         $escapedPath = CommandService::escapePath($this->releasePath);
         $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
@@ -695,22 +804,40 @@ class DeployAction
     }
 
     /**
-     * Run post-deployment hooks if they exist
+     * Run post-deployment hooks if they exist.
+     * Supports both artisan shortcuts (e.g., "config:cache") and full shell commands (e.g., "npm run build").
+     * Batches all commands into a single SSH call for performance.
      */
     private function runPostDeploymentHooks(): void
     {
         $this->cmd->task('hooks:post-deploy');
 
-        // Run configured post-deployment artisan commands
+        // Run configured post-deployment commands
         $postDeployCommands = $this->config->postDeployCommands;
 
         if (! empty($postDeployCommands)) {
             $this->cmd->info('Running post-deployment commands...');
 
+            $phpBinary = $this->config->phpBinary;
+            $artisanPath = "{$this->releasePath}/artisan";
+
+            // Build commands - detect if already full command or artisan shortcut
+            $batchedCommands = [];
             foreach ($postDeployCommands as $command) {
-                $this->cmd->info("  → artisan {$command}");
-                $this->cmd->artisan($command, $this->releasePath);
+                if ($this->isArtisanShortcut($command)) {
+                    // Artisan shortcut (e.g., "config:cache") - wrap with php artisan
+                    $fullCommand = "{$phpBinary} {$artisanPath} {$command}";
+                    $this->cmd->info("  → artisan {$command}");
+                } else {
+                    // Full command - run as-is (e.g., "php artisan migrate", "npm run build")
+                    $fullCommand = "cd {$this->releasePath} && {$command}";
+                    $this->cmd->info("  → {$command}");
+                }
+                $batchedCommands[] = $fullCommand;
             }
+
+            // Use remoteWithOutput so errors are visible
+            $this->cmd->remoteWithOutput(implode(' && ', $batchedCommands));
 
             $this->cmd->success('Post-deployment commands completed');
         }
@@ -779,10 +906,12 @@ class DeployAction
             releaseName: $this->releaseName,
             duration: $this->duration,
             syncDiff: $this->syncDiff,
+            syncStats: $this->syncStats,
             migrationsRun: $this->migrationsRun,
             url: $url,
             stepTimings: $this->stepTimer->getTimings(),
-            gitInfo: $this->getGitInfo()
+            gitInfo: $this->getGitInfo(),
+            warnings: $this->warnings
         );
     }
 
@@ -855,6 +984,7 @@ class DeployAction
         if (! $this->cmd->fileExists($lockFile)) {
             $this->cmd->warning('⚠️  Warning: composer.lock not found in release!');
             $this->cmd->warning('   Dependencies resolved fresh (slower). Consider tracking composer.lock.');
+            $this->addWarning('composer', 'composer.lock not found - dependencies resolved fresh');
         }
     }
 
@@ -874,7 +1004,7 @@ class DeployAction
             environment: $this->config->environment->value,
             deployedBy: $this->deployment->getUser(),
             duration: $this->duration,
-            syncDiff: $this->syncDiff,
+            syncStats: $this->syncStats,
             postDeployCommands: $this->config->postDeployCommands,
             success: $success,
             errorMessage: $errorMessage
@@ -882,5 +1012,22 @@ class DeployAction
 
         $this->receiptService->save($receipt);
         $this->cmd->success('Deployment receipt saved');
+    }
+
+    /**
+     * Check if command is an artisan shortcut (e.g., "config:cache")
+     * vs a full shell command (e.g., "php artisan config:cache", "npm run build")
+     */
+    private function isArtisanShortcut(string $command): bool
+    {
+        // If command contains spaces, it's likely a full command
+        // Artisan shortcuts are single words like "config:cache", "route:cache"
+        if (str_contains($command, ' ')) {
+            return false;
+        }
+
+        // Artisan commands typically contain a colon (namespace:command)
+        // or are simple commands like "migrate", "optimize"
+        return true;
     }
 }
