@@ -400,13 +400,25 @@ class DeployAction
         $escapedPrevious = CommandService::escapePath($previousReleasePath);
         $escapedNew = CommandService::escapePath($this->releasePath);
 
+        // Build exclusion list for hardlink copy
+        // Exclude files that should always be fresh from rsync, not hardlinked
+        $excludes = [
+            'bootstrap/cache',    // May be owned by www-data, will be regenerated
+            'composer.lock',      // Should be fresh from rsync
+            'package-lock.json',  // Should be fresh from rsync
+            'yarn.lock',          // Should be fresh from rsync
+            'bun.lockb',          // Should be fresh from rsync
+            '.env',               // Shouldn't exist in releases anyway
+        ];
+
+        $excludeFlags = implode(' ', array_map(fn($e) => "--exclude='{$e}'", $excludes));
+
         // Use rsync with --link-dest for hardlink optimization instead of cp -al
-        // This excludes bootstrap/cache which may be owned by www-data and causes
-        // "Operation not permitted" errors. The cache will be regenerated during composer install.
+        // This excludes files that may cause permission issues or should be fresh from rsync
         $this->cmd->remote(
             "rm -rf {$escapedNew} && ".
             "rsync -a --link-dest={$escapedPrevious} ".
-            "--exclude='bootstrap/cache' ".
+            "{$excludeFlags} ".
             "{$escapedPrevious}/ {$escapedNew}/"
         );
 
