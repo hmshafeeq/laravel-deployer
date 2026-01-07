@@ -228,10 +228,22 @@
         }
       }
     },
+    "beforeSymlink": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Commands to run before symlinking release (critical - aborts on failure). Supports artisan shortcuts (e.g., 'cache:clear', 'config:cache') or full shell commands"
+    },
+    "afterSymlink": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Commands to run after symlinking release (non-critical). Supports artisan shortcuts or full shell commands"
+    },
     "postDeploy": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Commands to run after deployment. Supports artisan shortcuts (e.g., 'config:cache') or full shell commands (e.g., 'php artisan migrate', 'npm run build')"
+      "description": "DEPRECATED: Use 'afterSymlink' instead. Commands to run after deployment. Supports artisan shortcuts (e.g., 'config:cache') or full shell commands (e.g., 'php artisan migrate', 'npm run build')"
     },
     "hooks": {
       "type": "object",

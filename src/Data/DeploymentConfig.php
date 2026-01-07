@@ -27,6 +27,8 @@ readonly class DeploymentConfig
         public int $diffDisplayLimit = 20,
         public string $phpBinary = 'php',
         public array $postDeployCommands = [],
+        public array $beforeSymlink = [],
+        public array $afterSymlink = [],
         public string $branch = 'main',
         public ?string $githubToken = null,
         public bool $strictHostKeyChecking = true,
@@ -86,7 +88,15 @@ readonly class DeploymentConfig
             showUploadProgress: $display['showUploadProgress'] ?? $config['showUploadProgress'] ?? true,
             diffDisplayLimit: $display['diffDisplayLimit'] ?? $config['diffDisplayLimit'] ?? 20,
             phpBinary: $config['phpBinary'] ?? 'php',
-            postDeployCommands: $config['postDeploy'] ?? [],
+            postDeployCommands: array_merge(
+                $config['afterSymlink'] ?? [],
+                $config['postDeploy'] ?? []
+            ),
+            beforeSymlink: $config['beforeSymlink'] ?? [],
+            afterSymlink: array_merge(
+                $config['afterSymlink'] ?? [],
+                $config['postDeploy'] ?? []
+            ),
             branch: $config['branch'] ?? self::detectCurrentBranch(),
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,

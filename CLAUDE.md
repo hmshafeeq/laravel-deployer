@@ -93,6 +93,25 @@ Changes to the deployment recipe affect all projects immediately (symlinked). Te
 
 ---
 
+## Local Development Workflow
+
+### Syncing Changes to Other Projects
+
+When testing package changes locally before pushing to GitHub:
+
+```bash
+cd /Users/mshaf/Developer/Sites/timebox/web/packages/laravel-deployer
+./sync-to-projects.sh
+```
+
+This script uses rsync to copy the package to:
+- `/Users/mshaf/Developer/Sites/thepayrollapp/vendor/shaf/laravel-deployer`
+- `/Users/mshaf/Developer/Sites/westwindsupplies-latest/vendor/shaf/laravel-deployer`
+
+**Note:** Changes are temporary. Teammates and CI will get updates via `composer update` from GitHub.
+
+---
+
 ## Quick Reference
 
 ### Commands

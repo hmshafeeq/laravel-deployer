@@ -181,29 +181,34 @@ class DeployAction
             // 14. Link .dep directory
             $this->linkDepDirectory();
 
-            // 15. Symlink current release
+            // 15. Run optimization commands (critical - aborts on failure)
+            $this->stepTimer->start('optimize:release');
+            $this->runBeforeSymlinkCommands();
+            $this->stepTimer->end('optimize:release');
+
+            // 16. Symlink current release
             $this->runHook('before:symlink');
             $this->stepTimer->start('release:symlink');
             $this->symlinkRelease();
             $this->stepTimer->end('release:symlink');
             $this->runHook('after:symlink');
 
-            // 16. Verify deployment health
+            // 17. Log deployment success (moved here - only log after symlink succeeds)
+            $this->logDeploymentSuccess();
+
+            // 18. Verify deployment health
             if ($this->healthCheck !== null) {
                 $this->stepTimer->start('health:verify');
                 $this->verifyDeploymentHealth();
                 $this->stepTimer->end('health:verify');
             }
 
-            // 17. Cleanup old releases
+            // 19. Cleanup old releases
             $this->stepTimer->start('cleanup:releases');
             $this->cleanupOldReleases();
             $this->stepTimer->end('cleanup:releases');
 
-            // 18. Log deployment success
-            $this->logDeploymentSuccess();
-
-            // 19. Run post-deployment hooks
+            // 20. Run post-deployment hooks
             $this->stepTimer->start('hooks:post-deploy');
             $this->runPostDeploymentHooks();
             $this->stepTimer->end('hooks:post-deploy');
@@ -211,7 +216,7 @@ class DeployAction
             // Calculate total deployment time
             $this->duration = microtime(true) - $startTime;
 
-            // 20. Generate deployment receipt
+            // 21. Generate deployment receipt
             $this->generateReceipt(success: true);
 
             // Run after:deploy hooks
@@ -664,6 +669,43 @@ class DeployAction
                 $this->disableMaintenanceMode();
             }
         }
+    }
+
+    /**
+     * Run optimization commands before symlinking release.
+     * These commands are critical - deployment aborts if they fail.
+     */
+    private function runBeforeSymlinkCommands(): void
+    {
+        $beforeSymlink = $this->config->beforeSymlink ?? [];
+
+        if (empty($beforeSymlink)) {
+            return;
+        }
+
+        $this->cmd->task('optimize:release');
+        $this->cmd->info('Running pre-symlink optimization commands...');
+
+        $phpBinary = $this->config->phpBinary;
+        $artisanPath = "{$this->releasePath}/artisan";
+
+        $batchedCommands = [];
+        foreach ($beforeSymlink as $command) {
+            if ($this->isArtisanShortcut($command)) {
+                $fullCommand = "cd {$this->releasePath} && {$phpBinary} {$artisanPath} {$command}";
+                $this->cmd->info("  → artisan {$command}");
+            } else {
+                $fullCommand = "cd {$this->releasePath} && {$command}";
+                $this->cmd->info("  → {$command}");
+            }
+            $batchedCommands[] = $fullCommand;
+        }
+
+        // Use remoteWithOutput so errors are visible
+        // This will throw exception on failure, aborting deployment
+        $this->cmd->remoteWithOutput(implode(' && ', $batchedCommands));
+
+        $this->cmd->success('Pre-symlink optimization completed');
     }
 
     /**
