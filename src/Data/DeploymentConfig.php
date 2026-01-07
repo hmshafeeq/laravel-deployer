@@ -42,7 +42,20 @@ readonly class DeploymentConfig
         public array $hooks = [],
         // Skip permission fix (useful when server umask is correctly configured)
         public bool $skipPermissionFix = false,
+        // Permission settings
+        public string $webGroup = 'www-data',
+        public bool $enforceSetgid = true,
+        public string $directoryMode = '2775',
+        public string $fileMode = '664',
     ) {}
+
+    /**
+     * Get the SSH user (alias for remoteUser for clarity)
+     */
+    public function getSshUser(): string
+    {
+        return $this->remoteUser;
+    }
 
     public static function fromArray(string $environment, array $config): self
     {
@@ -84,6 +97,10 @@ readonly class DeploymentConfig
             backupBeforeMigrate: $config['backupBeforeMigrate'] ?? false,
             hooks: $config['hooks'] ?? [],
             skipPermissionFix: $config['skipPermissionFix'] ?? false,
+            webGroup: $config['permissions']['webGroup'] ?? $config['webGroup'] ?? 'www-data',
+            enforceSetgid: $config['permissions']['enforceSetgid'] ?? $config['enforceSetgid'] ?? true,
+            directoryMode: $config['permissions']['directoryMode'] ?? $config['directoryMode'] ?? '2775',
+            fileMode: $config['permissions']['fileMode'] ?? $config['fileMode'] ?? '664',
         );
     }
 

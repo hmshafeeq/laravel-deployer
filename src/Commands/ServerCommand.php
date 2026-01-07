@@ -4,6 +4,9 @@ namespace Shaf\LaravelDeployer\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Shaf\LaravelDeployer\Actions\DiagnoseAction;
+use Shaf\LaravelDeployer\Data\DiagnoseCheck;
+use Shaf\LaravelDeployer\Data\DiagnoseResult;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
@@ -11,9 +14,11 @@ use Shaf\LaravelDeployer\Services\DeploymentService;
 class ServerCommand extends Command
 {
     protected $signature = 'deployer:server
-                            {action : Action to perform (clear, provision)}
-                            {environment? : The deployment environment (required for clear)}
+                            {action : Action to perform (clear, provision, diagnose)}
+                            {environment? : The deployment environment (required for clear, diagnose)}
                             {--no-confirm : Skip confirmation prompt}
+                            {--full : Run comprehensive diagnostic checks (for diagnose)}
+                            {--fix : Generate a fix script for permission issues (for diagnose)}
                             {--host= : Server hostname or IP address (for provision)}
                             {--port=22 : SSH port}
                             {--user=ubuntu : SSH user (default: ubuntu)}
@@ -28,7 +33,7 @@ class ServerCommand extends Command
                             {--with-redis : Install Redis}
                             {--non-interactive : Run in non-interactive mode}';
 
-    protected $description = 'Server management: clear caches, provision new servers';
+    protected $description = 'Server management: clear caches, provision servers, diagnose permissions';
 
     protected array $config = [];
 
@@ -43,6 +48,7 @@ class ServerCommand extends Command
         return match ($action) {
             'clear' => $this->handleClear(),
             'provision' => $this->handleProvision(),
+            'diagnose' => $this->handleDiagnose(),
             default => $this->showUsage(),
         };
     }
@@ -147,6 +153,164 @@ class ServerCommand extends Command
         } catch (\Exception $e) {
             return false;
         }
+    }
+
+    // =========================================================================
+    // DIAGNOSE - Check server permissions and configuration
+    // =========================================================================
+
+    protected function handleDiagnose(): int
+    {
+        $environment = $this->argument('environment');
+
+        if (! $environment) {
+            $this->error('Environment is required for diagnose action.');
+            $this->line('');
+            $this->line('Usage: php artisan deployer:server diagnose {environment} [--full] [--fix]');
+
+            return self::FAILURE;
+        }
+
+        $fullMode = $this->option('full');
+        $generateFix = $this->option('fix');
+
+        try {
+            // Load configuration
+            $config = ConfigService::load($environment, base_path(), $this->output);
+
+            // Initialize services
+            $cmd = new CommandService($config, $this->output);
+
+            // Get deploy user and web group from config
+            $deployUser = $config->remoteUser;
+            $webGroup = $config->webGroup;
+
+            $this->renderDiagnoseHeader($environment, $fullMode);
+
+            // Run diagnostics
+            $diagnose = new DiagnoseAction($cmd, $config, $deployUser, $webGroup);
+            $result = $diagnose->execute($fullMode);
+
+            // Render results
+            $this->renderDiagnoseResults($result);
+
+            // Generate fix script if requested
+            if ($generateFix && ! $result->passed()) {
+                $this->generateFixScript($result);
+            }
+
+            return $result->passed() ? self::SUCCESS : self::FAILURE;
+        } catch (\Exception $e) {
+            $this->newLine();
+            $this->error('Diagnostic failed!');
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+    }
+
+    private function renderDiagnoseHeader(string $environment, bool $fullMode): void
+    {
+        $mode = $fullMode ? 'Full Analysis' : 'Quick Check';
+        $this->newLine();
+        $this->line('╔══════════════════════════════════════════════════════════════╗');
+        $this->line("║  SERVER PERMISSION DIAGNOSTIC - {$environment}");
+        $this->line("║  Mode: {$mode}");
+        $this->line('╚══════════════════════════════════════════════════════════════╝');
+        $this->newLine();
+    }
+
+    private function renderDiagnoseResults(DiagnoseResult $result): void
+    {
+        foreach ($result->getChecksByCategory() as $category => $checks) {
+            $this->line("┌─ {$category} ".str_repeat('─', max(0, 56 - strlen($category))).'┐');
+
+            foreach ($checks as $check) {
+                $icon = $check->getIcon();
+                $status = match ($check->status) {
+                    DiagnoseCheck::STATUS_PASS => '<fg=green>'.$icon.'</>',
+                    DiagnoseCheck::STATUS_FAIL => '<fg=red>'.$icon.'</>',
+                    DiagnoseCheck::STATUS_WARN => '<fg=yellow>'.$icon.'</>',
+                    default => $icon,
+                };
+
+                $message = strlen($check->message) > 52
+                    ? substr($check->message, 0, 49).'...'
+                    : $check->message;
+
+                $this->line("│ {$status} {$check->name}: {$message}");
+            }
+
+            $this->line('└'.str_repeat('─', 62).'┘');
+            $this->newLine();
+        }
+
+        // Show issues with fixes
+        $failedChecks = $result->getFailedChecks();
+        if (count($failedChecks) > 0) {
+            $this->line('┌─ Issues Found '.str_repeat('─', 47).'┐');
+            $i = 0;
+            foreach ($failedChecks as $check) {
+                $i++;
+                $this->line("│ <fg=red>✗</> {$i}. {$check->name}");
+                if ($check->expected) {
+                    $this->line("│    Expected: {$check->expected}");
+                }
+                if ($check->actual) {
+                    $this->line("│    Actual: {$check->actual}");
+                }
+            }
+            $this->line('└'.str_repeat('─', 62).'┘');
+            $this->newLine();
+
+            // Show fix suggestions
+            $this->line('┌─ Suggested Fixes '.str_repeat('─', 44).'┐');
+            $i = 0;
+            foreach ($failedChecks as $check) {
+                if ($check->fix) {
+                    $i++;
+                    $this->line("│ Issue {$i}: {$check->name}");
+                    foreach (explode("\n", $check->fix) as $line) {
+                        $this->line("│   {$line}");
+                    }
+                    $this->line('│');
+                }
+            }
+            $this->line('│ Run with --fix to generate a fix script');
+            $this->line('└'.str_repeat('─', 62).'┘');
+            $this->newLine();
+        }
+
+        // Summary
+        $summary = $result->getSummary();
+        if ($result->passed()) {
+            $this->info("Overall: {$summary}");
+        } else {
+            $this->error("Overall: {$summary}");
+        }
+    }
+
+    private function generateFixScript(DiagnoseResult $result): void
+    {
+        $script = $result->generateFixScript();
+
+        // Save to .deploy directory
+        $deployDir = base_path('.deploy');
+        if (! File::isDirectory($deployDir)) {
+            File::makeDirectory($deployDir, 0755, true);
+        }
+
+        $filename = "fix-permissions-{$result->environment}.sh";
+        $filepath = "{$deployDir}/{$filename}";
+
+        File::put($filepath, $script);
+
+        $this->newLine();
+        $this->info("Fix script generated: {$filepath}");
+        $this->line('');
+        $this->line('To apply fixes, copy the script to the server and run:');
+        $this->line("  scp {$filepath} user@server:/tmp/");
+        $this->line('  ssh user@server "bash /tmp/'.$filename.'"');
     }
 
     // =========================================================================
@@ -648,11 +812,15 @@ class ServerCommand extends Command
         $this->line('');
         $this->line('  php artisan deployer:server clear {env}       Clear caches and restart services');
         $this->line('  php artisan deployer:server provision         Provision a fresh Ubuntu server');
+        $this->line('  php artisan deployer:server diagnose {env}    Check server permissions');
         $this->line('');
         $this->line('Examples:');
         $this->line('  php artisan deployer:server clear staging');
         $this->line('  php artisan deployer:server clear production --no-confirm');
         $this->line('  php artisan deployer:server provision --host=1.2.3.4 --user=ubuntu');
+        $this->line('  php artisan deployer:server diagnose staging');
+        $this->line('  php artisan deployer:server diagnose staging --full');
+        $this->line('  php artisan deployer:server diagnose staging --fix');
 
         return self::FAILURE;
     }

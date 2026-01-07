@@ -263,10 +263,18 @@ class DeployAction
         $escapedDirs = array_map([CommandService::class, 'escapePath'], $directories);
         $sharedEnvPath = CommandService::escapePath("{$deployPath}/".Paths::SHARED_DIR.'/.env');
 
-        $this->cmd->runBatch([
+        $commands = [
             'mkdir -p '.implode(' ', $escapedDirs),
             "touch {$sharedEnvPath}",
-        ]);
+        ];
+
+        // Enforce setgid on directories for group inheritance
+        // This ensures files created by www-data inherit the correct group
+        if ($this->config->enforceSetgid) {
+            $commands[] = "find {$escapedDeployPath} -type d -exec chmod g+s {} \\; 2>/dev/null || true";
+        }
+
+        $this->cmd->runBatch($commands);
 
         $this->cmd->success('Deployment structure ready');
     }
@@ -439,9 +447,11 @@ class DeployAction
 
         // Fix permissions on existing log files (if any exist)
         // Use find with -exec to handle the case where no .log files exist
-        // Set group to www-data and permissions to 664 so both deploy user and web server can write
+        // Set group to configured web group and permissions for write access
+        $webGroup = $this->config->webGroup;
+        $fileMode = $this->config->fileMode;
         $this->cmd->remote(
-            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp www-data {} + -exec chmod 664 {} + 2>/dev/null || true"
+            "find {$escapedLogsPath} -name '*.log' -type f -exec chgrp {$webGroup} {} + -exec chmod {$fileMode} {} + 2>/dev/null || true"
         );
     }
 
@@ -471,10 +481,12 @@ class DeployAction
             }
 
             // Create directory if it doesn't exist (e.g., bootstrap/cache is often gitignored)
-            // Set group to www-data and permissions to 775 so web server can write
+            // Set group to configured web group and permissions for web server write access
+            $webGroup = $this->config->webGroup;
+            $dirMode = $this->config->directoryMode;
             $commands[] = "mkdir -p {$escapedDir}";
-            $commands[] = "chgrp -R www-data {$escapedDir}";
-            $commands[] = "chmod -R 775 {$escapedDir}";
+            $commands[] = "chgrp -R {$webGroup} {$escapedDir}";
+            $commands[] = "chmod -R {$dirMode} {$escapedDir}";
         }
 
         if (! empty($commands)) {
@@ -602,12 +614,16 @@ class DeployAction
         $escapedPath = CommandService::escapePath($this->releasePath);
         $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
 
+        // Use configured permission modes
+        $fileMode = $this->config->fileMode;
+        $dirMode = $this->config->directoryMode;
+
         // Batch all permission fixes into a single SSH call
-        // - 644 for files, 755 for directories
+        // - Configured file mode for files, directory mode for directories
         // - vendor/bin gets 755 if it exists (using shell conditional)
         $this->cmd->runBatch([
-            "find {$escapedPath} -type f -exec chmod 644 {} +",
-            "find {$escapedPath} -type d -exec chmod 755 {} +",
+            "find {$escapedPath} -type f -exec chmod {$fileMode} {} +",
+            "find {$escapedPath} -type d -exec chmod {$dirMode} {} +",
             "[ -d {$escapedVendorBin} ] && chmod -R 755 {$escapedVendorBin} || true",
         ]);
 

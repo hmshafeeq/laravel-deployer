@@ -162,6 +162,32 @@
         }
       }
     },
+    "permissions": {
+      "type": "object",
+      "description": "File and directory permission settings",
+      "properties": {
+        "webGroup": {
+          "type": "string",
+          "default": "www-data",
+          "description": "Web server group (typically www-data)"
+        },
+        "enforceSetgid": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enforce setgid bit on directories for group inheritance"
+        },
+        "directoryMode": {
+          "type": "string",
+          "default": "2775",
+          "description": "Default directory permissions (2775 = rwxrwsr-x with setgid)"
+        },
+        "fileMode": {
+          "type": "string",
+          "default": "664",
+          "description": "Default file permissions (664 = rw-rw-r--)"
+        }
+      }
+    },
     "environments": {
       "type": "object",
       "description": "Environment-specific configurations",

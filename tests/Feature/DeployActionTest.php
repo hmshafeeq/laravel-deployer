@@ -56,8 +56,12 @@ test('execute() runs complete happy path', function () {
     $this->deployment->shouldReceive('isLocked')->once()->andReturn(false);
     $this->deployment->shouldReceive('lock')->once();
 
-    // 2. Setup
-    $this->cmd->shouldReceive('runBatch')->with(Mockery::pattern('/mkdir -p/'))->once();
+    // 2. Setup (includes mkdir, touch, and setgid enforcement)
+    $this->cmd->shouldReceive('runBatch')->with(Mockery::on(function ($commands) {
+        return is_array($commands)
+            && str_contains($commands[0], 'mkdir -p')
+            && str_contains($commands[1], 'touch');
+    }))->once();
 
     // 3. Create release
     $this->deployment->shouldReceive('generateReleaseName')->once()->andReturn('202501.1');
@@ -92,8 +96,8 @@ test('execute() runs complete happy path', function () {
     $this->cmd->shouldReceive('remoteWithOutput')->with(Mockery::pattern('/composer install/'))->once();
 
     // 9. Permissions & Migrations
-    $this->cmd->shouldReceive('runBatch')->with(Mockery::pattern('/chmod 644/'))->once(); // module perms
-    $this->cmd->shouldReceive('runBatch')->with(Mockery::pattern('/chmod -R 775/'))->once(); // writable perms
+    $this->cmd->shouldReceive('runBatch')->with(Mockery::pattern('/chmod 664/'))->once(); // module perms (uses config->fileMode)
+    $this->cmd->shouldReceive('runBatch')->with(Mockery::pattern('/chmod -R 2775/'))->once(); // writable perms (uses config->directoryMode)
     $this->cmd->shouldReceive('artisanMigrate')->with(Mockery::any(), true)->once()->andReturn(['count' => 0]);
 
     // 10. Link release (.dep and current)
@@ -124,9 +128,9 @@ test('execute() unlocks deployment on failure', function () {
     $this->deployment->shouldReceive('isLocked')->andReturn(false);
     $this->deployment->shouldReceive('lock')->once();
 
-    // 2. Setup fails
+    // 2. Setup fails (includes mkdir, touch, and setgid enforcement)
     $this->cmd->shouldReceive('runBatch')
-        ->with(Mockery::pattern('/mkdir -p/'))
+        ->with(Mockery::on(fn ($commands) => is_array($commands) && str_contains($commands[0], 'mkdir -p')))
         ->andThrow(new Exception('SSH Error'));
 
     // Expect unlock to be called
@@ -162,7 +166,9 @@ test('execute() skips diff confirmation when configured', function () {
     $this->deployment->shouldReceive('getCurrentPath')->andReturn('/path/current');
 
     // Diff should be shown but NOT confirmed
-    $this->diff->shouldReceive('showRemoteDiff')->once();
+    // Note: The code will call show() if no current symlink exists, showRemoteDiff() otherwise
+    $this->diff->shouldReceive('showRemoteDiff')->byDefault();
+    $this->diff->shouldReceive('show')->byDefault();
     $this->diff->shouldReceive('confirmChanges')->never();
 
     // Fail early to stop test

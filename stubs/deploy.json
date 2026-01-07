@@ -62,6 +62,13 @@
     "options": "--prefer-dist --no-interaction --optimize-autoloader"
   },
 
+  "permissions": {
+    "webGroup": "www-data",
+    "enforceSetgid": true,
+    "directoryMode": "2775",
+    "fileMode": "664"
+  },
+
   "environments": {
     "local": {
       "local": true,
