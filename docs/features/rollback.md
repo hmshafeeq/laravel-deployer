@@ -68,7 +68,7 @@ current → releases/202501.2
 ## Prerequisites
 
 - At least 2 releases must exist on the server
-- Server configured in `.deploy/deploy.yaml`
+- Server configured in `.deploy/deploy.json`
 - SSH key authentication set up
 
 ## When to Use
@@ -140,7 +140,7 @@ sudo systemctl reload nginx
 
 - **Backup database before deployments** to enable full rollback
 - **Test rollback process** on staging to verify it works
-- **Keep multiple releases** by configuring `keep_releases` in deploy.yaml
+- **Keep multiple releases** by configuring `keep_releases` in deploy.json
 - **Document rollback procedures** for your team
 - **Monitor after rollback** to ensure stability
 

@@ -68,7 +68,7 @@ Example: `backup-2025-01-15-143022.sql`
 
 ## Prerequisites
 
-- Server configured in `.deploy/deploy.yaml`
+- Server configured in `.deploy/deploy.json`
 - SSH key authentication set up
 - MySQL/MariaDB installed on server
 - Database credentials configured in server's `.env` file
@@ -116,7 +116,7 @@ See: [database:download](database-download.md)
 
 ### Backup Rotation
 
-Configure cleanup in `.deploy/deploy.yaml`:
+Configure cleanup in `.deploy/deploy.json`:
 
 ```yaml
 config:

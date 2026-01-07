@@ -30,7 +30,7 @@ php artisan deploy:clear staging --force
 
 The clear command performs cleanup operations:
 
-1. **Validates Configuration** - Checks environment exists in deploy.yaml
+1. **Validates Configuration** - Checks environment exists in deploy.json
 2. **Connects to Server** - Establishes SSH connection
 3. **Displays Current State** - Shows lock status
 4. **Confirms Action** - Prompts for confirmation (unless `--force`)

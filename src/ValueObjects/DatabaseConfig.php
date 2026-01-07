@@ -56,18 +56,4 @@ class DatabaseConfig
             $this->configFile = null;
         }
     }
-
-    /**
-     * Get configuration as array (for backward compatibility)
-     */
-    public function toArray(): array
-    {
-        return [
-            'host' => $this->host,
-            'database' => $this->database,
-            'username' => $this->username,
-            'password' => $this->password,
-            'config_file' => $this->getConfigFile(),
-        ];
-    }
 }

@@ -7,7 +7,7 @@ Migrate existing Laravel deployments to the laravel-deployer directory structure
 The easiest way to migrate is using the `deployer:migrate` command:
 
 ```bash
-# Migrate staging (uses deploy.yaml configuration)
+# Migrate staging (uses deploy.json configuration)
 php artisan deployer:migrate staging
 
 # Migrate production
@@ -20,7 +20,7 @@ php artisan deployer:migrate staging --skip-db-backup   # Skip database backup
 php artisan deployer:migrate staging --skip-project-backup  # Skip project backup
 ```
 
-The command reads server credentials from your `deploy.yaml` and `.deploy/.env.*` files.
+The command reads server credentials from your `deploy.json` and `.deploy/.env.*` files.
 
 ---
 
@@ -91,9 +91,7 @@ If your site already uses `releases/` and `current` symlinks, it's already migra
 ### Server Requirements
 
 1. **SSH key configured** on the server
-2. **sudo access** (optional, but recommended for VPS/dedicated servers)
-   - **VPS/Dedicated Servers**: Passwordless sudo recommended for full permissions control
-   - **Shared Hosting**: Works without sudo (permissions managed by hosting provider)
+2. **sudo access** for the SSH user (passwordless sudo recommended)
 
 ### Generate SSH Key (if needed)
 
@@ -184,7 +182,6 @@ ssh-copy-id ubuntu@your-server.com
 - Checks if already migrated
 - Detects Laravel installation
 - Auto-reads database credentials from `.env`
-- **Auto-detects sudo availability** (adapts behavior for shared hosting vs VPS)
 
 ### Step 2: Backup Project Files
 - Creates `/var/www/backups/` directory
@@ -208,9 +205,8 @@ ssh-copy-id ubuntu@your-server.com
 - Creates `current` symlink
 
 ### Step 5: Set Permissions
-- **With sudo (VPS/Dedicated)**: Sets ownership for deploy and web users, configures proper permissions
-- **Without sudo (Shared Hosting)**: Sets basic permissions (ownership managed by hosting provider)
-- Automatically adapts based on sudo availability
+- Sets ownership for deploy and web users
+- Makes storage writable by web server
 
 ## Release Naming
 
@@ -334,22 +330,6 @@ ssh ubuntu@server.com "grep DB_ /var/www/example.com/.env"
 ssh ubuntu@server.com "ls -la /var/www/example.com/"
 ssh ubuntu@server.com "ls -la /var/www/example.com/current/"
 ```
-
-### Shared Hosting Specific Issues
-
-**Backup Path Permissions**
-- Backups are created in `{parent-of-deploy-path}/backups/` (e.g., `/home/username/domains/example.com/backups/`)
-- No sudo required - uses regular user permissions
-
-**Permission Warnings**
-- On shared hosting, you may see permission warnings during migration
-- This is normal - the hosting provider manages file ownership automatically
-- The migration will complete successfully without sudo
-
-**Nginx/Apache Configuration**
-- On shared hosting, update the document root through your hosting control panel (cPanel, Plesk, etc.)
-- Point it to: `{deploy-path}/current/public`
-- Example: `/home/username/domains/example.com/public_html/current/public`
 
 ## Script Location
 

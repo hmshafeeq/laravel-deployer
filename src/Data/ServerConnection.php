@@ -10,6 +10,7 @@ readonly class ServerConnection
         public ?int $port = null,
         public bool $disableStrictHostKeyChecking = true,
         public bool $disablePasswordAuth = true,
+        public ?string $identityFile = null,
     ) {}
 
     public static function fromConfig(DeploymentConfig $config): self
@@ -23,8 +24,16 @@ readonly class ServerConnection
 
     public function getConnectionString(): string
     {
-        return $this->port
-            ? "{$this->user}@{$this->host}:{$this->port}"
-            : "{$this->user}@{$this->host}";
+        $parts = ["{$this->user}@{$this->host}"];
+
+        if ($this->port !== null) {
+            $parts[] = "-p {$this->port}";
+        }
+
+        if ($this->identityFile !== null) {
+            $parts[] = "-i {$this->identityFile}";
+        }
+
+        return implode(' ', $parts);
     }
 }

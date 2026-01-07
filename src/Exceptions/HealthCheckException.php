@@ -19,16 +19,4 @@ class HealthCheckException extends Exception
             "Disk space critical! {$usedPercent}% used, {$available} available. Please free up space before deployment."
         );
     }
-
-    public static function smokTestFailed(string $endpoint, string $description, string $response): self
-    {
-        return new self(
-            "Smoke test failed for {$endpoint} ({$description}). HTTP: {$response}"
-        );
-    }
-
-    public static function timeout(string $url): self
-    {
-        return new self("Health check timed out: {$url}");
-    }
 }

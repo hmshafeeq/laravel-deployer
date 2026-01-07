@@ -464,7 +464,7 @@ This is a single atomic filesystem operation = ZERO DOWNTIME
 CONFIGURATION LOADING
 =====================
 
-.deploy/deploy.yaml          .deploy/.env.production
+.deploy/deploy.json          .deploy/.env.production
 +------------------+         +------------------+
 | hosts:           |         | DEPLOY_HOST=... |
 |   production:    |         | DEPLOY_USER=... |
@@ -702,7 +702,7 @@ EXECUTION:
 HEALTH CHECK CONFIGURATION
 ==========================
 
-deploy.yaml:
+deploy.json:
 +------------------------------------------------------------------+
 | hosts:                                                            |
 |   production:                                                     |
@@ -779,7 +779,7 @@ ENVIRONMENT VARIABLES:
 ### Complete Configuration Schema
 
 ```yaml
-# .deploy/deploy.yaml
+# .deploy/deploy.json
 
 hosts:
   staging:
@@ -952,7 +952,7 @@ TYPICAL DEPLOYMENT WORKFLOW
 
 2. CONFIGURE
    +------------------------------------------------------------------+
-   | $ nano .deploy/deploy.yaml        # Edit hosts and config        |
+   | $ nano .deploy/deploy.json        # Edit hosts and config        |
    | $ cp .deploy/.env.production.example .deploy/.env.production    |
    | $ nano .deploy/.env.production    # Add credentials              |
    +------------------------------------------------------------------+

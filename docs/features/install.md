@@ -28,7 +28,7 @@ php artisan laravel-deployer:install
 The install command sets up Laravel Deployer in your project:
 
 1. **Creates Configuration Directory** - Creates `.deploy/` folder
-2. **Publishes Configuration File** - Creates `deploy.yaml` template
+2. **Publishes Configuration File** - Creates `deploy.json` template
 3. **Creates Environment Templates** - Creates `.env.{environment}.example` files
 4. **Updates .gitignore** - Adds deployment credentials to `.gitignore`
 5. **Displays Success Message** - Shows next steps
@@ -38,7 +38,7 @@ The install command sets up Laravel Deployer in your project:
 ```
 your-laravel-project/
 ├── .deploy/
-│   ├── deploy.yaml                  ← Main configuration
+│   ├── deploy.json                  ← Main configuration
 │   ├── .env.staging.example         ← Staging credentials template
 │   └── .env.production.example      ← Production credentials template
 └── .gitignore                       ← Updated with .deploy/*.env
@@ -46,7 +46,7 @@ your-laravel-project/
 
 ## Configuration Template
 
-The generated `deploy.yaml` contains:
+The generated `deploy.json` contains:
 
 ```yaml
 hosts:
@@ -125,8 +125,8 @@ DEPLOY_KEEP_RELEASES=3
 ### 1. Configure Deployment Settings
 
 ```bash
-# Edit deploy.yaml
-nano .deploy/deploy.yaml
+# Edit deploy.json
+nano .deploy/deploy.json
 ```
 
 Update:
@@ -200,7 +200,7 @@ composer require shaf/laravel-deployer
 php artisan laravel-deployer:install
 
 # 3. Migrate from existing deployment
-# ... customize deploy.yaml with your settings
+# ... customize deploy.json with your settings
 ```
 
 ### Team Project
@@ -211,8 +211,8 @@ composer require shaf/laravel-deployer
 # 2. Run installation (only once per project)
 php artisan laravel-deployer:install
 
-# 3. Commit deploy.yaml
-git add .deploy/deploy.yaml
+# 3. Commit deploy.json
+git add .deploy/deploy.json
 git commit -m "Add deployment configuration"
 
 # 4. Each team member creates own credentials
@@ -232,7 +232,7 @@ The install command adds to `.gitignore`:
 ```
 
 This ensures:
-- ✅ Configuration (`deploy.yaml`) is committed
+- ✅ Configuration (`deploy.json`) is committed
 - ✅ Credential templates (`.env.*.example`) are committed
 - ❌ Actual credentials (`.env.*`) are NOT committed
 - ❌ Downloaded backups are NOT committed
@@ -247,7 +247,7 @@ If you run the command again:
 To force reinstall:
 ```bash
 # Backup your configuration
-cp .deploy/deploy.yaml .deploy/deploy.yaml.backup
+cp .deploy/deploy.json .deploy/deploy.json.backup
 
 # Remove existing configuration
 rm -rf .deploy/
@@ -256,14 +256,14 @@ rm -rf .deploy/
 php artisan laravel-deployer:install
 
 # Restore your configuration
-mv .deploy/deploy.yaml.backup .deploy/deploy.yaml
+mv .deploy/deploy.json.backup .deploy/deploy.json
 ```
 
 ## Customization
 
 ### Multiple Environments
 
-Add more environments to `deploy.yaml`:
+Add more environments to `deploy.json`:
 
 ```yaml
 hosts:
@@ -294,7 +294,7 @@ cp .deploy/.env.staging.example .deploy/.env.qa
 
 ### Custom Shared Directories
 
-Edit `deploy.yaml`:
+Edit `deploy.json`:
 
 ```yaml
 config:
@@ -306,7 +306,7 @@ config:
 
 ### Custom Rsync Excludes
 
-Edit `deploy.yaml`:
+Edit `deploy.json`:
 
 ```yaml
 config:
@@ -329,7 +329,7 @@ Permission denied: .deploy
 ```
 **Fix**: Ensure you have write permissions in project root
 
-### deploy.yaml Already Exists
+### deploy.json Already Exists
 ```
 Configuration file already exists
 ```
@@ -354,7 +354,7 @@ Could not update .gitignore
 ## Tips
 
 - **Run once per project** during initial setup
-- **Commit deploy.yaml** to share configuration with team
+- **Commit deploy.json** to share configuration with team
 - **Never commit credentials** (`.env.*` files)
 - **Document custom settings** in project README
 - **Review templates** before copying to actual env files

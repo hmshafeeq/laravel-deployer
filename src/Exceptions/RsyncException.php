@@ -10,9 +10,4 @@ class RsyncException extends Exception
     {
         return new self("Rsync failed: {$error}");
     }
-
-    public static function timeout(): self
-    {
-        return new self('Rsync operation timed out');
-    }
 }

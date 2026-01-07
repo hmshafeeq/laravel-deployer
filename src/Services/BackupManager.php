@@ -26,7 +26,7 @@ class BackupManager
      */
     public function getAvailableBackups(): array
     {
-        $files = File::glob($this->backupsDirectory.'/db_backup_*.sql.gz');
+        $files = glob($this->backupsDirectory.'/db_backup_*.sql.gz') ?: [];
 
         // Sort by modification time (newest first)
         usort($files, function ($a, $b) {
@@ -66,14 +66,14 @@ class BackupManager
         }
 
         // Treat as filename - check if it's a full path or just filename
-        if (File::exists($identifier)) {
+        if (file_exists($identifier)) {
             return $identifier;
         }
 
         // Try as filename in backups directory
         $backupPath = $this->backupsDirectory.'/'.$identifier;
 
-        return File::exists($backupPath) ? $backupPath : null;
+        return file_exists($backupPath) ? $backupPath : null;
     }
 
     /**
@@ -83,7 +83,7 @@ class BackupManager
      */
     public function backupsDirectoryExists(): bool
     {
-        return File::exists($this->backupsDirectory);
+        return file_exists($this->backupsDirectory) && is_dir($this->backupsDirectory);
     }
 
     /**

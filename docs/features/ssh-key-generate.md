@@ -41,7 +41,7 @@ The SSH key generator:
 2. **Interactive Menu** - Shows options if keys exist
 3. **Generates Key Pair** - Creates RSA 4096-bit keys
 4. **Displays Public Key** - Shows key for copying
-5. **Suggests Servers** - Lists servers from deploy.yaml
+5. **Suggests Servers** - Lists servers from deploy.json
 6. **Copies to Server** - Uses `ssh-copy-id` to deploy key
 7. **Provides Instructions** - GitHub/GitLab/Bitbucket setup guides
 8. **Clipboard Support** - Copies key to clipboard (if available)
@@ -137,7 +137,7 @@ Or with custom name:
 
 ## Server Discovery
 
-The command reads `.deploy/deploy.yaml` to suggest servers:
+The command reads `.deploy/deploy.json` to suggest servers:
 
 ```yaml
 hosts:

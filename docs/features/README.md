@@ -62,7 +62,7 @@ php artisan laravel-deployer:install
 php artisan deploy:key-generate deploy@yourapp.com
 
 # 3. Configure deployment
-nano .deploy/deploy.yaml
+nano .deploy/deploy.json
 
 # 4. Deploy!
 php artisan deploy staging
@@ -307,7 +307,7 @@ php artisan help deploy:key-generate
 - ✅ Document deployment procedures
 - ✅ Coordinate major deployments
 - ✅ Communicate rollbacks
-- ✅ Share configuration (deploy.yaml)
+- ✅ Share configuration (deploy.json)
 - ✅ Keep credentials private
 
 ---

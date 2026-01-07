@@ -67,7 +67,7 @@ your-laravel-project/
 
 ## Prerequisites
 
-- Server configured in `.deploy/deploy.yaml`
+- Server configured in `.deploy/deploy.json`
 - SSH key authentication set up
 - MySQL/MariaDB on server
 - Sufficient local disk space

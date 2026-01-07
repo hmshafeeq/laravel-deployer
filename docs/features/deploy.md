@@ -54,14 +54,14 @@ The deploy command performs a complete zero-downtime deployment:
 
 ## Prerequisites
 
-- Server configured in `.deploy/deploy.yaml`
+- Server configured in `.deploy/deploy.json`
 - SSH key authentication set up
 - Environment credentials in `.deploy/.env.{environment}`
 - Server has required permissions and software (PHP, Composer, etc.)
 
 ## Configuration
 
-Configure deployment in `.deploy/deploy.yaml`:
+Configure deployment in `.deploy/deploy.json`:
 
 ```yaml
 hosts:

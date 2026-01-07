@@ -104,17 +104,4 @@ readonly class DeploymentConfig
 
         return $branch ?: 'main';
     }
-
-    public function toArray(): array
-    {
-        return [
-            'environment' => $this->environment->value,
-            'hostname' => $this->hostname,
-            'remoteUser' => $this->remoteUser,
-            'deployPath' => $this->deployPath,
-            'composerOptions' => $this->composerOptions,
-            'keepReleases' => $this->keepReleases,
-            'local' => $this->isLocal,
-        ];
-    }
 }

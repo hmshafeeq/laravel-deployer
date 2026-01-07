@@ -41,11 +41,11 @@ beforeEach(function () {
 test('deploy command is registered', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
-    expect($commands)->toHaveKey('deploy');
+    expect($commands)->toHaveKey('deployer');
 });
 
 test('deploy command can be instantiated', function () {
-    $result = $this->artisan('deploy --help');
+    $result = $this->artisan('deployer --help');
 
     expect($result->run())->toBe(0);
 });
@@ -56,24 +56,3 @@ test('deploy command requires environment argument', function () {
     // Should fail without environment argument
     expect($result->run())->not->toBe(0);
 })->skip('Command validation varies by Laravel version');
-
-test('deployment creates release directory structure', function () {
-    // This test requires full deployment environment
-    // Including composer, npm, rsync, etc.
-    expect(true)->toBeTrue();
-})->skip('Requires full deployment environment - run manually with: php artisan deploy test --no-confirm');
-
-test('deployment creates current symlink', function () {
-    // This test requires full deployment environment
-    expect(true)->toBeTrue();
-})->skip('Requires full deployment environment - run manually with: php artisan deploy test --no-confirm');
-
-test('deployment maintains release history', function () {
-    // This test requires full deployment environment
-    expect(true)->toBeTrue();
-})->skip('Requires full deployment environment - run manually with: php artisan deploy test --no-confirm');
-
-test('deployment cleans up old releases', function () {
-    // This test requires full deployment environment
-    expect(true)->toBeTrue();
-})->skip('Requires full deployment environment - run manually with: php artisan deploy test --no-confirm');

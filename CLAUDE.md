@@ -43,17 +43,17 @@ When making changes to this package, ensure consistency across all projects:
 
 ### 1. Stub Changes (`stubs/`)
 
-If you modify any stub files (e.g., `deploy.yaml.stub`, `.env.*.example`):
+If you modify any stub files (e.g., `deploy.json.stub`, `.env.*.example`):
 
 ```bash
-# After updating stubs, manually update existing deploy.yaml in each project
+# After updating stubs, manually update existing deploy.json in each project
 # OR inform users to re-run the installer (will overwrite their config)
 ```
 
 **Projects to update:**
-- `/Users/mshaf/Developer/Sites/timebox/web/.deploy/deploy.yaml`
-- `/Users/mshaf/Developer/Sites/thepayrollapp/.deploy/deploy.yaml`
-- `/Users/mshaf/Developer/Sites/westwindsupplies-latest/deploy.yaml`
+- `/Users/mshaf/Developer/Sites/timebox/web/.deploy/deploy.json`
+- `/Users/mshaf/Developer/Sites/thepayrollapp/.deploy/deploy.json`
+- `/Users/mshaf/Developer/Sites/westwindsupplies-latest/deploy.json`
 
 ### 2. Config Changes (`config/`)
 
@@ -68,7 +68,7 @@ php artisan vendor:publish --tag=laravel-deployer-config --force
 
 When adding new Artisan commands or features:
 - Test in all three projects
-- Update deploy.yaml examples if new configuration options are added
+- Update deploy.json examples if new configuration options are added
 - Document breaking changes
 
 ### 4. Recipe Changes (`recipe/deploy.php`)
@@ -123,7 +123,7 @@ php artisan deployer:db list                    # List available local backups
 ### File Locations
 ```
 .deploy/
-├── deploy.yaml              # Main deployment config
+├── deploy.json              # Main deployment config
 ├── .env.local               # Local test deployment
 ├── .env.staging             # Staging server credentials
 ├── .env.production          # Production server credentials

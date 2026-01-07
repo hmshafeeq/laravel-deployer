@@ -1,7 +1,4 @@
 /vendor/
-composer.phar
-.phpunit.result.cache
-.phpunit.cache/
-.php_cs.cache
-.php-cs-fixer.cache
-.deploy/
+/.phpunit.cache/
+/.deploy/
+composer.lock

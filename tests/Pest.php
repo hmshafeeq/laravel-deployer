@@ -28,3 +28,14 @@ function cleanupTestDeployment(): void
         shell_exec("rm -rf {$buildPath}");
     }
 }
+
+/**
+ * Invoke a private/protected method on an object for testing
+ */
+function invokePrivateMethod(object $object, string $method, array $args = []): mixed
+{
+    $reflection = new ReflectionMethod($object, $method);
+    $reflection->setAccessible(true);
+
+    return $reflection->invokeArgs($object, $args);
+}

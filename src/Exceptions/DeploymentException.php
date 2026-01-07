@@ -30,16 +30,4 @@ class DeploymentException extends Exception
     {
         return new self('No releases found');
     }
-
-    public static function viteRunning(): self
-    {
-        return new self(
-            'Vite bundler is currently running. Please stop the Vite development server before deploying.'
-        );
-    }
-
-    public static function unknownService(string $service): self
-    {
-        return new self("Unknown service: {$service}");
-    }
 }

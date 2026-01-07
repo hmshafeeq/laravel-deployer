@@ -207,7 +207,7 @@ If you have an existing Laravel deployment and want to use laravel-deployer, use
 ### Quick Migration
 
 ```bash
-# Migrate staging environment (uses deploy.yaml configuration)
+# Migrate staging environment (uses deploy.json configuration)
 php artisan deployer:migrate staging
 
 # Migrate production

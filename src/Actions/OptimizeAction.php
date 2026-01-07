@@ -76,17 +76,20 @@ class OptimizeAction extends Action
     {
         $this->cmd->info('Restarting services...');
 
-        // Detect PHP-FPM version first
-        $phpFpmService = trim($this->cmd->remote(
-            'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" | head -1 || echo ""'
+        // Detect all running PHP-FPM versions
+        $phpFpmOutput = trim($this->cmd->remote(
+            'systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""'
         ));
+
+        $phpFpmServices = array_filter(array_map('trim', explode("\n", $phpFpmOutput)));
 
         // Build batched command for all service restarts
         // Each command is wrapped in (cmd || true) so failures don't stop the batch
         $commands = [];
 
-        if (! empty($phpFpmService)) {
-            $commands[] = "(sudo systemctl restart {$phpFpmService} && echo 'PHP_OK' || echo 'PHP_FAIL')";
+        foreach ($phpFpmServices as $service) {
+            $marker = strtoupper(str_replace(['.', '-'], '_', $service));
+            $commands[] = "(sudo systemctl restart {$service} && echo '{$marker}_OK' || echo '{$marker}_FAIL')";
         }
 
         $commands[] = "(sudo systemctl reload nginx && echo 'NGINX_OK' || echo 'NGINX_FAIL')";
@@ -96,12 +99,13 @@ class OptimizeAction extends Action
         // Execute all in single SSH call
         $output = $this->cmd->remote(implode(' ; ', $commands));
 
-        // Parse results and show status
-        if (! empty($phpFpmService)) {
-            if (str_contains($output, 'PHP_OK')) {
-                $this->cmd->info("  ✓ Restarted {$phpFpmService}");
+        // Parse results and show status for each PHP-FPM service
+        foreach ($phpFpmServices as $service) {
+            $marker = strtoupper(str_replace(['.', '-'], '_', $service));
+            if (str_contains($output, "{$marker}_OK")) {
+                $this->cmd->info("  ✓ Restarted {$service}");
             } else {
-                $this->cmd->warning('  ⚠  PHP-FPM restart failed');
+                $this->cmd->warning("  ⚠  {$service} restart failed");
             }
         }
 
