@@ -11,11 +11,27 @@ use Shaf\LaravelDeployer\Services\CommandService;
  */
 class OptimizeAction extends Action
 {
+    /** @var array<string> Post-deploy commands to run after service restart */
+    private array $postDeployCommands = [];
+
     public function __construct(
         CommandService $cmd,
         DeploymentConfig $config
     ) {
         parent::__construct($cmd, $config);
+    }
+
+    /**
+     * Set post-deploy commands to run after service restart.
+     * These commands run AFTER services restart (fresh OPcache) but BEFORE artisan optimize.
+     *
+     * @param  array<string>  $commands  Commands to execute
+     */
+    public function setPostDeployCommands(array $commands): self
+    {
+        $this->postDeployCommands = $commands;
+
+        return $this;
     }
 
     /**
@@ -31,11 +47,22 @@ class OptimizeAction extends Action
         $escapedPath = CommandService::escapePath($releasePath);
         $php = $this->config->phpBinary;
 
-        // 1. Storage link (may fail if already exists)
-        $this->createStorageLink($releasePath);
+        // 1. Restart services FIRST to clear OPcache before running optimize
+        if (! $this->config->isLocal) {
+            $this->restartServices();
+            $this->cmd->newLine();
+        }
 
-        // 2. Run optimize + queue:restart in a single batched call
+        // 2. Run post-deploy commands with fresh OPcache (after service restart)
+        if (! empty($this->postDeployCommands)) {
+            $this->runPostDeployCommands($releasePath);
+            $this->cmd->newLine();
+        }
+
+        // 3. Run optimize + queue:restart with fresh OPcache
         // Note: artisan optimize already runs config:cache, route:cache, view:cache, event:cache
+        // Note: storage:link is now run in DeployAction before symlinking (not here)
+        $this->cmd->info('Running optimization with fresh OPcache...');
         try {
             $this->cmd->runBatch([
                 "{$php} {$escapedPath}/artisan optimize",
@@ -46,26 +73,62 @@ class OptimizeAction extends Action
             $this->cmd->warning('Optimization failed: '.$e->getMessage());
         }
 
-        // 3. Restart services
-        if (! $this->config->isLocal) {
-            $this->restartServices();
-        }
-
         $this->cmd->newLine();
         $this->cmd->success('✅ Optimization completed');
     }
 
     /**
-     * Create storage symlink
+     * Run post-deploy commands after service restart.
+     * These commands benefit from fresh OPcache since PHP-FPM has been restarted.
+     * Commands run in the CURRENT release path (after symlink switch).
      */
-    private function createStorageLink(string $releasePath): void
+    private function runPostDeployCommands(string $releasePath): void
     {
-        try {
-            $this->cmd->artisanStorageLink($releasePath);
-            $this->cmd->success('Storage link created');
-        } catch (\Exception $e) {
-            $this->cmd->warning('Storage link creation failed (may already exist)');
+        $this->cmd->info('Running post-deploy commands (with fresh OPcache)...');
+
+        $phpBinary = $this->config->phpBinary;
+        $artisanPath = "{$releasePath}/artisan";
+        $escapedReleasePath = CommandService::escapePath($releasePath);
+
+        foreach ($this->postDeployCommands as $command) {
+            if ($this->isArtisanShortcut($command)) {
+                // Artisan shortcut (e.g., "filament:optimize") - wrap with php artisan
+                $fullCommand = "{$phpBinary} {$artisanPath} {$command}";
+                $displayCmd = "artisan {$command}";
+            } else {
+                // Full command - run as-is (e.g., "php artisan migrate", "npm run build")
+                $fullCommand = "cd {$escapedReleasePath} && {$command}";
+                $displayCmd = $command;
+            }
+
+            $this->cmd->info("  → {$displayCmd}");
+
+            try {
+                $this->cmd->remoteWithOutput($fullCommand);
+            } catch (\Exception $e) {
+                // Post-deploy command failures are warnings, not fatal errors
+                $this->cmd->warning("  ⚠ Command failed: {$e->getMessage()}");
+            }
         }
+
+        $this->cmd->success('Post-deploy commands completed');
+    }
+
+    /**
+     * Check if command is an artisan shortcut (e.g., "config:cache")
+     * vs a full shell command (e.g., "php artisan config:cache", "npm run build")
+     */
+    private function isArtisanShortcut(string $command): bool
+    {
+        // If command contains spaces, it's likely a full command
+        // Artisan shortcuts are single words like "config:cache", "route:cache"
+        if (str_contains($command, ' ')) {
+            return false;
+        }
+
+        // Artisan commands typically contain a colon (namespace:command)
+        // or are simple commands like "migrate", "optimize"
+        return true;
     }
 
     /**
@@ -94,7 +157,8 @@ class OptimizeAction extends Action
 
         $commands[] = "(sudo systemctl reload nginx && echo 'NGINX_OK' || echo 'NGINX_FAIL')";
         $commands[] = "(sudo supervisorctl reread && sudo supervisorctl update && echo 'SUPERVISOR_OK' || echo 'SUPERVISOR_FAIL')";
-        $commands[] = "({$this->config->phpBinary} -r \"if (function_exists('opcache_reset')) { opcache_reset(); echo 'OPCACHE_OK'; } else { echo 'OPCACHE_SKIP'; }\" 2>/dev/null || echo 'OPCACHE_FAIL')";
+        // Note: PHP-FPM restart already clears FPM OPcache (the one that matters for web requests)
+        // CLI OPcache is separate and doesn't affect web traffic, so no need to reset it here
 
         // Execute all in single SSH call
         $output = $this->cmd->remote(implode(' ; ', $commands));
@@ -105,6 +169,11 @@ class OptimizeAction extends Action
             if (str_contains($output, "{$marker}_OK")) {
                 $this->cmd->info("  ✓ Restarted {$service}");
             } else {
+                // Normalize service name for config check (e.g., 'php8.3-fpm' -> 'php-fpm')
+                $normalizedService = preg_replace('/^php[0-9.]*-fpm$/', 'php-fpm', $service);
+                if (in_array($normalizedService, $this->config->requiredServices, true)) {
+                    throw new \RuntimeException("Required service {$service} failed to restart");
+                }
                 $this->cmd->warning("  ⚠  {$service} restart failed");
             }
         }
@@ -112,17 +181,19 @@ class OptimizeAction extends Action
         if (str_contains($output, 'NGINX_OK')) {
             $this->cmd->info('  ✓ Reloaded nginx');
         } else {
+            if (in_array('nginx', $this->config->requiredServices, true)) {
+                throw new \RuntimeException('Required service nginx failed to reload');
+            }
             $this->cmd->warning('  ⚠  Nginx reload failed');
         }
 
         if (str_contains($output, 'SUPERVISOR_OK')) {
             $this->cmd->info('  ✓ Reloaded supervisor');
         } else {
+            if (in_array('supervisor', $this->config->requiredServices, true)) {
+                throw new \RuntimeException('Required service supervisor failed to reload');
+            }
             $this->cmd->warning('  ⚠  Supervisor reload failed');
-        }
-
-        if (str_contains($output, 'OPCACHE_OK')) {
-            $this->cmd->info('  ✓ Reset OPcache (CLI)');
         }
 
         $this->cmd->success('Service restart completed');

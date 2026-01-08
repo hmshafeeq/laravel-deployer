@@ -50,9 +50,3 @@ test('deploy command can be instantiated', function () {
     expect($result->run())->toBe(0);
 });
 
-test('deploy command requires environment argument', function () {
-    $result = $this->artisan('deploy');
-
-    // Should fail without environment argument
-    expect($result->run())->not->toBe(0);
-})->skip('Command validation varies by Laravel version');

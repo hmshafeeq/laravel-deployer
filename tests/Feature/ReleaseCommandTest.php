@@ -21,9 +21,3 @@ test('rollback requires environment argument', function () {
     $this->artisan('deployer:release rollback');
 });
 
-test('rollback shows error for invalid environment', function () {
-    $result = $this->artisan('deployer:release rollback invalid-env');
-
-    $result->assertFailed();
-    $result->expectsOutputToContain('not found');
-})->skip('Requires actual deployment configuration to test properly');

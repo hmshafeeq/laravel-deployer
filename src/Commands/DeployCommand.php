@@ -145,22 +145,39 @@ class DeployCommand extends Command
             // Initialize receipt service
             $receiptService = new ReceiptService($cmdService, $config);
 
+            // Extract postDeploy commands - these will be run by OptimizeAction AFTER service restart
+            // to ensure they execute with fresh OPcache (e.g., view:clear, filament:optimize)
+            $postDeployCommands = $config->postDeployCommands;
+            $runOptimization = ! $interactive || ($interactiveOptions['optimizeApp'] ?? true);
+
+            // Create config without postDeploy commands for DeployAction
+            // (OptimizeAction will run them after service restart for fresh OPcache)
+            $deployConfig = $runOptimization && ! empty($postDeployCommands)
+                ? $config->with(['postDeployCommands' => []])
+                : $config;
+
             // Execute deployment
             $deploy = new DeployAction(
                 $deployService,
                 $cmdService,
                 $rsyncService,
                 $diffAction,
-                $config,
+                $deployConfig,
                 $postHealthCheck,
                 $receiptService
             );
             $deploy->execute();
 
             // Post-deployment optimization (skip if interactive mode disabled it)
-            if (! $interactive || ($interactiveOptions['optimizeApp'] ?? true)) {
+            if ($runOptimization) {
                 $this->newLine();
                 $optimize = new OptimizeAction($cmdService, $config);
+
+                // Pass postDeploy commands to run AFTER service restart (fresh OPcache)
+                if (! empty($postDeployCommands)) {
+                    $optimize->setPostDeployCommands($postDeployCommands);
+                }
+
                 $optimize->execute();
             }
 
@@ -200,46 +217,11 @@ class DeployCommand extends Command
      */
     private function applyInteractiveOptions(DeploymentConfig $config, array $options): DeploymentConfig
     {
-        // Create a new config with overridden options
-        // We need to use reflection or create a new instance since DeploymentConfig is readonly
-        return new DeploymentConfig(
-            environment: $config->environment,
-            hostname: $config->hostname,
-            remoteUser: $config->remoteUser,
-            deployPath: $config->deployPath,
-            composerOptions: $config->composerOptions,
-            keepReleases: $config->keepReleases,
-            isLocal: $config->isLocal,
-            rsyncExcludes: $config->rsyncExcludes,
-            rsyncIncludes: $config->rsyncIncludes,
-            rsyncOptions: $config->rsyncOptions,
-            rsyncFlags: $config->rsyncFlags,
-            identityFile: $config->identityFile,
-            port: $config->port,
-            showDiff: $options['showDiff'] ?? $config->showDiff,
-            showPreview: $options['showPreview'] ?? $config->showPreview,
-            confirmChanges: $options['confirmChanges'] ?? $config->confirmChanges,
-            showUploadProgress: $config->showUploadProgress,
-            diffDisplayLimit: $config->diffDisplayLimit,
-            phpBinary: $config->phpBinary,
-            postDeployCommands: $config->postDeployCommands,
-            beforeSymlink: $config->beforeSymlink,
-            afterSymlink: $config->afterSymlink,
-            branch: $config->branch,
-            githubToken: $config->githubToken,
-            strictHostKeyChecking: $config->strictHostKeyChecking,
-            assetsFailOnError: $config->assetsFailOnError,
-            healthCheckUrl: $config->healthCheckUrl,
-            maintenanceMode: $config->maintenanceMode,
-            maintenanceSecret: $config->maintenanceSecret,
-            backupBeforeMigrate: $config->backupBeforeMigrate,
-            hooks: $config->hooks,
-            skipPermissionFix: $config->skipPermissionFix,
-            webGroup: $config->webGroup,
-            enforceSetgid: $config->enforceSetgid,
-            directoryMode: $config->directoryMode,
-            fileMode: $config->fileMode,
-        );
+        return $config->with([
+            'showDiff' => $options['showDiff'] ?? $config->showDiff,
+            'showPreview' => $options['showPreview'] ?? $config->showPreview,
+            'confirmChanges' => $options['confirmChanges'] ?? $config->confirmChanges,
+        ]);
     }
 
     /**
@@ -247,44 +229,7 @@ class DeployCommand extends Command
      */
     private function disableShowDiff(DeploymentConfig $config): DeploymentConfig
     {
-        return new DeploymentConfig(
-            environment: $config->environment,
-            hostname: $config->hostname,
-            remoteUser: $config->remoteUser,
-            deployPath: $config->deployPath,
-            composerOptions: $config->composerOptions,
-            keepReleases: $config->keepReleases,
-            isLocal: $config->isLocal,
-            rsyncExcludes: $config->rsyncExcludes,
-            rsyncIncludes: $config->rsyncIncludes,
-            rsyncOptions: $config->rsyncOptions,
-            rsyncFlags: $config->rsyncFlags,
-            identityFile: $config->identityFile,
-            port: $config->port,
-            showDiff: false,
-            showPreview: $config->showPreview,
-            confirmChanges: $config->confirmChanges,
-            showUploadProgress: $config->showUploadProgress,
-            diffDisplayLimit: $config->diffDisplayLimit,
-            phpBinary: $config->phpBinary,
-            postDeployCommands: $config->postDeployCommands,
-            beforeSymlink: $config->beforeSymlink,
-            afterSymlink: $config->afterSymlink,
-            branch: $config->branch,
-            githubToken: $config->githubToken,
-            strictHostKeyChecking: $config->strictHostKeyChecking,
-            assetsFailOnError: $config->assetsFailOnError,
-            healthCheckUrl: $config->healthCheckUrl,
-            maintenanceMode: $config->maintenanceMode,
-            maintenanceSecret: $config->maintenanceSecret,
-            backupBeforeMigrate: $config->backupBeforeMigrate,
-            hooks: $config->hooks,
-            skipPermissionFix: $config->skipPermissionFix,
-            webGroup: $config->webGroup,
-            enforceSetgid: $config->enforceSetgid,
-            directoryMode: $config->directoryMode,
-            fileMode: $config->fileMode,
-        );
+        return $config->with(['showDiff' => false]);
     }
 
     /**
@@ -292,38 +237,9 @@ class DeployCommand extends Command
      */
     private function addViteDevExcludes(DeploymentConfig $config): DeploymentConfig
     {
-        $excludes = $config->rsyncExcludes;
-        $excludes[] = 'public/build/';
-        $excludes[] = 'public/hot';
-
-        return new DeploymentConfig(
-            environment: $config->environment,
-            hostname: $config->hostname,
-            remoteUser: $config->remoteUser,
-            deployPath: $config->deployPath,
-            composerOptions: $config->composerOptions,
-            keepReleases: $config->keepReleases,
-            isLocal: $config->isLocal,
-            rsyncExcludes: $excludes,
-            rsyncIncludes: $config->rsyncIncludes,
-            rsyncOptions: $config->rsyncOptions,
-            rsyncFlags: $config->rsyncFlags,
-            identityFile: $config->identityFile,
-            port: $config->port,
-            showDiff: $config->showDiff,
-            showPreview: $config->showPreview,
-            confirmChanges: $config->confirmChanges,
-            showUploadProgress: $config->showUploadProgress,
-            diffDisplayLimit: $config->diffDisplayLimit,
-            phpBinary: $config->phpBinary,
-            postDeployCommands: $config->postDeployCommands,
-            branch: $config->branch,
-            githubToken: $config->githubToken,
-            strictHostKeyChecking: $config->strictHostKeyChecking,
-            assetsFailOnError: $config->assetsFailOnError,
-            healthCheckUrl: $config->healthCheckUrl,
-            hooks: $config->hooks,
-        );
+        return $config->with([
+            'rsyncExcludes' => array_merge($config->rsyncExcludes, ['public/build/', 'public/hot']),
+        ]);
     }
 
     /**

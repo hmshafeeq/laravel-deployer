@@ -42,6 +42,7 @@ class DiagnoseAction extends Action
         $this->checkDeployUser();
         $this->checkWebUser();
         $this->checkUserInWebGroup();
+        $this->checkWebUserInDeployGroup();
 
         // Umask checks
         $this->checkSystemUmask();
@@ -58,6 +59,11 @@ class DiagnoseAction extends Action
         $this->checkDirectoriesWithoutSetgid();
         $this->checkFilesOwnedByWebUser();
         $this->checkFilesOwnedByRoot();
+
+        // Comprehensive permission enforcement
+        $this->checkComprehensiveDirectoryPermissions();
+        $this->checkComprehensiveFilePermissions();
+        $this->checkWritableStoragePaths();
 
         // Filesystem check
         $this->checkFilesystem();
@@ -157,6 +163,42 @@ class DiagnoseAction extends Action
             $this->result->addCheck(
                 'User & Group Configuration',
                 DiagnoseCheck::skip('Deploy user in web group', 'Could not check group membership')
+            );
+        }
+    }
+
+    private function checkWebUserInDeployGroup(): void
+    {
+        try {
+            $output = $this->cmd->remote("groups {$this->webGroup}");
+            // Output: "www-data : www-data ubuntu ..."
+            $inGroup = str_contains($output, $this->deployUser);
+
+            if ($inGroup) {
+                $this->result->addCheck(
+                    'User & Group Configuration',
+                    DiagnoseCheck::pass(
+                        'Web user in deploy group',
+                        "{$this->webGroup} is member of {$this->deployUser} group",
+                        $output
+                    )
+                );
+            } else {
+                $this->result->addCheck(
+                    'User & Group Configuration',
+                    DiagnoseCheck::fail(
+                        'Web user in deploy group',
+                        "{$this->webGroup} is NOT in {$this->deployUser} group (bidirectional membership missing)",
+                        $output,
+                        "{$this->webGroup} should be in {$this->deployUser} group",
+                        "sudo usermod -aG {$this->deployUser} {$this->webGroup}\n# Reconnect SSH for changes to take effect"
+                    )
+                );
+            }
+        } catch (\Exception $e) {
+            $this->result->addCheck(
+                'User & Group Configuration',
+                DiagnoseCheck::skip('Web user in deploy group', 'Could not check group membership')
             );
         }
     }
@@ -386,11 +428,12 @@ class DiagnoseAction extends Action
             } else {
                 $this->result->addCheck(
                     'Permission Analysis',
-                    DiagnoseCheck::warn(
+                    DiagnoseCheck::fail(
                         'Directories have setgid',
-                        "{$count} directories without setgid bit",
+                        "{$count} directories without setgid bit (required for group inheritance)",
                         "{$count} directories",
-                        '0 directories'
+                        '0 directories',
+                        "sudo find {$path} -type d -exec chmod g+s {} \\;"
                     )
                 );
             }
@@ -475,6 +518,146 @@ class DiagnoseAction extends Action
                 'Permission Analysis',
                 DiagnoseCheck::skip('Files owned by root', 'Could not check')
             );
+        }
+    }
+
+    // =========================================================================
+    // Comprehensive Permission Enforcement
+    // =========================================================================
+
+    private function checkComprehensiveDirectoryPermissions(): void
+    {
+        $path = $this->config->deployPath.'/current';
+
+        try {
+            $escapedPath = CommandService::escapePath($path);
+            // Find directories not set to 2775 or 775
+            $output = trim($this->cmd->remote("find {$escapedPath} -type d ! \\( -perm 2775 -o -perm 775 \\) 2>/dev/null | wc -l"));
+            $count = (int) $output;
+
+            if ($count === 0) {
+                $this->result->addCheck(
+                    'Comprehensive Permission Enforcement',
+                    DiagnoseCheck::pass(
+                        'Directory permissions standardized',
+                        'All directories have correct permissions (2775/775)',
+                        '0 directories with incorrect permissions'
+                    )
+                );
+            } else {
+                $this->result->addCheck(
+                    'Comprehensive Permission Enforcement',
+                    DiagnoseCheck::fail(
+                        'Directory permissions standardized',
+                        "{$count} directories need permission normalization",
+                        "{$count} directories",
+                        'All directories should be 2775',
+                        "sudo find {$path} -type d -exec chmod 2775 {} \\;"
+                    )
+                );
+            }
+        } catch (\Exception $e) {
+            $this->result->addCheck(
+                'Comprehensive Permission Enforcement',
+                DiagnoseCheck::skip('Directory permissions standardized', 'Could not check')
+            );
+        }
+    }
+
+    private function checkComprehensiveFilePermissions(): void
+    {
+        $path = $this->config->deployPath.'/current';
+
+        try {
+            $escapedPath = CommandService::escapePath($path);
+            // Find files not set to 664 or 644
+            $output = trim($this->cmd->remote("find {$escapedPath} -type f ! \\( -perm 664 -o -perm 644 \\) 2>/dev/null | wc -l"));
+            $count = (int) $output;
+
+            if ($count === 0) {
+                $this->result->addCheck(
+                    'Comprehensive Permission Enforcement',
+                    DiagnoseCheck::pass(
+                        'File permissions standardized',
+                        'All files have correct permissions (664/644)',
+                        '0 files with incorrect permissions'
+                    )
+                );
+            } else {
+                $this->result->addCheck(
+                    'Comprehensive Permission Enforcement',
+                    DiagnoseCheck::fail(
+                        'File permissions standardized',
+                        "{$count} files need permission normalization",
+                        "{$count} files",
+                        'All files should be 664',
+                        "sudo find {$path} -type f -exec chmod 664 {} \\;"
+                    )
+                );
+            }
+        } catch (\Exception $e) {
+            $this->result->addCheck(
+                'Comprehensive Permission Enforcement',
+                DiagnoseCheck::skip('File permissions standardized', 'Could not check')
+            );
+        }
+    }
+
+    private function checkWritableStoragePaths(): void
+    {
+        $paths = [
+            $this->config->deployPath.'/shared/storage',
+            $this->config->deployPath.'/current/bootstrap/cache',
+        ];
+
+        foreach ($paths as $path) {
+            $pathName = basename(dirname($path)).'/'.basename($path);
+
+            try {
+                $escapedPath = CommandService::escapePath($path);
+                // Check if path exists
+                $exists = $this->cmd->remote("test -d {$escapedPath} && echo 'EXISTS' || echo 'NOT_FOUND'");
+
+                if (! str_contains($exists, 'EXISTS')) {
+                    $this->result->addCheck(
+                        'Comprehensive Permission Enforcement',
+                        DiagnoseCheck::skip("Writable: {$pathName}", "Path not found: {$path}")
+                    );
+
+                    continue;
+                }
+
+                // Check if all files/dirs are group-writable
+                $output = trim($this->cmd->remote("find {$escapedPath} ! -perm -g+w 2>/dev/null | wc -l"));
+                $count = (int) $output;
+
+                if ($count === 0) {
+                    $this->result->addCheck(
+                        'Comprehensive Permission Enforcement',
+                        DiagnoseCheck::pass(
+                            "Writable: {$pathName}",
+                            'All files/dirs are group-writable',
+                            '0 non-writable items'
+                        )
+                    );
+                } else {
+                    $this->result->addCheck(
+                        'Comprehensive Permission Enforcement',
+                        DiagnoseCheck::fail(
+                            "Writable: {$pathName}",
+                            "{$count} items not group-writable",
+                            "{$count} items",
+                            '0 items',
+                            "sudo chmod -R g+w {$path}"
+                        )
+                    );
+                }
+            } catch (\Exception $e) {
+                $this->result->addCheck(
+                    'Comprehensive Permission Enforcement',
+                    DiagnoseCheck::skip("Writable: {$pathName}", 'Could not check')
+                );
+            }
         }
     }
 

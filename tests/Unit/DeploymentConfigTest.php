@@ -152,3 +152,57 @@ test('detectCurrentBranch() returns branch name from git', function () {
     expect($result)->toBeString();
     expect($result)->not->toBeEmpty();
 });
+
+test('fromArray() sets default required and optional services', function () {
+    $configArray = [
+        'environments' => [
+            'local' => [
+                'hostname' => 'example.com',
+                'remoteUser' => 'deploy',
+                'deployPath' => '/var/www/app',
+            ],
+        ],
+    ];
+
+    $config = DeploymentConfig::fromArray('local', $configArray['environments']['local']);
+
+    expect($config->requiredServices)->toBe(['php-fpm', 'nginx']);
+    expect($config->optionalServices)->toBe(['supervisor']);
+});
+
+test('fromArray() applies custom required and optional services', function () {
+    $configArray = [
+        'environments' => [
+            'production' => [
+                'hostname' => 'prod.example.com',
+                'remoteUser' => 'deploy',
+                'deployPath' => '/var/www/prod',
+                'requiredServices' => ['php-fpm', 'nginx', 'supervisor'],
+                'optionalServices' => [],
+            ],
+        ],
+    ];
+
+    $config = DeploymentConfig::fromArray('production', $configArray['environments']['production']);
+
+    expect($config->requiredServices)->toBe(['php-fpm', 'nginx', 'supervisor']);
+    expect($config->optionalServices)->toBe([]);
+});
+
+test('with() method preserves required and optional services', function () {
+    $config = new DeploymentConfig(
+        environment: Environment::PRODUCTION,
+        hostname: 'example.com',
+        remoteUser: 'deploy',
+        deployPath: '/var/www',
+        composerOptions: '--prefer-dist',
+        requiredServices: ['php-fpm', 'nginx', 'supervisor'],
+        optionalServices: []
+    );
+
+    $newConfig = $config->with(['hostname' => 'new.example.com']);
+
+    expect($newConfig->requiredServices)->toBe(['php-fpm', 'nginx', 'supervisor']);
+    expect($newConfig->optionalServices)->toBe([]);
+    expect($newConfig->hostname)->toBe('new.example.com');
+});

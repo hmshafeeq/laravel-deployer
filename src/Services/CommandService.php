@@ -628,6 +628,12 @@ class CommandService implements CommandExecutor
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
+        // Enable SSH connection multiplexing for performance
+        // Reuses a single connection for all commands instead of reconnecting each time
+        // Control socket stored in /tmp with user@host:port format for uniqueness
+        $controlPath = '/tmp/deployer-ssh-%r@%h:%p';
+        $this->ssh->useMultiplexing($controlPath, '60');
+
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
         if (! $this->config->strictHostKeyChecking) {

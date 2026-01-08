@@ -33,6 +33,8 @@ readonly class DeploymentConfig
         public ?string $githubToken = null,
         public bool $strictHostKeyChecking = true,
         public bool $assetsFailOnError = true,
+        /** @var array<string> Paths to verify exist on server after file sync (optional) */
+        public array $assetsVerify = [],
         // Health check configuration (simplified: URL presence = enabled)
         public ?string $healthCheckUrl = null,
         // Maintenance mode configuration
@@ -49,7 +51,68 @@ readonly class DeploymentConfig
         public bool $enforceSetgid = true,
         public string $directoryMode = '2775',
         public string $fileMode = '664',
+        // Copy vendor/ from previous release (saves ~40s on composer install)
+        public bool $copyVendor = true,
+        // Service restart configuration
+        /** @var array<string> Services that MUST restart successfully (deployment fails if they don't) */
+        public array $requiredServices = ['php-fpm', 'nginx'],
+        /** @var array<string> Services that are optional (warn on failure but continue) */
+        public array $optionalServices = ['supervisor'],
     ) {}
+
+    /**
+     * Create a new instance with specific property overrides.
+     * Provides a clean way to modify readonly config without verbose recreation.
+     *
+     * @param  array<string, mixed>  $overrides  Property name => value pairs to override
+     *
+     * @example $config->with(['showDiff' => false, 'confirmChanges' => false])
+     */
+    public function with(array $overrides): self
+    {
+        return new self(
+            environment: $overrides['environment'] ?? $this->environment,
+            hostname: $overrides['hostname'] ?? $this->hostname,
+            remoteUser: $overrides['remoteUser'] ?? $this->remoteUser,
+            deployPath: $overrides['deployPath'] ?? $this->deployPath,
+            composerOptions: $overrides['composerOptions'] ?? $this->composerOptions,
+            keepReleases: $overrides['keepReleases'] ?? $this->keepReleases,
+            isLocal: $overrides['isLocal'] ?? $this->isLocal,
+            rsyncExcludes: $overrides['rsyncExcludes'] ?? $this->rsyncExcludes,
+            rsyncIncludes: $overrides['rsyncIncludes'] ?? $this->rsyncIncludes,
+            rsyncOptions: $overrides['rsyncOptions'] ?? $this->rsyncOptions,
+            rsyncFlags: $overrides['rsyncFlags'] ?? $this->rsyncFlags,
+            identityFile: $overrides['identityFile'] ?? $this->identityFile,
+            port: $overrides['port'] ?? $this->port,
+            showDiff: $overrides['showDiff'] ?? $this->showDiff,
+            showPreview: $overrides['showPreview'] ?? $this->showPreview,
+            confirmChanges: $overrides['confirmChanges'] ?? $this->confirmChanges,
+            showUploadProgress: $overrides['showUploadProgress'] ?? $this->showUploadProgress,
+            diffDisplayLimit: $overrides['diffDisplayLimit'] ?? $this->diffDisplayLimit,
+            phpBinary: $overrides['phpBinary'] ?? $this->phpBinary,
+            postDeployCommands: $overrides['postDeployCommands'] ?? $this->postDeployCommands,
+            beforeSymlink: $overrides['beforeSymlink'] ?? $this->beforeSymlink,
+            afterSymlink: $overrides['afterSymlink'] ?? $this->afterSymlink,
+            branch: $overrides['branch'] ?? $this->branch,
+            githubToken: $overrides['githubToken'] ?? $this->githubToken,
+            strictHostKeyChecking: $overrides['strictHostKeyChecking'] ?? $this->strictHostKeyChecking,
+            assetsFailOnError: $overrides['assetsFailOnError'] ?? $this->assetsFailOnError,
+            assetsVerify: $overrides['assetsVerify'] ?? $this->assetsVerify,
+            healthCheckUrl: $overrides['healthCheckUrl'] ?? $this->healthCheckUrl,
+            maintenanceMode: $overrides['maintenanceMode'] ?? $this->maintenanceMode,
+            maintenanceSecret: $overrides['maintenanceSecret'] ?? $this->maintenanceSecret,
+            backupBeforeMigrate: $overrides['backupBeforeMigrate'] ?? $this->backupBeforeMigrate,
+            hooks: $overrides['hooks'] ?? $this->hooks,
+            skipPermissionFix: $overrides['skipPermissionFix'] ?? $this->skipPermissionFix,
+            webGroup: $overrides['webGroup'] ?? $this->webGroup,
+            enforceSetgid: $overrides['enforceSetgid'] ?? $this->enforceSetgid,
+            directoryMode: $overrides['directoryMode'] ?? $this->directoryMode,
+            fileMode: $overrides['fileMode'] ?? $this->fileMode,
+            copyVendor: $overrides['copyVendor'] ?? $this->copyVendor,
+            requiredServices: $overrides['requiredServices'] ?? $this->requiredServices,
+            optionalServices: $overrides['optionalServices'] ?? $this->optionalServices,
+        );
+    }
 
     /**
      * Get the SSH user (alias for remoteUser for clarity)
@@ -101,6 +164,7 @@ readonly class DeploymentConfig
             githubToken: $config['githubToken'] ?? null,
             strictHostKeyChecking: $ssh['strictHostKeyChecking'] ?? true,
             assetsFailOnError: $assets['failOnError'] ?? true,
+            assetsVerify: $assets['verify'] ?? [],
             healthCheckUrl: $config['healthCheckUrl'] ?? null,
             maintenanceMode: $config['maintenanceMode'] ?? false,
             maintenanceSecret: $config['maintenanceSecret'] ?? null,
@@ -111,6 +175,9 @@ readonly class DeploymentConfig
             enforceSetgid: $config['permissions']['enforceSetgid'] ?? $config['enforceSetgid'] ?? true,
             directoryMode: $config['permissions']['directoryMode'] ?? $config['directoryMode'] ?? '2775',
             fileMode: $config['permissions']['fileMode'] ?? $config['fileMode'] ?? '664',
+            copyVendor: $config['copyVendor'] ?? true,
+            requiredServices: $config['requiredServices'] ?? ['php-fpm', 'nginx'],
+            optionalServices: $config['optionalServices'] ?? ['supervisor'],
         );
     }
 

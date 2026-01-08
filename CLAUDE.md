@@ -164,6 +164,221 @@ php artisan deployer staging --dry-run
 
 ---
 
+## Optimal Configuration
+
+### ❌ Wrong (Redundant & Slow)
+
+```json
+"beforeSymlink": [
+  "php artisan cache:clear",
+  "php artisan config:clear",   // ← Redundant (cache:clear already does this)
+  "php artisan route:clear",    // ← Redundant
+  "php artisan view:clear",     // ← Redundant
+  "php artisan optimize"        // ← Wrong timing (runs after symlink anyway)
+]
+```
+
+**Problems:**
+1. **Redundant clears**: Individual :clear commands are redundant with `optimize:clear`
+2. **Redundant optimize**: OptimizeAction runs `optimize` automatically AFTER symlink with fresh OPcache
+3. **Wrong timing**: Caching before symlink uses stale OPcache and may cause view errors
+4. **Wasted time**: ~10-15 seconds per deployment
+
+### ✅ Correct (Minimal & Fast)
+
+```json
+"beforeSymlink": [
+  "php artisan optimize:clear"
+]
+```
+
+**Why?**
+1. `optimize:clear` clears ALL caches (config, route, view, event, app cache)
+2. Optimization happens automatically AFTER symlink switch
+3. Services restart BEFORE optimization ensures fresh OPcache
+4. No manual `view:clear` needed after deployment
+
+**Note:** `cache:clear` only clears the application cache (Redis/file store), NOT compiled views. Use `optimize:clear` to clear everything.
+
+### Deployment Flow (21 Steps)
+
+```
+BEFORE SYMLINK (New Release):
+├─ 1. Lock deployment
+├─ 2. Setup deployment structure
+├─ 3. Create release directory
+├─ 4. Build assets locally (npm run build)
+├─ 5. Show sync diff (compare local vs current release)
+├─ 6. Confirm changes
+├─ 7. Copy previous release (cp -rp, excludes vendor/node_modules)
+├─ 8. Rsync files (only transfers changes)
+├─ 9. Create shared symlinks (storage, .env)
+├─ 10. Install Composer dependencies
+├─ 11. Fix permissions (single SSH batch)
+├─ 12. Run database migrations
+├─ 13. Link .dep directory
+├─ 14. Run beforeSymlink commands (cache:clear)
+└─ 15. Create storage symlink
+
+SYMLINK SWITCH:
+└─ 16. Symlink current → /releases/YYYYMM.N/
+
+AFTER SYMLINK:
+├─ 17. Log deployment success
+├─ 18. Verify health (if configured)
+├─ 19. Cleanup old releases
+├─ 20. Run post-deploy hooks
+└─ 21. Generate deployment receipt
+
+OPTIMIZATION (OptimizeAction):
+├─ Restart PHP-FPM (clears OPcache)
+├─ Reload Nginx
+├─ Reload Supervisor
+└─ Run artisan optimize
+```
+
+### Why This Works
+
+**Before symlink:**
+- Clearing caches ensures clean slate
+- No caching yet → no stale paths
+
+**After symlink:**
+- Services restart first → OPcache cleared
+- Optimization runs with fresh OPcache → correct cached paths
+- All cached files reference CURRENT symlink (correct release)
+
+### Special Cases
+
+#### Filament Projects (TimeBox, WestWindSupplies)
+
+```json
+"beforeSymlink": [
+  "php artisan cache:clear"
+],
+"postDeploy": [
+  "php artisan filament:optimize"
+]
+```
+
+**Why postDeploy?** Filament optimization needs to run AFTER services restart.
+
+#### Laravel Mix Projects (ThePayrollApp)
+
+```json
+"beforeSymlink": [
+  "php artisan cache:clear"
+]
+```
+
+**Note:** Laravel Mix uses `npm run prod` (not `npm run build`). Configure in `deploy.json` assets section.
+
+### Validation Warnings
+
+The package validates both `beforeSymlink` and `postDeploy` configurations and shows warnings:
+
+#### beforeSymlink Warnings
+
+```
+⚠️  Redundant: `artisan optimize` detected in beforeSymlink
+   Optimization runs automatically AFTER symlink with fresh OPcache
+   Recommendation: Remove `optimize` from beforeSymlink
+
+⚠️  Redundant: Individual :clear commands with cache:clear
+   `cache:clear` already clears config, route, view, and event caches
+   Recommendation: Remove individual :clear commands
+```
+
+#### postDeploy Warnings
+
+```
+⚠️  Redundant: `view:clear` detected in postDeploy
+   The OptimizeAction already clears and rebuilds caches after service restart
+   Recommendation: Remove cache-related commands from postDeploy
+```
+
+**Redundant postDeploy commands:**
+- `cache:clear` - redundant (optimize clears and rebuilds)
+- `view:clear` - redundant (optimize handles views)
+- `config:clear` / `config:cache` - redundant (optimize handles config)
+- `route:clear` / `route:cache` - redundant (optimize handles routes)
+- `event:clear` / `event:cache` - redundant (optimize handles events)
+- `optimize` - redundant (runs automatically after service restart)
+
+**Action:** Update your `deploy.json` to remove redundant commands.
+
+### postDeploy Best Practices
+
+The `postDeploy` array should ONLY contain commands that are NOT handled by OptimizeAction:
+
+```json
+"postDeploy": [
+  "php artisan filament:optimize",   // ✅ Filament-specific (not in artisan optimize)
+  "php artisan queue:restart",       // ✅ Queue restart (not in artisan optimize)
+  "php artisan custom:command"       // ✅ Application-specific commands
+]
+```
+
+**Do NOT add these to postDeploy:**
+```json
+"postDeploy": [
+  "php artisan cache:clear",         // ❌ Redundant
+  "php artisan config:cache",        // ❌ Redundant
+  "php artisan route:cache",         // ❌ Redundant
+  "php artisan view:cache",          // ❌ Redundant
+  "php artisan optimize"             // ❌ Redundant (runs automatically)
+]
+```
+
+**Why?** The OptimizeAction runs `artisan optimize` AFTER services restart. This command already:
+1. Clears and rebuilds config cache
+2. Clears and rebuilds route cache
+3. Clears and rebuilds view cache
+4. Clears and rebuilds event cache
+
+Adding these commands to `postDeploy` doubles the work and wastes ~10-15 seconds per deployment.
+
+---
+
+## Troubleshooting
+
+### "View Not Found" or Wrong View After Deployment
+
+**Cause:** View cache was built before services restarted, using stale OPcache.
+
+**Solution:**
+1. Update `deploy.json`:
+   ```json
+   "beforeSymlink": ["php artisan cache:clear"]
+   ```
+2. Redeploy
+3. Should no longer need manual `view:clear` after deployment
+
+### Cache Permission Errors
+
+**Cause:** Bootstrap cache doesn't have correct permissions.
+
+**Solution:** The deployer automatically fixes permissions on retry. If it persists:
+```bash
+ssh user@server
+cd /path/to/release
+sudo chgrp -R www-data bootstrap/cache
+sudo chmod -R 2775 bootstrap/cache
+```
+
+### Deployment Takes Too Long
+
+**Check for redundant commands:**
+- Multiple `:clear` commands (use only `cache:clear`)
+- Multiple `:cache` commands in `beforeSymlink` (remove all)
+- `optimize` in both `beforeSymlink` and automatic post-symlink (remove from `beforeSymlink`)
+
+**Expected times:**
+- beforeSymlink: ~2-5 seconds (cache:clear only)
+- optimize: ~10-15 seconds (after symlink)
+
+---
+
 ## GitHub Repository
 
 **URL**: `git@github.com:hmshafeeq/laravel-deployer.git`

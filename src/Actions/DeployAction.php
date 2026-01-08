@@ -147,6 +147,9 @@ class DeployAction
             $this->stepTimer->end('files:sync');
             $this->runHook('after:sync');
 
+            // 7.5. Verify critical assets were deployed (optional)
+            $this->verifyAssets();
+
             // 8. Create shared symlinks
             $this->stepTimer->start('shared:link');
             $this->createSharedLinks();
@@ -156,35 +159,37 @@ class DeployAction
             $this->fixSharedLogPermissions();
 
             // 10. Install composer dependencies
-            // Note: vendor already exists from hardlink copy in syncFiles()
+            // Note: vendor is installed fresh (excluded from previous release copy)
             $this->runHook('before:composer');
             $this->stepTimer->start('composer:install');
             $this->installComposerDependencies();
             $this->stepTimer->end('composer:install');
             $this->runHook('after:composer');
 
-            // 11. Fix module permissions
+            // 11. Fix all permissions in single SSH batch
             $this->stepTimer->start('permissions:fix');
-            $this->fixModulePermissions();
-
-            // 12. Set writable permissions (must run after fixModulePermissions)
-            $this->setWritablePermissions();
+            $this->fixPermissions();
             $this->stepTimer->end('permissions:fix');
 
-            // 13. Run database migrations
+            // 12. Run database migrations
             $this->runHook('before:migrate');
             $this->stepTimer->start('artisan:migrate');
             $this->runMigrations();
             $this->stepTimer->end('artisan:migrate');
             $this->runHook('after:migrate');
 
-            // 14. Link .dep directory
+            // 13. Link .dep directory
             $this->linkDepDirectory();
 
-            // 15. Run optimization commands (critical - aborts on failure)
+            // 14. Run optimization commands (critical - aborts on failure)
             $this->stepTimer->start('optimize:release');
             $this->runBeforeSymlinkCommands();
             $this->stepTimer->end('optimize:release');
+
+            // 15. Create storage symlink
+            $this->stepTimer->start('storage:link');
+            $this->createStorageLink();
+            $this->stepTimer->end('storage:link');
 
             // 16. Symlink current release
             $this->runHook('before:symlink');
@@ -227,9 +232,30 @@ class DeployAction
             $this->runHook('on:failure');
             throw $e;
         } finally {
+            // Cleanup SSH control sockets to prevent stale connections
+            $this->cleanupSshSockets();
+
             // Always unlock deployment, even if there's an error
             $this->unlockDeployment();
         }
+    }
+
+    /**
+     * Cleanup SSH control master sockets
+     */
+    private function cleanupSshSockets(): void
+    {
+        if ($this->config->isLocal) {
+            return; // No SSH sockets for local deployments
+        }
+
+        $this->cmd->debug('Cleaning up SSH control sockets...');
+
+        // Close SSH control master connection gracefully
+        $host = $this->config->hostname;
+        $user = $this->config->remoteUser;
+        $port = $this->config->port ?? 22;
+        shell_exec("ssh -O exit -o ControlPath=/tmp/deployer-{$user}@{$host}:{$port} {$user}@{$host} 2>/dev/null || true");
     }
 
     /**
@@ -273,10 +299,12 @@ class DeployAction
             "touch {$sharedEnvPath}",
         ];
 
-        // Enforce setgid on directories for group inheritance
+        // Enforce setgid on shared directories for group inheritance
         // This ensures files created by www-data inherit the correct group
+        // Only runs on shared/ dir (not entire deploy path) for performance
         if ($this->config->enforceSetgid) {
-            $commands[] = "find {$escapedDeployPath} -type d -exec chmod g+s {} \\; 2>/dev/null || true";
+            $escapedSharedPath = CommandService::escapePath("{$deployPath}/".Paths::SHARED_DIR);
+            $commands[] = "find {$escapedSharedPath} -type d -exec chmod g+s {} \\; 2>/dev/null || true";
         }
 
         $this->cmd->runBatch($commands);
@@ -356,9 +384,15 @@ class DeployAction
         $this->cmd->task('files:sync');
         $this->cmd->info('Syncing files to server...');
 
-        // Copy previous release with hardlinks before rsync
-        // This dramatically speeds up rsync - it only needs to update changed files
-        $this->copyPreviousReleaseWithHardlinks();
+        // Copy previous release before rsync
+        // This speeds up rsync - it only needs to update changed files
+        $this->copyPreviousRelease();
+
+        // Note: If early diff was empty but we copied from previous release,
+        // rsync may still transfer files due to seeding from previous release
+        if ($this->syncDiff !== null && $this->syncDiff->isEmpty()) {
+            $this->cmd->debug('Note: Diff was calculated against current release; seeded copy may show different transfer activity');
+        }
 
         // Pass sync diff and output for progress bar
         $this->rsync->setSyncDiff($this->syncDiff);
@@ -374,14 +408,69 @@ class DeployAction
     }
 
     /**
-     * Copy previous release to new release directory using hardlinks.
-     * This makes rsync much faster as it only needs to update changed files.
+     * Verify that critical assets exist on the server after file sync.
+     * This is an optional verification step that warns (but doesn't fail)
+     * if configured assets are missing from the deployed release.
      */
-    private function copyPreviousReleaseWithHardlinks(): void
+    private function verifyAssets(): void
+    {
+        $assetsToVerify = $this->config->assetsVerify;
+
+        if (empty($assetsToVerify)) {
+            return;
+        }
+
+        $this->cmd->task('assets:verify');
+        $this->cmd->info('Verifying critical assets...');
+
+        $missingAssets = [];
+
+        foreach ($assetsToVerify as $assetPath) {
+            $fullPath = "{$this->releasePath}/{$assetPath}";
+            $escapedPath = CommandService::escapePath($fullPath);
+
+            // Determine if path is a directory (ends with /) or file
+            $isDirectory = str_ends_with($assetPath, '/');
+
+            if ($isDirectory) {
+                // Check if directory exists using test -d
+                $exists = $this->cmd->test("[ -d {$escapedPath} ]");
+            } else {
+                // Check if file exists using test -f
+                $exists = $this->cmd->test("[ -f {$escapedPath} ]");
+            }
+
+            if (! $exists) {
+                $missingAssets[] = $assetPath;
+            }
+        }
+
+        if (! empty($missingAssets)) {
+            $this->cmd->warning('⚠️  Some assets were not found on server:');
+            foreach ($missingAssets as $asset) {
+                $this->cmd->warning("   - {$asset}");
+            }
+            $this->addWarning('assets', 'Missing assets: '.implode(', ', $missingAssets));
+            $this->cmd->newLine();
+        } else {
+            $count = count($assetsToVerify);
+            $this->cmd->success("All {$count} critical asset(s) verified");
+        }
+    }
+
+    /**
+     * Copy previous release to new release directory.
+     * This seeds the release with existing files so rsync only transfers changes.
+     * Uses regular copy (not hardlinks) for clean release isolation.
+     *
+     * When copyVendor is enabled (default), vendor/ is included in the copy.
+     * This saves ~40s on composer install as it only validates instead of fresh install.
+     */
+    private function copyPreviousRelease(): void
     {
         $previousRelease = $this->deployment->getCurrentRelease();
         if (! $previousRelease) {
-            $this->cmd->debug('No previous release found, skipping hardlink copy');
+            $this->cmd->debug('No previous release found, skipping copy');
 
             return;
         }
@@ -390,39 +479,39 @@ class DeployAction
 
         // Check if previous release exists
         if (! $this->cmd->directoryExists($previousReleasePath)) {
-            $this->cmd->debug('Previous release directory does not exist, skipping hardlink copy');
+            $this->cmd->debug('Previous release directory does not exist, skipping copy');
 
             return;
         }
 
-        $this->cmd->info('Copying previous release with hardlinks...');
+        $this->cmd->info('Copying previous release...');
 
         $escapedPrevious = CommandService::escapePath($previousReleasePath);
         $escapedNew = CommandService::escapePath($this->releasePath);
 
-        // Build exclusion list for hardlink copy
-        // Exclude files that should always be fresh from rsync, not hardlinked
-        $excludes = [
-            'bootstrap/cache',    // May be owned by www-data, will be regenerated
-            'composer.lock',      // Should be fresh from rsync
-            'package-lock.json',  // Should be fresh from rsync
-            'yarn.lock',          // Should be fresh from rsync
-            'bun.lockb',          // Should be fresh from rsync
-            '.env',               // Shouldn't exist in releases anyway
-        ];
-
-        $excludeFlags = implode(' ', array_map(fn($e) => "--exclude='{$e}'", $excludes));
-
-        // Use rsync with --link-dest for hardlink optimization instead of cp -al
-        // This excludes files that may cause permission issues or should be fresh from rsync
-        $this->cmd->remote(
-            "rm -rf {$escapedNew} && ".
-            "rsync -a --link-dest={$escapedPrevious} ".
-            "{$excludeFlags} ".
-            "{$escapedPrevious}/ {$escapedNew}/"
-        );
-
-        $this->cmd->success('Previous release copied with hardlinks');
+        if ($this->config->copyVendor) {
+            // Copy entire previous release including vendor/ (saves ~40s on composer install)
+            // Exclude only node_modules (not needed on server) and bootstrap/cache (regenerated)
+            // Note: Using /. syntax to copy CONTENTS, not the directory itself (prevents nesting)
+            $this->cmd->remote(
+                "cp -rp {$escapedPrevious}/. {$escapedNew}/ && ".
+                "rm -rf {$escapedNew}/node_modules && ".
+                "rm -rf {$escapedNew}/bootstrap/cache && ".
+                "mkdir -p {$escapedNew}/bootstrap/cache"
+            );
+            $this->cmd->success('Previous release copied (with vendor)');
+        } else {
+            // Original behavior: exclude vendor/ for fresh composer install
+            // Note: Using /. syntax to copy CONTENTS, not the directory itself (prevents nesting)
+            $this->cmd->remote(
+                "cp -rp {$escapedPrevious}/. {$escapedNew}/ && ".
+                "rm -rf {$escapedNew}/vendor && ".
+                "rm -rf {$escapedNew}/node_modules && ".
+                "rm -rf {$escapedNew}/bootstrap/cache && ".
+                "mkdir -p {$escapedNew}/bootstrap/cache"
+            );
+            $this->cmd->success('Previous release copied (without vendor)');
+        }
     }
 
     /**
@@ -473,44 +562,42 @@ class DeployAction
     }
 
     /**
-     * Set writable permissions on required directories
+     * Fix all permissions in a single SSH batch operation.
+     * Combines module permissions and writable directory setup.
+     * Can be skipped via skipPermissionFix config when server umask is correctly configured.
      */
-    private function setWritablePermissions(): void
+    private function fixPermissions(): void
     {
-        $this->cmd->task('permissions:writable');
+        $this->cmd->task('permissions:fix');
 
-        $writableDirs = [
-            "{$this->releasePath}/bootstrap/cache",
-            "{$this->releasePath}/storage",
-        ];
+        // Skip if configured (useful when server umask is correctly set to 022)
+        if ($this->config->skipPermissionFix) {
+            $this->cmd->info('Skipping permission fix (skipPermissionFix is enabled)');
 
-        $commands = [];
-
-        foreach ($writableDirs as $dir) {
-            $escapedDir = CommandService::escapePath($dir);
-
-            // Skip symlinks - shared directories (like storage) are already properly configured
-            // and may contain files owned by www-data that the deploy user can't chmod
-            if ($this->cmd->symlinkExists($dir)) {
-                $this->cmd->info("  Skipping {$dir} (symlink to shared)");
-
-                continue;
-            }
-
-            // Create directory if it doesn't exist (e.g., bootstrap/cache is often gitignored)
-            // Set group to configured web group and permissions for web server write access
-            $webGroup = $this->config->webGroup;
-            $dirMode = $this->config->directoryMode;
-            $commands[] = "mkdir -p {$escapedDir}";
-            $commands[] = "chgrp -R {$webGroup} {$escapedDir}";
-            $commands[] = "chmod -R {$dirMode} {$escapedDir}";
+            return;
         }
 
-        if (! empty($commands)) {
-            $this->cmd->runBatch($commands);
-        }
+        $escapedPath = CommandService::escapePath($this->releasePath);
+        $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
+        $escapedBootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
 
-        $this->cmd->success('Writable permissions set');
+        $fileMode = $this->config->fileMode;
+        $dirMode = $this->config->directoryMode;
+        $webGroup = $this->config->webGroup;
+
+        // Batch all permission operations into a single SSH call:
+        // 1. Set configured file mode for all files
+        // 2. Set configured directory mode for all directories
+        // 3. Make vendor/bin executable if it exists
+        // 4. Ensure bootstrap/cache exists with proper group and permissions
+        $this->cmd->runBatch([
+            "find {$escapedPath} -type f -exec chmod {$fileMode} {} +",
+            "find {$escapedPath} -type d -exec chmod {$dirMode} {} +",
+            "[ -d {$escapedVendorBin} ] && chmod -R 755 {$escapedVendorBin} || true",
+            "mkdir -p {$escapedBootstrapCache} && chgrp -R {$webGroup} {$escapedBootstrapCache}",
+        ]);
+
+        $this->cmd->success('Permissions fixed');
     }
 
     /**
@@ -528,7 +615,7 @@ class DeployAction
         $escapedPath = CommandService::escapePath($this->releasePath);
 
         // Clear bootstrap/cache before composer runs.
-        // When using hardlink copy from previous release, cached files may contain
+        // When copying from previous release, cached files may contain
         // stale absolute paths to old releases. This must be cleared before
         // artisan package:discover runs to prevent path resolution errors.
         $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
@@ -614,40 +701,6 @@ class DeployAction
     }
 
     /**
-     * Fix module permissions
-     * Can be skipped via skipPermissionFix config when server umask is correctly configured
-     */
-    private function fixModulePermissions(): void
-    {
-        $this->cmd->task('permissions:modules');
-
-        // Skip if configured (useful when server umask is correctly set to 022)
-        if ($this->config->skipPermissionFix) {
-            $this->cmd->info('Skipping permission fix (skipPermissionFix is enabled)');
-
-            return;
-        }
-
-        $escapedPath = CommandService::escapePath($this->releasePath);
-        $escapedVendorBin = CommandService::escapePath("{$this->releasePath}/vendor/bin");
-
-        // Use configured permission modes
-        $fileMode = $this->config->fileMode;
-        $dirMode = $this->config->directoryMode;
-
-        // Batch all permission fixes into a single SSH call
-        // - Configured file mode for files, directory mode for directories
-        // - vendor/bin gets 755 if it exists (using shell conditional)
-        $this->cmd->runBatch([
-            "find {$escapedPath} -type f -exec chmod {$fileMode} {} +",
-            "find {$escapedPath} -type d -exec chmod {$dirMode} {} +",
-            "[ -d {$escapedVendorBin} ] && chmod -R 755 {$escapedVendorBin} || true",
-        ]);
-
-        $this->cmd->success('Module permissions fixed');
-    }
-
-    /**
      * Run database migrations with optional maintenance mode and backup
      */
     private function runMigrations(): void
@@ -695,29 +748,190 @@ class DeployAction
             return;
         }
 
+        // Validate configuration and warn about redundant commands
+        $this->validateBeforeSymlinkCommands();
+
         $this->cmd->task('optimize:release');
         $this->cmd->info('Running pre-symlink optimization commands...');
 
         $phpBinary = $this->config->phpBinary;
         $artisanPath = "{$this->releasePath}/artisan";
 
-        $batchedCommands = [];
+        // Run commands one at a time to catch errors properly
         foreach ($beforeSymlink as $command) {
             if ($this->isArtisanShortcut($command)) {
                 $fullCommand = "cd {$this->releasePath} && {$phpBinary} {$artisanPath} {$command}";
-                $this->cmd->info("  → artisan {$command}");
+                $displayCmd = "artisan {$command}";
             } else {
                 $fullCommand = "cd {$this->releasePath} && {$command}";
-                $this->cmd->info("  → {$command}");
+                $displayCmd = $command;
             }
-            $batchedCommands[] = $fullCommand;
+
+            $this->cmd->info("  → {$displayCmd}");
+
+            try {
+                $output = $this->cmd->remoteWithOutput($fullCommand);
+
+                // Check for Laravel ERROR markers even if exit code is 0
+                if (str_contains($output, '  ERROR  ') || str_contains($output, 'Failed to clear cache')) {
+                    throw new \RuntimeException("Command failed: {$displayCmd}");
+                }
+            } catch (\Exception $e) {
+                // Try to fix permissions and retry once
+                $this->cmd->warning('  ⚠ Command failed, attempting to fix permissions and retry...');
+
+                try {
+                    $this->fixBootstrapCachePermissions();
+                    $output = $this->cmd->remoteWithOutput($fullCommand);
+
+                    // Check again after retry
+                    if (str_contains($output, '  ERROR  ') || str_contains($output, 'Failed to clear cache')) {
+                        throw new \RuntimeException("Command failed after retry: {$displayCmd}\n{$output}");
+                    }
+
+                    $this->cmd->info('  ✓ Retry successful');
+                } catch (\Exception $retryException) {
+                    $this->cmd->error("  ✗ Command failed after retry: {$displayCmd}");
+                    throw new \RuntimeException(
+                        "Pre-symlink optimization failed: {$displayCmd}\n".
+                        "Error: {$retryException->getMessage()}\n".
+                        'Deployment aborted to prevent issues.',
+                        0,
+                        $retryException
+                    );
+                }
+            }
         }
 
-        // Use remoteWithOutput so errors are visible
-        // This will throw exception on failure, aborting deployment
-        $this->cmd->remoteWithOutput(implode(' && ', $batchedCommands));
-
         $this->cmd->success('Pre-symlink optimization completed');
+    }
+
+    /**
+     * Fix permissions on bootstrap/cache and shared storage
+     * This is called when cache:clear fails due to permission issues
+     */
+    private function fixBootstrapCachePermissions(): void
+    {
+        $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
+        $sharedStorage = CommandService::escapePath("{$this->config->deployPath}/shared/storage");
+        $webGroup = $this->config->webGroup;
+        $deployUser = $this->config->remoteUser;
+
+        // Fix permissions on both locations:
+        // 1. Change group to www-data
+        // 2. Set group write permissions (2775 for dirs, 664 for files)
+        // 3. Change ownership to deploy user so they can delete files
+        // 4. Set setgid bit on directories so new files inherit group
+        $this->cmd->remote(
+            "sudo chgrp -R {$webGroup} {$bootstrapCache} {$sharedStorage} && ".
+            "sudo chmod -R 2775 {$bootstrapCache} {$sharedStorage} && ".
+            "sudo find {$bootstrapCache} {$sharedStorage} -type f -exec chmod 664 {} + && ".
+            "sudo find {$bootstrapCache} {$sharedStorage} -type d -exec chmod 2775 {} + && ".
+            "sudo chown -R {$deployUser}:{$webGroup} {$bootstrapCache} {$sharedStorage}"
+        );
+    }
+
+    /**
+     * Validate beforeSymlink commands and warn about redundant configurations
+     */
+    private function validateBeforeSymlinkCommands(): void
+    {
+        $beforeSymlink = $this->config->beforeSymlink ?? [];
+
+        if (empty($beforeSymlink)) {
+            return;
+        }
+
+        $hasOptimize = false;
+        $hasCacheClear = false;
+        $hasIndividualClears = false;
+        $hasIndividualCaches = false;
+
+        foreach ($beforeSymlink as $cmd) {
+            // Check for 'artisan optimize' but NOT 'optimize:clear'
+            if (str_contains($cmd, 'artisan optimize') && ! str_contains($cmd, 'optimize:clear')) {
+                $hasOptimize = true;
+            }
+            if (str_contains($cmd, 'cache:clear')) {
+                $hasCacheClear = true;
+            }
+            if (str_contains($cmd, 'config:clear') ||
+                str_contains($cmd, 'route:clear') ||
+                str_contains($cmd, 'view:clear') ||
+                str_contains($cmd, 'event:clear')) {
+                $hasIndividualClears = true;
+            }
+            if (str_contains($cmd, 'config:cache') ||
+                str_contains($cmd, 'route:cache') ||
+                str_contains($cmd, 'view:cache') ||
+                str_contains($cmd, 'event:cache')) {
+                $hasIndividualCaches = true;
+            }
+        }
+
+        // Show warnings for redundant configurations
+        if ($hasOptimize) {
+            $this->cmd->warning('⚠️  Redundant: `artisan optimize` detected in beforeSymlink');
+            $this->cmd->warning('   Optimization runs automatically AFTER symlink with fresh OPcache');
+            $this->cmd->warning('   Recommendation: Remove `optimize` from beforeSymlink');
+            $this->addWarning('config', 'Redundant: artisan optimize in beforeSymlink (runs automatically after symlink)');
+            $this->cmd->newLine();
+        }
+
+        if ($hasCacheClear && $hasIndividualClears) {
+            $this->cmd->warning('⚠️  Redundant: Individual :clear commands with cache:clear');
+            $this->cmd->warning('   `cache:clear` already clears config, route, view, and event caches');
+            $this->cmd->warning('   Recommendation: Remove individual :clear commands');
+            $this->addWarning('config', 'Redundant: Individual :clear commands with cache:clear');
+            $this->cmd->newLine();
+        }
+
+        if ($hasIndividualCaches && ! $hasOptimize) {
+            $this->cmd->warning('⚠️  Suboptimal: Individual :cache commands in beforeSymlink');
+            $this->cmd->warning('   Caching before symlink uses stale OPcache and may cause view errors');
+            $this->cmd->warning('   Recommendation: Remove :cache commands (they run after symlink automatically)');
+            $this->addWarning('config', 'Suboptimal: Individual :cache commands in beforeSymlink (may cause view errors)');
+            $this->cmd->newLine();
+        }
+    }
+
+    /**
+     * Validate postDeploy commands and warn about redundant configurations.
+     * OptimizeAction runs `artisan optimize` after service restart, so cache commands are redundant.
+     */
+    private function validatePostDeployCommands(): void
+    {
+        $postDeployCommands = $this->config->postDeployCommands;
+
+        if (empty($postDeployCommands)) {
+            return;
+        }
+
+        // Commands that are redundant because OptimizeAction handles them
+        $redundantCommands = [
+            'cache:clear' => 'optimize clears and rebuilds caches',
+            'view:clear' => 'optimize handles views',
+            'config:clear' => 'optimize handles config',
+            'config:cache' => 'optimize handles config',
+            'route:clear' => 'optimize handles routes',
+            'route:cache' => 'optimize handles routes',
+            'event:clear' => 'optimize handles events',
+            'event:cache' => 'optimize handles events',
+            'optimize' => 'runs automatically after service restart',
+        ];
+
+        foreach ($postDeployCommands as $cmd) {
+            foreach ($redundantCommands as $redundantCmd => $reason) {
+                if (str_contains($cmd, $redundantCmd)) {
+                    $this->cmd->warning("⚠️  Redundant: `{$redundantCmd}` detected in postDeploy");
+                    $this->cmd->warning('   The OptimizeAction already clears and rebuilds caches after service restart');
+                    $this->cmd->warning('   Recommendation: Remove cache-related commands from postDeploy');
+                    $this->addWarning('config', "Redundant: {$redundantCmd} in postDeploy ({$reason})");
+                    $this->cmd->newLine();
+                    break; // Only warn once per command
+                }
+            }
+        }
     }
 
     /**
@@ -785,6 +999,25 @@ class DeployAction
         $escapedReleaseDep = CommandService::escapePath("{$this->releasePath}/.dep");
 
         $this->cmd->remote("ln -nfs {$escapedDepPath} {$escapedReleaseDep}");
+    }
+
+    /**
+     * Create storage symlink in the release
+     * Must run before symlinking the release, not after
+     */
+    private function createStorageLink(): void
+    {
+        $this->cmd->task('storage:link');
+        $this->cmd->info('Creating storage symlink...');
+
+        try {
+            $this->cmd->artisanStorageLink($this->releasePath);
+            $this->cmd->success('Storage symlink created');
+        } catch (\Exception $e) {
+            // Storage link failure is non-critical - warn but continue
+            // The symlink may already exist from hardlink copy
+            $this->cmd->warning("Storage link creation failed (may already exist): {$e->getMessage()}");
+        }
     }
 
     /**
@@ -883,6 +1116,9 @@ class DeployAction
     private function runPostDeploymentHooks(): void
     {
         $this->cmd->task('hooks:post-deploy');
+
+        // Validate configuration and warn about redundant commands
+        $this->validatePostDeployCommands();
 
         // Run configured post-deployment commands
         $postDeployCommands = $this->config->postDeployCommands;
@@ -1023,6 +1259,29 @@ class DeployAction
 
         // Get author name
         $this->gitAuthor = trim((string) shell_exec('git log -1 --format=%an 2>/dev/null'));
+
+        // Validate git state
+        $this->validateGitState();
+    }
+
+    /**
+     * Validate git state and warn about potential issues
+     */
+    private function validateGitState(): void
+    {
+        // Check for uncommitted changes
+        $status = trim((string) shell_exec('git status --porcelain 2>/dev/null'));
+        if (! empty($status)) {
+            $this->cmd->warning('⚠️  Warning: Deploying with uncommitted changes');
+            $this->addWarning('git', 'Uncommitted changes detected');
+        }
+
+        // Verify branch matches config
+        $currentBranch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD 2>/dev/null'));
+        if ($currentBranch && $currentBranch !== $this->config->branch) {
+            $this->cmd->warning("⚠️  Warning: On branch '{$currentBranch}' but config expects '{$this->config->branch}'");
+            $this->addWarning('git', "Branch mismatch: on {$currentBranch}, config expects {$this->config->branch}");
+        }
     }
 
     /**
@@ -1047,16 +1306,17 @@ class DeployAction
     }
 
     /**
-     * Check if composer.lock exists and warn if missing
+     * Check if composer.lock exists locally and warn if missing.
+     * Note: composer.lock is typically excluded from rsync, so we check locally.
      */
     private function checkComposerLock(): void
     {
-        $lockFile = "{$this->releasePath}/composer.lock";
+        $localLockFile = base_path('composer.lock');
 
-        if (! $this->cmd->fileExists($lockFile)) {
-            $this->cmd->warning('⚠️  Warning: composer.lock not found in release!');
-            $this->cmd->warning('   Dependencies resolved fresh (slower). Consider tracking composer.lock.');
-            $this->addWarning('composer', 'composer.lock not found - dependencies resolved fresh');
+        if (! file_exists($localLockFile)) {
+            $this->cmd->warning('⚠️  Warning: composer.lock not found locally!');
+            $this->cmd->warning('   Run "composer install" to generate lock file for reproducible builds.');
+            $this->addWarning('composer', 'composer.lock not found locally - run composer install');
         }
     }
 
