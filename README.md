@@ -1,85 +1,830 @@
 # Laravel Deployer
 
-A lightweight, zero-downtime deployment package for Laravel applications.
+[![License](https://img.shields.io/packagist/l/shaf/laravel-deployer)](LICENSE)
+[![PHP Version](https://img.shields.io/packagist/php-v/shaf/laravel-deployer)](composer.json)
+[![Laravel](https://img.shields.io/badge/Laravel-11.x%20%7C%2012.x-red)](https://laravel.com)
 
-> **Simple, powerful deployment for Laravel apps.** Deploy your application with a single command using atomic symlink swapping for zero downtime.
+A Laravel package for deployment automation with rsync-based zero-downtime deployments.
 
-## ✨ Features
+## Features
 
-- 🚀 **Zero-Downtime Deployment** - Atomic symlink swapping for seamless releases
-- ⏪ **Instant Rollback** - One-command rollback to previous releases
-- 📦 **Release Management** - Automatic versioning and cleanup
-- 🔒 **Deployment Locking** - Prevents concurrent deployments
-- 💾 **Database Operations** - Backup, download, upload, and restore
-- 🔄 **Service Management** - Auto-restart PHP-FPM, Nginx, Supervisor
-- ❤️ **Health Checks** - Pre and post-deployment verification with retries
-- 🔑 **SSH Key Generator** - Interactive key generation and server setup
-- 🖥️ **Server Provisioning** - Automated LEMP stack setup with security hardening
-- 🎨 **Beautiful Output** - Clear, colored progress indicators
-- 📢 **Notifications** - Slack and Discord integration
-- 🔍 **Diff Display** - See exactly what files will be deployed with color-coded changes
-- ✅ **Confirmation Prompts** - Prevent accidents with configurable confirmation before deployment
-- 🧪 **Dry-Run Mode** - Preview deployment plan without executing
-- 📋 **Deployment Receipts** - JSON audit trail for every deployment
-- 🔗 **Environment Inheritance** - Reduce config duplication with `extends`
-- 🎛️ **Interactive Mode** - Step-by-step prompts for deployment options
-- 📊 **Progress Bar** - Real-time file sync progress with ETA
-- 📈 **Summary Dashboard** - Beautiful deployment completion summary
-- 🪝 **Deployment Hooks** - Custom commands at any deployment step
+- **Zero-downtime deployments** - Atomic symlink switching ensures no downtime
+- **Rsync-based file sync** - Fast, incremental file transfers with diff preview
+- **Gitignore integration** - Automatically excludes files from `.gitignore`
+- **Multi-environment support** - Deploy to local, staging, and production environments
+- **Environment inheritance** - Environments can extend other environments
+- **Release management** - Keep multiple releases with instant rollback capability
+- **Database operations** - Backup, download, upload, and restore database backups
+- **Server provisioning** - Provision fresh Ubuntu servers with PHP, Nginx, Node.js, and more
+- **Deployment hooks** - Run custom commands at 14 different points during deployment
+- **Diagnostic tools** - Diagnose deployment issues and permission problems
+- **SSH key generation** - Generate and manage SSH keys for passwordless deployments
+- **Notification support** - Slack and Discord notifications for deployment status
+- **Health checks** - Verify deployments with HTTP health check endpoints
 
-## 📋 Requirements
+## Requirements
 
-- PHP 8.2+
+- PHP >= 8.2
 - Laravel 11.x or 12.x
-- SSH access to your server
-- `rsync` installed locally and on server
+- SSH access to deployment servers
+- rsync installed on local and remote machines
 
-## 🚀 Installation
-
-### 1. Install via Composer
+## Installation
 
 ```bash
-composer require shaf/laravel-deployer --dev
+composer require shaf/laravel-deployer
 ```
 
-> **Note:** This package is designed as a **dev dependency**. It runs on your local machine (or CI/CD) and deploys to servers via SSH. The package is NOT needed on the production server.
-
-### 2. Run Installation Command
+The service provider is auto-discovered. Run the setup command to generate configuration files:
 
 ```bash
-php artisan laravel-deployer:install
+php artisan deployer:setup install
 ```
 
 This creates:
-- `.deploy/deploy.json` - Deployment configuration (tracked in git)
-- `.deploy/.env.{environment}.example` - Secret templates (gitignored)
-- `.gitignore` entries to track `deploy.json` but ignore `.env.*` files
+```
+.deploy/
+├── deploy.json              # Main deployment configuration (tracked in git)
+├── .env.staging.example     # Example staging credentials
+├── .env.production.example  # Example production credentials
+└── .env.local.example       # Example for local deployments
+```
 
-## 🖥️ Server Provisioning
+## Quick Start
 
-Laravel Deployer includes a comprehensive server provisioning system that automatically sets up a fresh Ubuntu server with everything needed to run Laravel applications.
+### 1. Edit deploy.json
+
+Configure your deployment settings in `.deploy/deploy.json`:
+
+```json
+{
+  "keepReleases": 3,
+  "environments": {
+    "staging": {
+      "deployPath": "/var/www/staging"
+    },
+    "production": {
+      "deployPath": "/var/www/production"
+    }
+  },
+  "beforeSymlink": [
+    "php artisan optimize:clear"
+  ]
+}
+```
+
+### 2. Create environment files
+
+```bash
+cp .deploy/.env.staging.example .deploy/.env.staging
+```
+
+Edit `.deploy/.env.staging`:
+```env
+DEPLOY_HOST=staging.example.com
+DEPLOY_USER=deployer
+DEPLOY_IDENTITY_FILE=~/.ssh/id_rsa
+```
+
+### 3. Deploy
+
+```bash
+php artisan deployer staging
+```
+
+---
+
+## Configuration Reference
+
+### deploy.json Structure
+
+```json
+{
+  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+  "keepReleases": 3,
+  "phpBinary": "php",
+  "copyVendor": true,
+
+  "display": { ... },
+  "ssh": { ... },
+  "rsync": { ... },
+  "composer": { ... },
+  "assets": { ... },
+  "permissions": { ... },
+  "healthCheck": { ... },
+
+  "environments": { ... },
+
+  "beforeSymlink": [],
+  "afterSymlink": [],
+  "postDeploy": [],
+  "hooks": { ... }
+}
+```
+
+---
+
+### Global Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `keepReleases` | int | `3` | Number of releases to keep on server |
+| `phpBinary` | string | `"php"` | Path to PHP binary on server |
+| `copyVendor` | bool | `true` | Copy vendor/ from previous release (saves ~40s) |
+| `skipPermissionFix` | bool | `false` | Skip permission fixing (if server umask is configured) |
+| `backupBeforeMigrate` | bool | `false` | Create database backup before migrations |
+| `maintenanceMode` | bool | `false` | Enable maintenance mode during deployment |
+| `maintenanceSecret` | string | `null` | Secret to bypass maintenance mode |
+| `healthCheckUrl` | string | `null` | URL for post-deployment health check |
+| `branch` | string | auto-detect | Git branch for release logging |
+
+---
+
+### Display Settings
+
+Control what the deployer shows during deployment.
+
+```json
+{
+  "display": {
+    "showDiff": true,
+    "showPreview": true,
+    "confirmChanges": true,
+    "showUploadProgress": true,
+    "diffDisplayLimit": 20
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `showDiff` | bool | `true` | Show files that will be synced |
+| `showPreview` | bool | `true` | Show early diff preview before confirmation |
+| `confirmChanges` | bool | `true` | Ask for confirmation before deployment |
+| `showUploadProgress` | bool | `true` | Show rsync upload progress |
+| `diffDisplayLimit` | int | `20` | Max files to show per category in diff |
+
+---
+
+### SSH Settings
+
+```json
+{
+  "ssh": {
+    "strictHostKeyChecking": true
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `strictHostKeyChecking` | bool | `true` | Enable SSH strict host key checking |
+
+---
+
+### Rsync Settings
+
+Configure file synchronization behavior.
+
+```json
+{
+  "rsync": {
+    "exclude": [
+      ".git/",
+      "node_modules/",
+      "/vendor/",
+      "storage/",
+      ".env",
+      "tests/"
+    ],
+    "include": [
+      "composer.json",
+      "composer.lock"
+    ],
+    "flags": "rzc",
+    "options": ["delete", "delete-after", "compress"]
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `useGitignore` | bool | `true` | Automatically exclude files from `.gitignore` |
+| `exclude` | array | `[]` | Additional patterns to exclude from sync |
+| `include` | array | `[]` | Patterns to include (processed before excludes) |
+| `flags` | string | `"rzc"` | Rsync flags (r=recursive, z=compress, c=checksum) |
+| `options` | array | `["delete", "delete-after", "compress"]` | Additional rsync options |
+
+**Note:** Files in your `.gitignore` are automatically excluded from deployment.
+
+**Exclude patterns:**
+- Use `/vendor/` (leading slash) to exclude only root vendor, not `public/vendor/`
+- Use `vendor/` to exclude all vendor directories anywhere
+- Use `*.log` to exclude all log files
+
+---
+
+### Composer Settings
+
+```json
+{
+  "composer": {
+    "options": "--prefer-dist --no-interaction --optimize-autoloader"
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `options` | string | `"--prefer-dist --no-interaction --optimize-autoloader"` | Composer install options |
+
+**Common production options:**
+```json
+{
+  "composer": {
+    "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+  }
+}
+```
+
+---
+
+### Asset Settings
+
+```json
+{
+  "assets": {
+    "failOnError": true,
+    "verify": [
+      "public/build/",
+      "public/build/manifest.json"
+    ]
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `failOnError` | bool | `true` | Fail deployment if asset build fails |
+| `verify` | array | `[]` | Paths to verify exist after sync (warns if missing) |
+
+---
+
+### Permission Settings
+
+```json
+{
+  "permissions": {
+    "webGroup": "www-data",
+    "enforceSetgid": true,
+    "directoryMode": "2775",
+    "fileMode": "664"
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `webGroup` | string | `"www-data"` | Web server group |
+| `enforceSetgid` | bool | `true` | Enforce setgid bit on directories |
+| `directoryMode` | string | `"2775"` | Directory permissions (rwxrwsr-x) |
+| `fileMode` | string | `"664"` | File permissions (rw-rw-r--) |
+
+---
+
+### Health Check Settings
+
+```json
+{
+  "healthCheck": {
+    "enabled": true,
+    "url": "/health",
+    "timeout": 10,
+    "expectedStatus": 200,
+    "retries": 3,
+    "retryDelay": 2,
+    "endpoints": [
+      "/api/status",
+      { "url": "/admin", "status": 302 }
+    ]
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | bool | `false` | Enable health check verification |
+| `url` | string | - | Health check URL (relative or absolute) |
+| `timeout` | int | `10` | Request timeout in seconds |
+| `expectedStatus` | int | `200` | Expected HTTP status code |
+| `retries` | int | `3` | Number of retry attempts |
+| `retryDelay` | int | `2` | Delay between retries (seconds) |
+| `endpoints` | array | `[]` | Additional endpoints to check |
+
+---
+
+### Service Restart Settings
+
+Control which services restart after deployment.
+
+```json
+{
+  "requiredServices": ["php-fpm", "nginx"],
+  "optionalServices": ["supervisor"]
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `requiredServices` | array | `["php-fpm", "nginx"]` | Services that MUST restart (fails if they don't) |
+| `optionalServices` | array | `["supervisor"]` | Optional services (warns on failure) |
+
+---
+
+## Environment Configuration
+
+### Basic Environment
+
+```json
+{
+  "environments": {
+    "staging": {
+      "deployPath": "/var/www/staging"
+    },
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    }
+  }
+}
+```
+
+### Local Environment
+
+For testing deployments locally:
+
+```json
+{
+  "environments": {
+    "local": {
+      "local": true,
+      "deployPath": "/tmp/app"
+    }
+  }
+}
+```
+
+### Environment Inheritance
+
+Environments can extend other environments using `extends`:
+
+```json
+{
+  "environments": {
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--no-dev --optimize-autoloader"
+      },
+      "display": {
+        "confirmChanges": true
+      }
+    },
+    "staging": {
+      "extends": "production",
+      "deployPath": "/var/www/staging",
+      "display": {
+        "confirmChanges": false
+      }
+    }
+  }
+}
+```
+
+Staging inherits all production settings but overrides `deployPath` and `confirmChanges`.
+
+---
+
+### Environment Secrets (.env files)
+
+Server credentials are stored in `.deploy/.env.{environment}` files (not tracked in git).
+
+**.deploy/.env.staging:**
+```env
+DEPLOY_HOST=staging.example.com
+DEPLOY_USER=deployer
+DEPLOY_IDENTITY_FILE=~/.ssh/id_rsa
+DEPLOY_PORT=22
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+| Variable | Description |
+|----------|-------------|
+| `DEPLOY_HOST` | Server hostname or IP |
+| `DEPLOY_USER` | SSH username |
+| `DEPLOY_IDENTITY_FILE` | Path to SSH private key |
+| `DEPLOY_PORT` | SSH port (optional, default: 22) |
+| `DEPLOY_PATH` | Override deployPath (optional) |
+| `GITHUB_TOKEN` | GitHub token for private packages |
+
+---
+
+## Deployment Hooks
+
+### Quick Hooks (beforeSymlink, afterSymlink, postDeploy)
+
+Simple arrays for common use cases:
+
+```json
+{
+  "beforeSymlink": [
+    "php artisan optimize:clear"
+  ],
+  "afterSymlink": [
+    "php artisan queue:restart"
+  ],
+  "postDeploy": [
+    "php artisan filament:optimize"
+  ]
+}
+```
+
+| Hook | Timing | Behavior on Failure |
+|------|--------|---------------------|
+| `beforeSymlink` | Before symlink switch | **Aborts deployment** |
+| `afterSymlink` | After symlink switch | Warns, continues |
+| `postDeploy` | After optimization | Warns, continues |
+
+### Best Practices for Quick Hooks
+
+**beforeSymlink - Clear caches only:**
+```json
+{
+  "beforeSymlink": [
+    "php artisan optimize:clear"
+  ]
+}
+```
+
+**Why?** Optimization runs automatically AFTER symlink with fresh OPcache.
+
+**Do NOT add these to beforeSymlink:**
+- `php artisan optimize` - runs automatically after symlink
+- `php artisan config:cache` - runs as part of optimize
+- `php artisan route:cache` - runs as part of optimize
+- `php artisan view:cache` - runs as part of optimize
+
+**postDeploy - Application-specific commands:**
+```json
+{
+  "postDeploy": [
+    "php artisan filament:optimize",
+    "php artisan horizon:terminate"
+  ]
+}
+```
+
+---
+
+### Advanced Hooks
+
+For fine-grained control, use the `hooks` object with 14 hook points:
+
+```json
+{
+  "hooks": {
+    "before:deploy": [
+      "local:npm run lint"
+    ],
+    "after:setup": [],
+    "before:build": [],
+    "after:build": [
+      "local:echo 'Assets built successfully'"
+    ],
+    "before:sync": [],
+    "after:sync": [],
+    "before:composer": [],
+    "after:composer": [],
+    "before:migrate": [
+      "php artisan backup:run --only-db"
+    ],
+    "after:migrate": [],
+    "before:symlink": [
+      "php artisan optimize:clear"
+    ],
+    "after:symlink": [
+      "php artisan queue:restart"
+    ],
+    "after:deploy": [
+      "notify:slack"
+    ],
+    "on:failure": [
+      "notify:slack"
+    ]
+  }
+}
+```
+
+### Hook Points Reference
+
+| Hook | When it Runs | Critical? |
+|------|--------------|-----------|
+| `before:deploy` | Before deployment starts | Yes |
+| `after:setup` | After directory structure created | Yes |
+| `before:build` | Before `npm run build` | Yes |
+| `after:build` | After assets built | No |
+| `before:sync` | Before rsync starts | Yes |
+| `after:sync` | After files synced | No |
+| `before:composer` | Before `composer install` | Yes |
+| `after:composer` | After composer completes | No |
+| `before:migrate` | Before database migrations | Yes |
+| `after:migrate` | After migrations complete | Yes |
+| `before:symlink` | Before symlink switch | Yes |
+| `after:symlink` | After symlink switch | No |
+| `after:deploy` | After deployment completes | No |
+| `on:failure` | When deployment fails | No |
+
+**Critical hooks** abort deployment on failure. Non-critical hooks warn and continue.
+
+### Hook Command Types
+
+```json
+{
+  "hooks": {
+    "before:deploy": [
+      "local:npm run test",
+      "php artisan config:show app.name",
+      "artisan cache:clear",
+      "notify:slack"
+    ]
+  }
+}
+```
+
+| Prefix | Description | Example |
+|--------|-------------|---------|
+| `local:` | Run on local machine | `local:npm run test` |
+| `artisan ` | Artisan command shortcut | `artisan cache:clear` |
+| `notify:` | Send notification | `notify:slack` |
+| (none) | Run on remote server | `php artisan migrate` |
+
+---
+
+## Complete Configuration Example
+
+```json
+{
+  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+  "keepReleases": 5,
+  "phpBinary": "php",
+  "copyVendor": true,
+
+  "display": {
+    "showDiff": true,
+    "confirmChanges": true,
+    "showUploadProgress": true,
+    "diffDisplayLimit": 30
+  },
+
+  "ssh": {
+    "strictHostKeyChecking": true
+  },
+
+  "rsync": {
+    "exclude": [
+      ".git/",
+      ".github/",
+      "node_modules/",
+      "/vendor/",
+      "storage/",
+      "bootstrap/cache/",
+      "tests/",
+      ".env",
+      ".env.*",
+      ".deploy/",
+      "*.log",
+      ".DS_Store"
+    ],
+    "include": [
+      "composer.json",
+      "composer.lock"
+    ],
+    "flags": "rzc",
+    "options": ["delete", "delete-after", "compress"]
+  },
+
+  "composer": {
+    "options": "--prefer-dist --no-interaction --optimize-autoloader"
+  },
+
+  "assets": {
+    "failOnError": true,
+    "verify": ["public/build/manifest.json"]
+  },
+
+  "permissions": {
+    "webGroup": "www-data",
+    "enforceSetgid": true,
+    "directoryMode": "2775",
+    "fileMode": "664"
+  },
+
+  "environments": {
+    "local": {
+      "local": true,
+      "deployPath": "/tmp/app"
+    },
+    "staging": {
+      "deployPath": "/var/www/staging",
+      "display": {
+        "confirmChanges": false
+      }
+    },
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      },
+      "healthCheck": {
+        "enabled": true,
+        "url": "/health",
+        "retries": 3
+      }
+    }
+  },
+
+  "beforeSymlink": [
+    "php artisan optimize:clear"
+  ],
+
+  "postDeploy": [
+    "php artisan filament:optimize"
+  ],
+
+  "hooks": {
+    "before:migrate": [
+      "php artisan backup:run --only-db"
+    ],
+    "on:failure": [
+      "notify:slack"
+    ]
+  },
+
+  "requiredServices": ["php-fpm", "nginx"],
+  "optionalServices": ["supervisor"]
+}
+```
+
+---
+
+## Commands
+
+### Deploy
+
+```bash
+php artisan deployer staging
+php artisan deployer production
+
+# Options
+php artisan deployer staging --no-confirm       # Skip confirmation
+php artisan deployer staging --skip-preview     # Skip diff preview
+php artisan deployer staging --skip-health-check
+php artisan deployer staging --dry-run          # Show plan only
+php artisan deployer staging --interactive      # Interactive mode
+```
+
+### Rollback
+
+```bash
+php artisan deployer:release rollback staging
+php artisan deployer:release rollback production --no-confirm
+```
+
+### Database Operations
+
+```bash
+# Create backup on server
+php artisan deployer:db backup staging
+
+# Download backup
+php artisan deployer:db download staging           # Select from list
+php artisan deployer:db download staging --latest  # Latest backup
+php artisan deployer:db download staging --backup  # Create & download
+
+# Upload backup
+php artisan deployer:db upload --target-server=user@host
+
+# Restore locally
+php artisan deployer:db restore
+php artisan deployer:db restore --latest
+php artisan deployer:db restore --no-migrate
+
+# List local backups
+php artisan deployer:db list
+```
+
+### Server Management
+
+```bash
+# Clear caches
+php artisan deployer:server clear staging
+
+# Diagnose deployment
+php artisan deployer:diagnose staging
+php artisan deployer:diagnose staging --compare
+
+# Diagnose permissions
+php artisan deployer:server diagnose staging
+php artisan deployer:server diagnose staging --full
+php artisan deployer:server diagnose staging --fix
+
+# Provision new server
+php artisan deployer:server provision
+```
+
+### Setup
+
+```bash
+# Install configuration
+php artisan deployer:setup install
+
+# Migrate existing site
+php artisan deployer:setup init staging
+php artisan deployer:setup init staging --dry-run
+
+# Generate SSH keys
+php artisan deployer:setup keygen
+php artisan deployer:setup keygen user@example.com
+```
+
+---
+
+## Deployment Flow
+
+```
+BEFORE SYMLINK (New Release):
+├─ 1.  Lock deployment
+├─ 2.  Run hooks: before:deploy
+├─ 3.  Setup deployment structure
+├─ 4.  Run hooks: after:setup
+├─ 5.  Run hooks: before:build
+├─ 6.  Build frontend assets (npm run build)
+├─ 7.  Run hooks: after:build
+├─ 8.  Show sync diff
+├─ 9.  Confirm changes
+├─ 10. Copy previous release
+├─ 11. Run hooks: before:sync
+├─ 12. Rsync files
+├─ 13. Run hooks: after:sync
+├─ 14. Create shared symlinks (storage, .env)
+├─ 15. Run hooks: before:composer
+├─ 16. Install Composer dependencies
+├─ 17. Run hooks: after:composer
+├─ 18. Fix permissions
+├─ 19. Run hooks: before:migrate
+├─ 20. Run database migrations
+├─ 21. Run hooks: after:migrate
+├─ 22. Link .dep directory
+├─ 23. Run beforeSymlink commands
+├─ 24. Run hooks: before:symlink
+└─ 25. Create storage symlink
+
+SYMLINK SWITCH:
+└─ 26. Symlink current -> /releases/YYYYMM.N/
+
+AFTER SYMLINK:
+├─ 27. Run hooks: after:symlink
+├─ 28. Run afterSymlink commands
+├─ 29. Log deployment success
+├─ 30. Verify health (if configured)
+├─ 31. Cleanup old releases
+├─ 32. Restart services (php-fpm, nginx, supervisor)
+├─ 33. Run artisan optimize
+├─ 34. Run postDeploy commands
+├─ 35. Run hooks: after:deploy
+└─ 36. Generate deployment receipt
+```
+
+---
+
+## Server Provisioning
+
+Laravel Deployer includes a comprehensive server provisioning system for fresh Ubuntu servers.
 
 ### Quick Provision
 
-The simplest way to provision a server (interactive mode):
-
 ```bash
-php artisan laravel-deployer:provision
+php artisan deployer:server provision
 ```
-
-This will guide you through:
-1. Server connection details (host, port, SSH credentials)
-2. User creation options (use default ubuntu user or create a deployment user)
-3. Software versions (PHP, Node.js)
-4. Database selection (MySQL, PostgreSQL, Redis)
-5. Additional features (Supervisor, Firewall, Swap)
 
 ### Non-Interactive Provisioning
 
-For automation or CI/CD pipelines:
-
 ```bash
-php artisan laravel-deployer:provision \
+php artisan deployer:server provision \
     --host=your-server.com \
     --user=ubuntu \
     --key=/path/to/ssh/key \
@@ -94,876 +839,65 @@ php artisan laravel-deployer:provision \
 
 ### What Gets Installed
 
-#### Core Components
-- **Nginx**: Web server with optimized configuration for Laravel
-- **PHP**: With extensions (FPM, CLI, MySQL, PostgreSQL, Redis, cURL, GD, mbstring, XML, Zip, BCMath, SOAP, Intl, OPcache, Imagick)
-- **Node.js**: With npm, Yarn, and PM2
-- **Composer**: Latest version with global configuration
-
-#### Databases (Optional)
-- **MySQL**: With secure installation and performance tuning
-- **PostgreSQL**: With password authentication configured
-- **Redis**: With memory management and LRU eviction policy
-
-#### Security Features
-- **UFW Firewall**: Configured with ports 22 (SSH), 80 (HTTP), 443 (HTTPS)
-- **Fail2Ban**: Protection against brute-force attacks
-- **SSH Hardening**: Strong ciphers, key exchange algorithms, disabled root login
-- **Automatic Security Updates**: Unattended upgrades configured
-
-#### Performance Features
-- **Swap Space**: Configurable size (1G, 2G, 4G) for servers with limited RAM
-- **PHP-FPM**: Optimized pool configuration with proper user permissions
-- **OPcache**: Configured for production performance
-- **Nginx**: Gzip compression, static file caching, security headers
-
-### Provision Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--host` | Server hostname or IP address | (required) |
-| `--port` | SSH port | 22 |
-| `--user` | SSH user | ubuntu |
-| `--password` | SSH password (if not using key) | - |
-| `--key` | Path to SSH private key | ~/.ssh/id_rsa |
-| `--create-user` | Create a new deployment user | false |
-| `--deploy-user` | Name of deployment user to create | deployer |
-| `--php-version` | PHP version to install | 8.3 |
-| `--nodejs-version` | Node.js version to install | 20 |
-| `--with-mysql` | Install MySQL | false |
-| `--with-postgresql` | Install PostgreSQL | false |
-| `--with-redis` | Install Redis | false |
-| `--non-interactive` | Run without prompts | false |
-
-### After Provisioning
-
-Once provisioning is complete:
-
-1. **Download SSH key** (if you created a deployment user):
-   ```bash
-   scp ubuntu@your-server:/home/deployer/.ssh/id_rsa ./deploy_key
-   chmod 600 ./deploy_key
-   ```
-
-2. **Update your `.deploy/deploy.json`** and `.deploy/.env.production`:
-   ```json
-   {
-     "environments": {
-       "production": {
-         "deployPath": "/var/www/production"
-       }
-     }
-   }
-   ```
-
-   In `.deploy/.env.production`:
-   ```env
-   DEPLOY_HOST=your-server.com
-   DEPLOY_USER=deployer
-   DEPLOY_IDENTITY_FILE=./deploy_key
-   ```
-
-3. **Deploy your application**:
-   ```bash
-   php artisan laravel-deployer:deploy production
-   ```
-
-### Provision Examples
-
-**Basic Setup with Ubuntu User:**
-```bash
-php artisan laravel-deployer:provision \
-    --host=192.168.1.100 \
-    --user=ubuntu \
-    --key=~/.ssh/id_rsa \
-    --php-version=8.3 \
-    --with-redis
-```
-
-**Full Setup with Deployment User:**
-```bash
-php artisan laravel-deployer:provision \
-    --host=production.example.com \
-    --create-user \
-    --deploy-user=deployer \
-    --php-version=8.3 \
-    --nodejs-version=20 \
-    --with-mysql \
-    --with-redis
-```
-
-### Supported Ubuntu Versions
-
-- Ubuntu 24.04 LTS (Noble Numbat)
-- Ubuntu 22.04 LTS (Jammy Jellyfish)
-- Ubuntu 20.04 LTS (Focal Fossa)
-
-## 🔄 Migrating Existing Sites
-
-If you have an existing Laravel deployment and want to use laravel-deployer, use the `deployer:migrate` command to convert your directory structure.
-
-> **Prerequisites**: Your site must be using a **traditional flat deployment** (`/var/www/domain.com/public`) with nginx config pointing directly to the public folder. Sites already using `releases/` and `current` symlinks are already migrated.
-
-### Quick Migration
-
-```bash
-# Migrate staging environment (uses deploy.json configuration)
-php artisan deployer:migrate staging
-
-# Migrate production
-php artisan deployer:migrate production
-
-# Dry run first (see what would happen)
-php artisan deployer:migrate staging --dry-run
-
-# Skip confirmation prompts
-php artisan deployer:migrate staging --force
-```
-
-### Alternative: Shell Script
-
-For advanced use cases, you can also use the shell script directly:
-
-```bash
-./vendor/shaf/laravel-deployer/scripts/migrate-to-deployer.sh ubuntu@server.com example.com
-```
-
-### What It Does
-
-1. **Backs up project files** to `/var/www/backups/{domain}-files-{timestamp}.tar.gz`
-   - Includes hidden files (`.env`, `.htaccess`, etc.)
-   - Excludes `vendor/`, `node_modules/`, `.git/`
-2. **Backs up database** to `/var/www/backups/{domain}-database-{timestamp}.sql.gz` (auto-detects credentials from .env)
-3. **Only proceeds** after both backups succeed
-4. **Creates** the releases/shared directory structure
-5. **Moves** files to first release (named `YYYYMM.1`, e.g., `202512.1`)
-6. **Sets** proper permissions for deploy and web users
-
-### Usage Options
-
-```bash
-./migrate-to-deployer.sh <host> <domain> [options]
-
-# Options:
-#   --user=USER        SSH user (default: ubuntu)
-#   --key=PATH         SSH private key path
-#   --base-path=PATH   Site base path (default: /var/www)
-#   --skip-db-backup   Skip database backup
-#   --dry-run          Show what would happen
-
-# Examples:
-./migrate-to-deployer.sh ubuntu@192.168.1.100 thepayrollapp.com
-./migrate-to-deployer.sh server.com dev.example.com --key=~/.ssh/deploy_key
-```
-
-### Post-Migration
-
-Update your nginx config to use the `current` symlink:
-
-```nginx
-# Change from:
-root /var/www/example.com/public;
-
-# To:
-root /var/www/example.com/current/public;
-```
-
-Then reload nginx:
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-📖 See [docs/migration-script.md](docs/migration-script.md) for detailed documentation.
-
-## ⚙️ Configuration
-
-### Basic Setup
-
-**1. Edit `.deploy/deploy.json`:**
-
-```json
-{
-  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
-
-  "keepReleases": 3,
-
-  "composer": {
-    "options": "--prefer-dist --no-interaction --optimize-autoloader"
-  },
-
-  "environments": {
-    "staging": {
-      "deployPath": "/var/www/staging"
-    },
-    "production": {
-      "deployPath": "/var/www/production",
-      "composer": {
-        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
-      }
-    }
-  },
-
-  "postDeploy": [
-    "config:cache",
-    "route:cache"
-  ]
-}
-```
-
-**2. Create environment secrets:**
-
-```bash
-# Copy example files
-cp .deploy/.env.staging.example .deploy/.env.staging
-cp .deploy/.env.production.example .deploy/.env.production
-
-# Edit with your server credentials
-nano .deploy/.env.staging
-```
-
-**Example `.env.staging`:**
-
-```env
-DEPLOY_HOST=staging.yourapp.com
-DEPLOY_USER=deploy
-DEPLOY_IDENTITY_FILE=~/.ssh/id_ed25519
-```
-
-**3. Setup SSH key authentication:**
-
-```bash
-# Option 1: Use the built-in key generator (recommended)
-php artisan deploy:key-generate deploy@yourapp.com
-
-# Option 2: Generate SSH key manually
-ssh-keygen -t ed25519 -C "deploy@yourapp.com"
-
-# Copy to server
-ssh-copy-id deploy@staging.yourapp.com
-
-# Test connection
-ssh deploy@staging.yourapp.com
-```
-
-### Server Preparation
-
-On your server, ensure the deployment path exists:
-
-```bash
-# On your server
-sudo mkdir -p /var/www/staging
-sudo chown deploy:deploy /var/www/staging
-```
-
-## 🎯 Usage
-
-### Deploy Your Application
-
-```bash
-# Deploy to staging
-php artisan deploy staging
-
-# Deploy to production (with confirmation)
-php artisan deploy production
-
-# Skip confirmation
-php artisan deploy production --no-confirm
-
-# Skip health checks
-php artisan deploy staging --skip-health-check
-
-# Preview deployment without executing (dry-run)
-php artisan deploy production --dry-run
-```
-
-### Dry-Run Mode
-
-Preview what would happen during deployment without actually executing any commands:
-
-```bash
-php artisan deploy staging --dry-run
-```
-
-**Output example:**
-```
-╔══════════════════════════════════════════════════════════════╗
-║                    DRY RUN - No changes made                  ║
-╠══════════════════════════════════════════════════════════════╣
-║ Environment:  staging                                         ║
-║ Server:       staging.example.com                             ║
-║ Deploy Path:  /var/www/staging                                ║
-╠══════════════════════════════════════════════════════════════╣
-║                   Deployment Steps                            ║
-╠══════════════════════════════════════════════════════════════╣
-║  1. Lock deployment           Prevent concurrent deployments  ║
-║  2. Create release directory  202501.X (auto-generated)       ║
-║  3. Build frontend assets     npm run build                   ║
-║  4. Calculate file diff       Compare local → server          ║
-║  5. Sync files via rsync      Upload changed files            ║
-║  ...                                                          ║
-╠══════════════════════════════════════════════════════════════╣
-║                    Files to Deploy                            ║
-╠══════════════════════════════════════════════════════════════╣
-║   + 5 new files                                               ║
-║   ~ 12 modified files                                         ║
-║   - 2 deleted files                                           ║
-╚══════════════════════════════════════════════════════════════╝
-```
-
-Use dry-run to:
-- Preview deployments before executing
-- Verify configuration is correct
-- Review file changes that would be synced
-
-### Interactive Mode
-
-Interactive mode allows you to configure each deployment option through prompts:
-
-```bash
-php artisan deploy staging --interactive
-```
-
-**Output example:**
-```
-═══════════════════════════════════════════════════════════
-                   INTERACTIVE MODE
-═══════════════════════════════════════════════════════════
-
-  Environment: staging
-  Server:      staging.example.com
-
-  Configure your deployment options below:
-
-  Build frontend assets locally? [Y/n] Y
-  Run database migrations? [Y/n] Y
-  Clear Laravel caches after deployment? [Y/n] Y
-  Optimize application (config:cache, route:cache)? [Y/n] Y
-  Show file changes before uploading? [Y/n] Y
-  Require confirmation before uploading? [Y/n] n
-
-═══════════════════════════════════════════════════════════
-
-  Selected options:
-
-    ✓ Build assets
-    ✓ Run migrations
-    ✓ Clear caches
-    ✓ Optimize app
-    ✓ Show diff
-    ✗ Confirm changes
-
-  Proceed with deployment? [Y/n]
-```
-
-### Progress Bar
-
-During file sync, a progress bar shows real-time upload status:
-
-```
-[staging] [████████████████████░░░░░░░░░░] 67% (85/127 files) ETA: 12s
-```
-
-### Deployment Summary Dashboard
-
-After successful deployment, a summary dashboard is displayed:
-
-```
-╔════════════════════════════════════════════════════════════╗
-║                    DEPLOYMENT COMPLETE                      ║
-╠════════════════════════════════════════════════════════════╣
-║ Environment:  staging                                       ║
-║ Release:      202501.4                                      ║
-║ Duration:     45.2s                                         ║
-║ Files:        +5 ~12 -2 (19 total)                          ║
-║ URL:          https://staging.example.com                   ║
-╚════════════════════════════════════════════════════════════╝
-```
-
-**What happens during deployment:**
-
-1. ✅ Health checks (disk space, memory)
-2. 🔒 Lock deployment
-3. 📦 Create new release directory
-4. 🏗️ Build assets locally (`npm run build`)
-5. 🔍 **Show sync differences** (new, modified, deleted files)
-6. ✅ **Confirm changes** before uploading
-7. 📤 Sync files to server via rsync
-8. 🔗 Link shared directories (storage, .env)
-9. 📥 Install composer dependencies
-10. 🗄️ Run database migrations
-11. ⚡ Optimize (cache config, views, routes)
-12. 🔄 Restart services (PHP-FPM, Nginx)
-13. ✨ Symlink to new release
-14. 🧹 Cleanup old releases
-15. 🔓 Unlock deployment
-
-### Rollback
-
-```bash
-# Rollback to previous release
-php artisan deploy:rollback production
-
-# Skip confirmation
-php artisan deploy:rollback staging --no-confirm
-```
-
-### Deployment Receipts
-
-Every successful deployment generates a JSON receipt for audit trails and debugging. Receipts are stored on the server at `.dep/receipts/{release}.json`.
-
-**Receipt structure:**
-```json
-{
-  "release": "202501.5",
-  "environment": "staging",
-  "deployed_at": "2025-01-27T14:30:00+00:00",
-  "deployed_by": "john",
-  "duration_seconds": 45.2,
-  "git": {
-    "commit": "abc123def456",
-    "branch": "main",
-    "message": "feat: add user authentication"
-  },
-  "stats": {
-    "files_synced": 127,
-    "files_added": 5,
-    "files_modified": 12,
-    "files_deleted": 2,
-    "bytes_transferred": 3355443
-  },
-  "post_deploy_commands": ["config:cache", "route:cache"],
-  "success": true
-}
-```
-
-**Use receipts to:**
-- Track who deployed what and when
-- Debug deployment issues with git commit info
-- Monitor deployment duration and file changes
-- Create deployment history reports
-
-### Database Operations
-
-**Backup Database:**
-
-```bash
-# Backup database on server
-php artisan database:backup production
-
-# Interactive server selection
-php artisan database:backup --select
-```
-
-**Download Backup:**
-
-```bash
-# Download latest backup
-php artisan database:download production
-
-# Interactive selection
-php artisan database:download --select
-```
-
-**Upload Backup:**
-
-```bash
-# Upload backup to server
-php artisan database:upload backup-file.sql --target=user@server
-```
-
-**Restore Database:**
-
-```bash
-# Restore from downloaded backup
-php artisan database:restore --latest
-```
-
-## 📖 Advanced Configuration
-
-### Environment Inheritance
-
-Environments can inherit configuration from other environments using the `extends` key. This reduces duplication when environments share similar settings:
-
-```json
-{
-  "environments": {
-    "production": {
-      "deployPath": "/var/www/production",
-      "composer": {
-        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
-      }
-    },
-    "staging": {
-      "extends": "production",
-      "deployPath": "/var/www/staging"
-    }
-  }
-}
-```
-
-In this example, `staging` inherits all settings from `production` but overrides `deployPath`. The staging environment will use production's composer options.
-
-**Inheritance rules:**
-- Child environments inherit all settings from parent
-- Child settings override parent settings
-- Deep merging is performed for nested objects
-- Circular inheritance is detected and prevented
-
-### Post-Deployment Health Check
-
-Verify your application is responding correctly after deployment:
-
-```json
-{
-  "healthCheck": {
-    "enabled": true,
-    "url": "/health",
-    "timeout": 10,
-    "expectedStatus": 200,
-    "retries": 3,
-    "retryDelay": 2
-  }
-}
-```
-
-**Configuration options:**
-- `enabled` - Enable/disable post-deployment health check (default: `false`)
-- `url` - Health check endpoint (relative path or full URL)
-- `timeout` - Request timeout in seconds (default: `10`)
-- `expectedStatus` - Expected HTTP status code (default: `200`)
-- `retries` - Number of retry attempts (default: `3`)
-- `retryDelay` - Delay between retries in seconds (default: `2`)
-
-**What happens:**
-1. After the symlink swap, the deployer waits briefly for the app to initialize
-2. Makes an HTTP request to the health check URL
-3. Retries if the check fails (up to configured retries)
-4. Deployment is marked successful only if health check passes
-
-### Deployment Hooks
-
-Define custom commands to run at specific points during deployment:
-
-```json
-{
-  "hooks": {
-    "before:deploy": ["local:git fetch --all"],
-    "after:setup": [],
-    "before:build": ["local:npm ci"],
-    "after:build": [],
-    "before:sync": [],
-    "after:sync": ["artisan storage:link"],
-    "before:composer": [],
-    "after:composer": ["artisan package:discover"],
-    "before:migrate": ["artisan backup:run --only-db"],
-    "after:migrate": [],
-    "before:symlink": [],
-    "after:symlink": ["artisan horizon:terminate", "artisan queue:restart"],
-    "after:deploy": ["notify:slack"],
-    "on:failure": ["artisan cache:clear"]
-  }
-}
-```
-
-**Hook points:**
-
-| Hook | When it runs |
-|------|-------------|
-| `before:deploy` | Before deployment starts (pre-lock) |
-| `after:setup` | After deployment structure is created |
-| `before:build` | Before frontend assets are built |
-| `after:build` | After frontend assets are built |
-| `before:sync` | Before files are synced to server |
-| `after:sync` | After files are synced to server |
-| `before:composer` | Before composer install runs |
-| `after:composer` | After composer install runs |
-| `before:migrate` | Before database migrations run |
-| `after:migrate` | After database migrations run |
-| `before:symlink` | Before release is symlinked as current |
-| `after:symlink` | After release is symlinked as current |
-| `after:deploy` | After deployment completes successfully |
-| `on:failure` | When deployment fails |
-
-**Command prefixes:**
-- `artisan <command>` - Run a Laravel Artisan command on the server
-- `local:<command>` - Run a command locally (not on server)
-- No prefix - Run a shell command on the server in the release directory
-
-**Example use cases:**
-- **`after:symlink`**: Restart queue workers, terminate Horizon
-- **`before:migrate`**: Create database backup before migrations
-- **`on:failure`**: Clean up caches, send failure notification
-- **`before:build`**: Ensure dependencies are installed locally
-
-### Deployment Diff & Confirmation
-
-Control whether to show file differences and require confirmation before deployment:
-
-```json
-{
-  "display": {
-    "showDiff": true,
-    "confirmChanges": true,
-    "showUploadProgress": true,
-    "diffDisplayLimit": 20
-  }
-}
-```
-
-**Features:**
-- **Beautiful Diff Display**: Shows exactly which files will be added, modified, or deleted before deployment
-- **Color-Coded Output**:
-  - 🟢 Green for new files
-  - 🟡 Yellow for modified files
-  - 🔴 Red for deleted files
-- **Smart Categorization**: Groups changes by type with file counts
-- **Confirmation Prompts**: Prevents accidental deployments by requiring user confirmation
-- **Configurable Display Limit**: Control how many files are shown per category to avoid overwhelming output
-- **Production Safety**: Extra warnings when deploying file deletions to production
-
-**Configuration Options:**
-- `showDiff: true|false` - Enable or disable diff display (default: `true`)
-- `confirmChanges: true|false` - Require confirmation after showing diff (default: `true`)
-- `showUploadProgress: true|false` - Show upload progress indicators (default: `true`)
-- `diffDisplayLimit: N` - Maximum files to show per category (default: `20`)
-
-### Rsync Exclusions
-
-Edit `.deploy/deploy.json` to customize what gets deployed:
-
-```json
-{
-  "rsync": {
-    "exclude": [
-      ".git/",
-      "node_modules/",
-      ".env",
-      "storage/",
-      "tests/"
-    ],
-    "include": [
-      "composer.json",
-      "composer.lock"
-    ]
-  }
-}
-```
-
-### Notifications
-
-Set environment variables for notifications:
-
-```env
-# Slack
-DEPLOY_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-
-# Discord
-DEPLOY_DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR/WEBHOOK/URL
-```
-
-### Post-Deployment Commands
-
-Configure artisan commands to run after deployment in `.deploy/deploy.json`:
-
-```json
-{
-  "postDeploy": [
-    "config:cache",
-    "route:cache",
-    "view:cache",
-    "icons:cache"
-  ]
-}
-```
-
-### Custom Post-Deployment Shell Script
-
-Create `.dep/post-deploy.sh` on your server for advanced tasks:
-
-```bash
-#!/bin/bash
-# Run custom tasks after deployment
-echo "Running custom post-deployment tasks..."
-
-# Example: Clear application cache
-php artisan cache:clear
-
-# Example: Restart custom services
-sudo systemctl restart your-custom-service
-```
-
-## 🔧 Common Tasks
-
-### Generate SSH Keys
-
-Use the built-in SSH key generator to create and configure keys for deployment:
-
-```bash
-# Generate new SSH key
-php artisan deploy:key-generate deploy@yourapp.com
-
-# Generate with custom name
-php artisan deploy:key-generate deploy@yourapp.com --name=deploy_key
-
-# Force generation without prompting
-php artisan deploy:key-generate deploy@yourapp.com --force
-```
-
-**What it does:**
-- ✅ Detects existing SSH keys
-- ✅ Generates new key pairs (RSA 4096-bit)
-- ✅ Shows interactive menu for existing keys
-- ✅ Displays public key for copying
-- ✅ Optionally copies key to server via `ssh-copy-id`
-- ✅ Provides helpful setup instructions
-- ✅ Clipboard support (Linux, macOS, Windows)
-
-### First Deployment
-
-```bash
-# 1. Ensure server is prepared
-ssh deploy@yourserver.com "mkdir -p /var/www/app"
-
-# 2. Deploy application
-php artisan deploy staging
-
-# 3. SSH to server and create .env
-ssh deploy@yourserver.com
-cd /var/www/app/current
-nano .env  # Add your production environment variables
-exit
-
-# 4. Deploy again to apply configuration
-php artisan deploy staging
-```
-
-### View Releases
-
-```bash
-# SSH to your server
-ssh deploy@yourserver.com
-
-# List releases
-ls -la /var/www/app/releases/
-
-# Current release
-ls -la /var/www/app/current
-```
-
-### Manual Rollback
-
-If needed, you can manually rollback:
-
-```bash
-# SSH to server
-ssh deploy@yourserver.com
-
-# List releases
-cd /var/www/app/releases
-ls -t
-
-# Symlink to previous release
-ln -nfs /var/www/app/releases/202501.2 /var/www/app/current
-```
-
-## 🐛 Troubleshooting
+- **Nginx** - Web server with optimized Laravel configuration
+- **PHP** - With FPM, CLI, and all common extensions
+- **Node.js** - With npm and Yarn
+- **Composer** - Latest version
+- **MySQL/PostgreSQL/Redis** - Optional databases
+- **Supervisor** - For queue workers
+- **UFW Firewall** - Security hardening
+- **Swap Space** - For servers with limited RAM
+
+---
+
+## Troubleshooting
 
 ### SSH Connection Issues
 
 ```bash
-# Test SSH connection
+# Test connection
 ssh deploy@yourserver.com
 
-# Verify SSH key is added
+# Verify SSH key
 ssh-add -l
-
-# Add SSH key if needed
-ssh-add ~/.ssh/id_ed25519
 ```
 
 ### Permission Issues
 
 ```bash
-# On server, ensure correct ownership
-sudo chown -R deploy:deploy /var/www/app
-
-# Ensure writable directories
+# On server
+sudo chown -R deploy:www-data /var/www/app
 chmod -R 775 /var/www/app/shared/storage
 ```
 
 ### Deployment Locked
 
-If deployment is stuck locked:
-
 ```bash
-# SSH to server
-ssh deploy@yourserver.com
-
 # Remove lock file
-rm /var/www/app/.dep/deploy.lock
+ssh deploy@server "rm /var/www/app/.dep/deploy.lock"
 ```
 
-### Rsync Issues
+---
+
+## Testing
 
 ```bash
-# Ensure rsync is installed locally
-which rsync
-
-# Ensure rsync is installed on server
-ssh deploy@yourserver.com "which rsync"
-
-# Install if missing (Ubuntu/Debian)
-sudo apt-get install rsync
+vendor/bin/pest
 ```
 
-## 📚 Architecture
+## Contributing
 
-This package uses a **simple, cohesive action-based architecture**:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `vendor/bin/pest`
+5. Submit a pull request
 
-**Actions** (Complete workflows):
-- `DeployAction` - Full deployment process
-- `RollbackAction` - Rollback to previous release
-- `DiffAction` - File diff calculation and display
-- `DatabaseAction` - Database operations
-- `HealthCheckAction` - Pre and post-deployment health verification
-- `OptimizeAction` - Cache & service optimization
-- `NotificationAction` - Deployment notifications
+## License
 
-**Services** (Core functionality):
-- `CommandService` - Execute local/remote commands
-- `DeploymentService` - Release & lock management
-- `ConfigService` - Configuration loading with environment inheritance
-- `RsyncService` - File synchronization
-- `ReceiptService` - Deployment receipt generation and storage
+MIT - See [LICENSE](LICENSE) for details.
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
-
-## 🙏 Credits
+## Credits
 
 - Built with [Spatie SSH](https://github.com/spatie/ssh)
 - Inspired by [Deployer](https://deployer.org/)
-- Architecture follows **SIMPLICITY over complexity**
-
-## 💡 Tips
-
-- **Always test deployments on staging first**
-- **Backup your database before major updates**
-- **Use `--no-confirm` in CI/CD pipelines**
-- **Monitor the first few deployments closely**
-- **Set up health check endpoints for critical apps**
-
----
-
-**Ready to deploy?** Run `php artisan deploy staging` and watch the magic happen! ✨
-
-For more details, see the [documentation](docs/) or [open an issue](https://github.com/yourusername/laravel-deployer/issues).
-
----
-
-*Last synced from timebox monorepo - testing bi-directional sync workflow*

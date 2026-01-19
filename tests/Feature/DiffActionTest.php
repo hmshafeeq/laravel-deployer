@@ -1,4 +1,5 @@
 <?php
+
 use Shaf\LaravelDeployer\Actions\DiffAction;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SyncDiff;

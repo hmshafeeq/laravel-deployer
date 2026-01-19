@@ -58,6 +58,8 @@ readonly class DeploymentConfig
         public array $requiredServices = ['php-fpm', 'nginx'],
         /** @var array<string> Services that are optional (warn on failure but continue) */
         public array $optionalServices = ['supervisor'],
+        /** Whether to automatically merge .gitignore patterns into rsync excludes */
+        public bool $useGitignore = true,
     ) {}
 
     /**
@@ -111,6 +113,7 @@ readonly class DeploymentConfig
             copyVendor: $overrides['copyVendor'] ?? $this->copyVendor,
             requiredServices: $overrides['requiredServices'] ?? $this->requiredServices,
             optionalServices: $overrides['optionalServices'] ?? $this->optionalServices,
+            useGitignore: $overrides['useGitignore'] ?? $this->useGitignore,
         );
     }
 
@@ -178,6 +181,7 @@ readonly class DeploymentConfig
             copyVendor: $config['copyVendor'] ?? true,
             requiredServices: $config['requiredServices'] ?? ['php-fpm', 'nginx'],
             optionalServices: $config['optionalServices'] ?? ['supervisor'],
+            useGitignore: $rsync['useGitignore'] ?? true,
         );
     }
 

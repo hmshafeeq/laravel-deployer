@@ -8,7 +8,7 @@ test('findBackup() resolves numeric ID \'1\' to first backup file', function () 
 
     // Create test backup files
     $testDir = '/tmp/test_backups';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -38,7 +38,7 @@ test('findBackup() returns exact filename when provided', function () {
 
     // Create test backup file
     $testDir = '/tmp/test_backups';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -59,7 +59,7 @@ test('findBackup() returns null for non-existent backup', function () {
 
     // Ensure directory exists but is empty
     $testDir = '/tmp/empty_backups';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -75,7 +75,7 @@ test('getAvailableBackups() returns backups sorted by date desc', function () {
     $manager = new BackupManager('/tmp/test_backups_sort');
 
     $testDir = '/tmp/test_backups_sort';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -110,7 +110,7 @@ test('getAvailableBackups() returns empty array when no backups', function () {
     $manager = new BackupManager('/tmp/empty_backups2');
 
     $testDir = '/tmp/empty_backups2';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -125,7 +125,7 @@ test('getAvailableBackups() returns empty array when no backups', function () {
 
 test('backupsDirectoryExists() returns true when directory exists', function () {
     $testDir = '/tmp/existing_backups';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 
@@ -147,7 +147,7 @@ test('backupsDirectoryExists() returns false when directory missing', function (
 
 test('getBackupMetadata() returns size and formatted date', function () {
     $testDir = '/tmp/metadata_test';
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0755, true);
     }
 

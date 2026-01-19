@@ -1,4 +1,5 @@
 <?php
+
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Enums\Environment;
 use Shaf\LaravelDeployer\Services\CommandService;

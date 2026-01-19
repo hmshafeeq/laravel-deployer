@@ -50,6 +50,18 @@ class ConfigService
         $this->loadEnvFile($environment);
         $mergedConfig = $this->applyEnvSecrets($mergedConfig);
 
+        // Merge .gitignore patterns into rsync excludes (enabled by default)
+        $useGitignore = $mergedConfig['rsync']['useGitignore'] ?? true;
+        if ($useGitignore) {
+            $gitignorePatterns = $this->loadGitignorePatterns();
+            if (! empty($gitignorePatterns)) {
+                $existingExcludes = $mergedConfig['rsync']['exclude'] ?? [];
+                $mergedConfig['rsync']['exclude'] = array_values(array_unique(
+                    array_merge($existingExcludes, $gitignorePatterns)
+                ));
+            }
+        }
+
         $this->verbose('Configuration loaded successfully');
 
         return DeploymentConfig::fromArray($environment, $mergedConfig);
@@ -253,6 +265,25 @@ class ConfigService
     private function getEnv(string $key): ?string
     {
         return $_ENV[$key] ?? getenv($key) ?: null;
+    }
+
+    /**
+     * Load patterns from project's .gitignore file
+     *
+     * @return array<string>
+     */
+    private function loadGitignorePatterns(): array
+    {
+        $gitignorePath = $this->basePath.'/.gitignore';
+
+        $parser = new GitignoreParser;
+        $patterns = $parser->parse($gitignorePath);
+
+        if (! empty($patterns)) {
+            $this->verbose('Loaded '.count($patterns).' patterns from .gitignore');
+        }
+
+        return $patterns;
     }
 
     /**

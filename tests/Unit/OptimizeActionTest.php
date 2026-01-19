@@ -43,7 +43,7 @@ test('service restart fails deployment when required service fails', function ()
 });
 
 test('service restart continues when optional service fails', function () {
-    // Mock command service to return failure for supervisor
+    // Mock command service to return failure for supervisor (no probe output = generic error)
     $this->cmdMock->shouldReceive('info')->atLeast()->once();
     $this->cmdMock->shouldReceive('remote')
         ->with('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""')
@@ -52,6 +52,7 @@ test('service restart continues when optional service fails', function () {
         ->with(Mockery::pattern('/sudo systemctl restart php8.3-fpm/'))
         ->andReturn('PHP8_3_FPM_OK ; NGINX_OK ; SUPERVISOR_FAIL');
     $this->cmdMock->shouldReceive('warning')->with('  ⚠  Supervisor reload failed')->once();
+    $this->cmdMock->shouldReceive('comment')->with('    Tip: Check if supervisor is running: sudo systemctl status supervisor')->once();
     $this->cmdMock->shouldReceive('success')->with('Service restart completed')->once();
 
     $config = $this->config->with([
@@ -67,6 +68,43 @@ test('service restart continues when optional service fails', function () {
     $method->setAccessible(true);
 
     // Should not throw
+    $method->invoke($action);
+
+    expect(true)->toBeTrue();
+});
+
+test('service restart shows detailed error when supervisor probe finds issue', function () {
+    // Mock command service to return failure with probe output showing directory error
+    $this->cmdMock->shouldReceive('info')->atLeast()->once();
+    $this->cmdMock->shouldReceive('remote')
+        ->with('systemctl list-units --type=service --state=running | grep -o "php[0-9.]*-fpm" || echo ""')
+        ->andReturn('php8.3-fpm');
+
+    // Simulate probe output with actual error
+    $probeOutput = "PHP8_3_FPM_OK\nNGINX_OK\nSUPERVISOR_PROBE_START\nError: The directory named as part of the path /var/www/app/storage/logs/queue.log does not exist in section 'program:app' (file: '/etc/supervisor/conf.d/app.conf')\nSUPERVISOR_PROBE_END\nSUPERVISOR_FAIL";
+
+    $this->cmdMock->shouldReceive('remote')
+        ->with(Mockery::pattern('/sudo systemctl restart php8.3-fpm/'))
+        ->andReturn($probeOutput);
+    $this->cmdMock->shouldReceive('warning')
+        ->with(Mockery::pattern('/Supervisor reload failed.*directory.*does not exist/'))
+        ->once();
+    $this->cmdMock->shouldReceive('comment')->atLeast()->once(); // Tips shown
+    $this->cmdMock->shouldReceive('success')->with('Service restart completed')->once();
+
+    $config = $this->config->with([
+        'requiredServices' => ['php-fpm', 'nginx'],
+        'optionalServices' => ['supervisor'],
+    ]);
+
+    $action = new OptimizeAction($this->cmdMock, $config);
+
+    // Use reflection to access private method
+    $reflection = new ReflectionClass($action);
+    $method = $reflection->getMethod('restartServices');
+    $method->setAccessible(true);
+
+    // Should not throw - supervisor is optional
     $method->invoke($action);
 
     expect(true)->toBeTrue();

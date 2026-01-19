@@ -17,7 +17,7 @@ test('buildRsyncCommand() includes correct base flags from config', function () 
 
     $command = invokePrivateMethod($service, 'buildRsyncCommand', ['/source/', '/dest/']);
 
-    expect($command)->toContain("rsync -rzc");
+    expect($command)->toContain('rsync -rzc');
 });
 
 test('buildRsyncCommand() adds --exclude for each exclude pattern', function () {
@@ -103,7 +103,7 @@ test('parseRsyncStats() extracts files transferred count', function () {
     $service = new RsyncService($config, '/source/path');
 
     invokePrivateMethod($service, 'parseRsyncStats', [
-        "sent 1,234 bytes received 567 bytes 4,303.73 bytes/sec\ntotal size is 12,345 speedup is 8.90"
+        "sent 1,234 bytes received 567 bytes 4,303.73 bytes/sec\ntotal size is 12,345 speedup is 8.90",
     ]);
 
     expect(invokePrivateMethod($service, 'getTotalBytesTransferred'))->toBe(1234);
@@ -121,7 +121,7 @@ test('parseRsyncStats() extracts bytes transferred', function () {
     $service = new RsyncService($config, '/source/path');
 
     invokePrivateMethod($service, 'parseRsyncStats', [
-        "sent 9,876 bytes received 123 bytes 1,234.56 bytes/sec\ntotal size is 98,765 speedup is 9.87"
+        "sent 9,876 bytes received 123 bytes 1,234.56 bytes/sec\ntotal size is 98,765 speedup is 9.87",
     ]);
 
     expect(invokePrivateMethod($service, 'getTotalBytesTransferred'))->toBe(9876);

@@ -306,7 +306,7 @@ class DeployCommand extends Command
     }
 
     /**
-     * Check if Vite is running
+     * Check if Vite is running for this project's root node_modules
      */
     protected function isViteRunning(): bool
     {
@@ -320,9 +320,13 @@ class DeployCommand extends Command
         $output = $process->getOutput();
         $projectPath = base_path();
 
-        // Look for vite processes running from this project's directory
+        // Look for vite processes running from this project's ROOT node_modules only
+        // Must match exactly: {projectPath}/node_modules/.bin/vite
+        // This excludes vite running in subpackages like packages/*/node_modules/.bin/vite
+        $rootVitePath = $projectPath.'/node_modules/.bin/vite';
+
         foreach (explode("\n", $output) as $line) {
-            if (str_contains($line, 'node_modules/.bin/vite') && str_contains($line, $projectPath)) {
+            if (str_contains($line, $rootVitePath)) {
                 return true;
             }
         }

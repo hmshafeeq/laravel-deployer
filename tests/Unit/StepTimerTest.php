@@ -3,7 +3,7 @@
 use Shaf\LaravelDeployer\Support\StepTimer;
 
 test('start() begins timing a named step', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('test-step');
 
@@ -19,7 +19,7 @@ test('start() begins timing a named step', function () {
 });
 
 test('end() calculates correct duration for step', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('test-step');
 
@@ -35,7 +35,7 @@ test('end() calculates correct duration for step', function () {
 });
 
 test('getDuration() returns duration for completed step', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('completed-step');
     usleep(5000); // 5ms
@@ -47,14 +47,14 @@ test('getDuration() returns duration for completed step', function () {
 });
 
 test('getDuration() returns null for unknown step', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $duration = $timer->getDuration('non-existent-step');
     expect($duration)->toBeNull();
 });
 
 test('getTimings() returns all completed step timings', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('step1');
     usleep(10000); // 10ms
@@ -74,7 +74,7 @@ test('getTimings() returns all completed step timings', function () {
 });
 
 test('endCurrent() ends the currently running step', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('current-step');
     usleep(10000); // 10ms
@@ -86,7 +86,7 @@ test('endCurrent() ends the currently running step', function () {
 });
 
 test('getFormattedTimings() formats durations as strings', function () {
-    $timer = new StepTimer();
+    $timer = new StepTimer;
 
     $timer->start('milliseconds');
     usleep(10000); // 10ms - should format as milliseconds

@@ -76,7 +76,7 @@ test('execute() runs complete happy path', function () {
     // 5. Diff
     $this->deployment->shouldReceive('getCurrentPath')->andReturn('/var/www/app/current');
     $this->cmd->shouldReceive('symlinkExists')->andReturn(true);
-    $this->diff->shouldReceive('showRemoteDiff')->once()->andReturn(new SyncDiff());
+    $this->diff->shouldReceive('showRemoteDiff')->once()->andReturn(new SyncDiff);
     $this->diff->shouldReceive('confirmChanges')->once()->andReturn(true);
     $this->diff->shouldReceive('showUploadProgress')->byDefault();
     $this->diff->shouldReceive('showUploadComplete')->byDefault();
@@ -164,8 +164,8 @@ test('execute() skips diff confirmation when configured', function () {
 
     // Diff should be shown but NOT confirmed
     // Note: The code will call show() if no current symlink exists, showRemoteDiff() otherwise
-    $this->diff->shouldReceive('showRemoteDiff')->byDefault()->andReturn(new SyncDiff());
-    $this->diff->shouldReceive('show')->byDefault()->andReturn(new SyncDiff());
+    $this->diff->shouldReceive('showRemoteDiff')->byDefault()->andReturn(new SyncDiff);
+    $this->diff->shouldReceive('show')->byDefault()->andReturn(new SyncDiff);
     $this->diff->shouldReceive('showUploadProgress')->byDefault();
     $this->diff->shouldReceive('showUploadComplete')->byDefault();
     $this->diff->shouldReceive('confirmChanges')->never();

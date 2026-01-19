@@ -2,8 +2,6 @@
 
 namespace Shaf\LaravelDeployer\Tests\Feature;
 
-use Illuminate\Support\Facades\File;
-
 test('setup command is registered', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
@@ -15,4 +13,3 @@ test('setup command can be instantiated', function () {
 
     expect($result->run())->toBe(0);
 });
-

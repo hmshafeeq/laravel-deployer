@@ -101,6 +101,7 @@
     "beforeSymlink": "Clear all caches before symlink switch. Optimization (cache rebuilding) happens automatically after symlink with fresh OPcache.",
     "afterSymlink": "Custom commands to run after symlink switch (optional)",
     "postDeploy": "Custom commands to run after deployment completes (optional)",
-    "assets.verify": "Optional array of paths to verify exist on server after sync (e.g., ['public/build/', 'public/css/app.css']). Warns but doesn't fail if missing."
+    "assets.verify": "Optional array of paths to verify exist on server after sync (e.g., ['public/build/', 'public/css/app.css']). Warns but doesn't fail if missing.",
+    "rsync.exclude": "Files in .gitignore are automatically excluded. Add additional patterns here."
   }
 }

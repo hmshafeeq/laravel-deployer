@@ -164,6 +164,12 @@ php artisan deployer staging --dry-run
 
 ---
 
+## Gitignore Integration
+
+Files in your `.gitignore` are automatically excluded from deployment. Set `rsync.useGitignore: false` to disable.
+
+---
+
 ## Optimal Configuration
 
 ### ❌ Wrong (Redundant & Slow)

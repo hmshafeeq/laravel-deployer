@@ -2,8 +2,6 @@
 
 namespace Shaf\LaravelDeployer\Tests\Feature;
 
-use Shaf\LaravelDeployer\Tests\TestCase;
-
 test('rollback command is registered in artisan', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
@@ -20,4 +18,3 @@ test('rollback requires environment argument', function () {
     $this->expectException(\RuntimeException::class);
     $this->artisan('deployer:release rollback');
 });
-

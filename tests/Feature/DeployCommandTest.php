@@ -49,4 +49,3 @@ test('deploy command can be instantiated', function () {
 
     expect($result->run())->toBe(0);
 });
-

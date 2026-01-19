@@ -156,7 +156,8 @@ class OptimizeAction extends Action
         }
 
         $commands[] = "(sudo systemctl reload nginx && echo 'NGINX_OK' || echo 'NGINX_FAIL')";
-        $commands[] = "(sudo supervisorctl reread && sudo supervisorctl update && echo 'SUPERVISOR_OK' || echo 'SUPERVISOR_FAIL')";
+        // Supervisor: if reload fails, probe with supervisord to get the REAL error (config/path issues)
+        $commands[] = "(sudo supervisorctl reread && sudo supervisorctl update && echo 'SUPERVISOR_OK' || { echo 'SUPERVISOR_PROBE_START'; timeout 5 sudo supervisord -n -c /etc/supervisor/supervisord.conf 2>&1 | head -10 || true; echo 'SUPERVISOR_PROBE_END'; echo 'SUPERVISOR_FAIL'; })";
         // Note: PHP-FPM restart already clears FPM OPcache (the one that matters for web requests)
         // CLI OPcache is separate and doesn't affect web traffic, so no need to reset it here
 
@@ -190,10 +191,25 @@ class OptimizeAction extends Action
         if (str_contains($output, 'SUPERVISOR_OK')) {
             $this->cmd->info('  ✓ Reloaded supervisor');
         } else {
+            // Extract the actual error from supervisord probe
+            $supervisorError = $this->extractSupervisorError($output);
+
             if (in_array('supervisor', $this->config->requiredServices, true)) {
-                throw new \RuntimeException('Required service supervisor failed to reload');
+                $errorMsg = 'Required service supervisor failed to reload';
+                if ($supervisorError) {
+                    $errorMsg .= ": {$supervisorError}";
+                }
+                throw new \RuntimeException($errorMsg);
             }
-            $this->cmd->warning('  ⚠  Supervisor reload failed');
+
+            // Show warning with actual error details
+            if ($supervisorError) {
+                $this->cmd->warning("  ⚠  Supervisor reload failed: {$supervisorError}");
+                $this->showSupervisorTips($supervisorError);
+            } else {
+                $this->cmd->warning('  ⚠  Supervisor reload failed');
+                $this->cmd->comment('    Tip: Check if supervisor is running: sudo systemctl status supervisor');
+            }
         }
 
         $this->cmd->success('Service restart completed');
@@ -323,5 +339,97 @@ class OptimizeAction extends Action
         }
 
         return $message ?: 'Unknown error';
+    }
+
+    /**
+     * Extract the actual supervisor error from the probe output.
+     * The probe runs `supervisord -n -c /etc/supervisor/supervisord.conf` to get real config errors.
+     */
+    private function extractSupervisorError(string $output): ?string
+    {
+        // Look for the probe output between markers
+        if (preg_match('/SUPERVISOR_PROBE_START\s*(.*?)\s*SUPERVISOR_PROBE_END/s', $output, $matches)) {
+            $probeOutput = trim($matches[1]);
+
+            if (empty($probeOutput)) {
+                return null;
+            }
+
+            // Look for specific error patterns and extract meaningful message
+            // Pattern: "Error: The directory named as part of the path /path/to/file does not exist"
+            if (preg_match("/Error:\s*(.+?)(?:\s*\(file:|$)/s", $probeOutput, $errorMatch)) {
+                $error = trim($errorMatch[1]);
+                // Clean up the error message
+                $error = preg_replace('/\s+/', ' ', $error);
+
+                return $error;
+            }
+
+            // Pattern: "unix:///var/run/supervisor.sock no such file"
+            if (str_contains($probeOutput, 'no such file')) {
+                return 'Supervisor socket not found - supervisor daemon not running';
+            }
+
+            // Pattern: FileNotFoundError from Python
+            if (str_contains($probeOutput, 'FileNotFoundError')) {
+                return 'Supervisor daemon not responding - may need restart';
+            }
+
+            // Return first meaningful line if no specific pattern matched
+            $lines = array_filter(explode("\n", $probeOutput), fn ($line) => ! empty(trim($line)));
+            if (! empty($lines)) {
+                $firstLine = trim(reset($lines));
+                if (strlen($firstLine) > 100) {
+                    $firstLine = substr($firstLine, 0, 97).'...';
+                }
+
+                return $firstLine;
+            }
+        }
+
+        // Fallback: check for common errors in the raw output
+        if (str_contains($output, 'unix:///var/run/supervisor.sock no such file')) {
+            return 'Supervisor socket not found - supervisor daemon not running';
+        }
+
+        return null;
+    }
+
+    /**
+     * Show contextual troubleshooting tips based on the supervisor error.
+     */
+    private function showSupervisorTips(string $error): void
+    {
+        $tips = [];
+
+        // Missing directory error
+        if (str_contains($error, 'directory') && str_contains($error, 'does not exist')) {
+            // Try to extract the path
+            if (preg_match('/path\s+(\S+)/', $error, $pathMatch)) {
+                $path = $pathMatch[1];
+                $dir = dirname($path);
+                $tips[] = "Create the missing directory: sudo mkdir -p {$dir}";
+            } else {
+                $tips[] = 'Create the missing log directory referenced in supervisor config';
+            }
+            $tips[] = 'Check your supervisor config files in /etc/supervisor/conf.d/';
+            $tips[] = 'Then restart supervisor: sudo systemctl restart supervisor';
+        }
+        // Socket not found - daemon not running
+        elseif (str_contains($error, 'socket not found') || str_contains($error, 'not running')) {
+            $tips[] = 'Start supervisor: sudo systemctl start supervisor';
+            $tips[] = 'Enable on boot: sudo systemctl enable supervisor';
+            $tips[] = 'If still failing, check: sudo journalctl -u supervisor -n 20';
+        }
+        // Generic fallback
+        else {
+            $tips[] = 'Check supervisor status: sudo systemctl status supervisor';
+            $tips[] = 'View supervisor logs: sudo journalctl -u supervisor -n 20';
+            $tips[] = 'Test config: sudo supervisord -n -c /etc/supervisor/supervisord.conf';
+        }
+
+        foreach ($tips as $tip) {
+            $this->cmd->comment("    → {$tip}");
+        }
     }
 }

@@ -28,7 +28,6 @@ test('clear --help shows available options', function () {
     $result->expectsOutputToContain('--no-confirm');
 });
 
-
 test('diagnose command is registered', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
