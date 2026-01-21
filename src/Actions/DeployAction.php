@@ -1008,6 +1008,16 @@ class DeployAction
     private function createStorageLink(): void
     {
         $this->cmd->task('storage:link');
+
+        $publicStorageLink = "{$this->releasePath}/public/storage";
+
+        // Skip if public/storage symlink already exists
+        if ($this->cmd->symlinkExists($publicStorageLink)) {
+            $this->cmd->debug('Public storage symlink already exists, skipping');
+
+            return;
+        }
+
         $this->cmd->info('Creating storage symlink...');
 
         try {
@@ -1361,5 +1371,236 @@ class DeployAction
         // Artisan commands typically contain a colon (namespace:command)
         // or are simple commands like "migrate", "optimize"
         return true;
+    }
+
+    /**
+     * Execute sync-only deployment (update files on existing release without creating new release)
+     */
+    public function executeSyncOnly(string $releaseName, string $releasePath, bool $skipAssetBuild = false): void
+    {
+        $startTime = microtime(true);
+
+        $this->releaseName = $releaseName;
+        $this->releasePath = $releasePath;
+
+        // Capture git info
+        $this->captureGitInfo();
+
+        $this->cmd->info("🔄 Starting sync-only deployment to {$this->config->environment->value}");
+        $this->cmd->info("   Using existing release: {$releaseName}");
+        $this->showGitInfo();
+        $this->cmd->newLine();
+
+        // 1. Lock deployment
+        $this->lockDeployment();
+
+        try {
+            // 2. Build assets locally (if not skipping)
+            if (! $this->config->isLocal && ! $skipAssetBuild) {
+                $this->stepTimer->start('assets:build');
+                $this->buildAssets();
+                $this->stepTimer->end('assets:build');
+            }
+
+            // 3. Show sync differences
+            $currentPath = "{$this->config->deployPath}/current";
+            if ($this->cmd->symlinkExists($currentPath)) {
+                $this->syncDiff = $this->diff->showRemoteDiff($currentPath);
+            }
+
+            // 4. Sync files to existing release
+            $this->stepTimer->start('files:sync');
+            $this->syncFilesForSyncOnly();
+            $this->stepTimer->end('files:sync');
+
+            // 5. Verify critical assets
+            $this->verifyAssets();
+
+            // 6. Ensure storage structure exists (may be broken after rsync)
+            $this->ensureStorageStructureForSyncOnly();
+
+            // 7. Clear existing caches before composer (existing release has cached state)
+            $this->stepTimer->start('cache:clear');
+            $this->clearCachesForSyncOnly();
+            $this->stepTimer->end('cache:clear');
+
+            // 8. Run composer install (force --no-scripts for sync-only)
+            $this->stepTimer->start('composer:install');
+            $this->installComposerForSyncOnly();
+            $this->stepTimer->end('composer:install');
+
+            // 9. Fix permissions
+            $this->stepTimer->start('permissions:fix');
+            $this->fixPermissions();
+            $this->stepTimer->end('permissions:fix');
+
+            // 10. Run migrations (if any new ones)
+            $this->stepTimer->start('artisan:migrate');
+            $this->runMigrations();
+            $this->stepTimer->end('artisan:migrate');
+
+            // 11. Run optimization commands
+            $this->stepTimer->start('optimize:release');
+            $this->runBeforeSymlinkCommands();
+            $this->stepTimer->end('optimize:release');
+
+            // 12. Create storage symlink (in case it was removed)
+            $this->stepTimer->start('storage:link');
+            $this->createStorageLink();
+            $this->stepTimer->end('storage:link');
+
+            // Calculate total deployment time
+            $this->duration = microtime(true) - $startTime;
+
+        } finally {
+            // Cleanup SSH sockets
+            $this->cleanupSshSockets();
+
+            // Always unlock
+            $this->unlockDeployment();
+        }
+    }
+
+    /**
+     * Install composer dependencies for sync-only mode.
+     * Forces --no-scripts to avoid running artisan commands on live release,
+     * then manually runs package:discover to register service providers.
+     */
+    private function installComposerForSyncOnly(): void
+    {
+        $this->cmd->task('composer:install');
+        $this->cmd->info('Installing Composer dependencies...');
+
+        $escapedPath = CommandService::escapePath($this->releasePath);
+        $phpBinary = $this->config->phpBinary;
+        $artisanPath = "{$this->releasePath}/artisan";
+
+        // For sync-only, use --no-scripts to avoid running package:discover
+        // during composer install. We'll run it manually afterward.
+        $composerOptions = '--prefer-dist --no-interaction --no-scripts --optimize-autoloader';
+
+        // Include --no-dev only if config specifies it (check if original options had it)
+        $originalOptions = $this->config->composerOptions ?? '';
+        if (str_contains($originalOptions, '--no-dev') || ! str_contains($originalOptions, '--dev')) {
+            $composerOptions .= ' --no-dev';
+        }
+
+        $composerCommand = "cd {$escapedPath} && composer install {$composerOptions}";
+        $this->cmd->remoteWithOutput($composerCommand);
+
+        // Run package:discover to register service providers (app-modules, packages)
+        // This is normally run by composer's post-autoload-dump script
+        $this->cmd->debug('Running package:discover for service provider registration...');
+        $this->cmd->remote("cd {$escapedPath} && {$phpBinary} {$artisanPath} package:discover --ansi 2>/dev/null || true");
+
+        $this->cmd->success('Composer dependencies installed');
+    }
+
+    /**
+     * Clear caches for sync-only deployment.
+     * Existing release has cached state that may conflict with updated files.
+     */
+    private function clearCachesForSyncOnly(): void
+    {
+        $this->cmd->task('cache:clear');
+        $this->cmd->info('Clearing cached state from existing release...');
+
+        $phpBinary = $this->config->phpBinary;
+        $artisanPath = "{$this->releasePath}/artisan";
+        $bootstrapCache = CommandService::escapePath("{$this->releasePath}/bootstrap/cache");
+
+        // Clear bootstrap/cache AND run optimize:clear to remove all cached state
+        // This is critical for sync-only as the existing release has cached paths
+        $this->cmd->remote(
+            "rm -rf {$bootstrapCache} && mkdir -p {$bootstrapCache} && chmod 775 {$bootstrapCache} && ".
+            "cd {$this->releasePath} && {$phpBinary} {$artisanPath} optimize:clear --no-interaction 2>/dev/null || true"
+        );
+
+        $this->cmd->success('Caches cleared');
+    }
+
+    /**
+     * Sync files directly to existing release (no copy from previous release)
+     */
+    private function syncFilesForSyncOnly(): void
+    {
+        $this->cmd->task('files:sync');
+        $this->cmd->info('Syncing files to existing release...');
+
+        // Pass sync diff and output for progress bar
+        $this->rsync->setSyncDiff($this->syncDiff);
+        $this->rsync->setOutput($this->cmd->getOutput());
+
+        // Sync directly to the existing release path
+        $this->rsync->sync($this->releasePath);
+
+        // Capture actual sync stats
+        $this->syncStats = SyncStats::fromRsync($this->rsync, $this->syncDiff);
+
+        $this->cmd->success('Files synced successfully');
+    }
+
+    /**
+     * Ensure storage structure exists for sync-only deployment.
+     * Only fixes if storage symlink is broken (defensive check for edge cases).
+     */
+    private function ensureStorageStructureForSyncOnly(): void
+    {
+        $storageLink = "{$this->releasePath}/storage";
+
+        // Skip if storage symlink already exists and is valid
+        if ($this->cmd->symlinkExists($storageLink)) {
+            return;
+        }
+
+        $this->cmd->debug('Storage symlink broken, recreating...');
+
+        $sharedPath = $this->deployment->getSharedPath();
+        $escapedSharedStorage = CommandService::escapePath("{$sharedPath}/storage");
+        $escapedReleaseStorage = CommandService::escapePath($storageLink);
+        $escapedSharedEnv = CommandService::escapePath("{$sharedPath}/.env");
+        $escapedReleaseEnv = CommandService::escapePath("{$this->releasePath}/.env");
+
+        // Ensure shared storage directories exist (including framework subdirs for Laravel)
+        $storageDirs = [
+            "{$sharedPath}/storage",
+            "{$sharedPath}/storage/app",
+            "{$sharedPath}/storage/framework",
+            "{$sharedPath}/storage/framework/cache",
+            "{$sharedPath}/storage/framework/sessions",
+            "{$sharedPath}/storage/framework/views",
+            "{$sharedPath}/storage/logs",
+        ];
+
+        $escapedDirs = array_map([CommandService::class, 'escapePath'], $storageDirs);
+
+        // Create directories and recreate symlinks
+        $this->cmd->runBatch([
+            'mkdir -p '.implode(' ', $escapedDirs),
+            "rm -rf {$escapedReleaseStorage}",
+            "ln -nfs {$escapedSharedStorage} {$escapedReleaseStorage}",
+            "ln -nfs {$escapedSharedEnv} {$escapedReleaseEnv}",
+        ]);
+
+        $this->cmd->debug('Storage symlink recreated');
+    }
+
+    /**
+     * Show sync-only deployment summary
+     */
+    public function showSyncOnlySummary(string $releaseName): void
+    {
+        $summary = DeploymentSummary::create($this->cmd->getOutput(), $this->config);
+
+        $summary->showSyncOnlySuccess(
+            releaseName: $releaseName,
+            duration: $this->duration,
+            syncDiff: $this->syncDiff,
+            syncStats: $this->syncStats,
+            migrationsRun: $this->migrationsRun,
+            stepTimings: $this->stepTimer->getTimings(),
+            gitInfo: $this->getGitInfo(),
+            warnings: $this->warnings
+        );
     }
 }

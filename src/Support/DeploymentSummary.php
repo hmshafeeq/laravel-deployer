@@ -80,6 +80,62 @@ class DeploymentSummary
     }
 
     /**
+     * Display the sync-only deployment success summary
+     *
+     * @param  array<string, float>  $stepTimings
+     * @param  array{branch: string, commit: ?string, message: ?string, author: ?string}|null  $gitInfo
+     * @param  array<array{category: string, message: string}>  $warnings
+     */
+    public function showSyncOnlySuccess(
+        string $releaseName,
+        float $duration,
+        ?SyncDiff $syncDiff = null,
+        ?SyncStats $syncStats = null,
+        int $migrationsRun = 0,
+        array $stepTimings = [],
+        ?array $gitInfo = null,
+        array $warnings = []
+    ): void {
+        $this->output->writeln('');
+
+        $rows = [
+            $this->formatRow('Environment', $this->config->environment->value),
+            $this->formatRow('Release', $releaseName.' (existing)'),
+        ];
+
+        // Add git info if available
+        if ($gitInfo !== null && ! empty($gitInfo['commit'])) {
+            $branch = $gitInfo['branch'];
+            $commit = $gitInfo['commit'];
+            $rows[] = $this->formatRow('Git', "{$branch} @ {$commit}");
+        }
+
+        $rows[] = $this->formatRow('Duration', format_duration($duration));
+        $rows[] = $this->formatFilesRow($syncDiff, $syncStats);
+
+        if ($migrationsRun > 0) {
+            $rows[] = $this->formatRow('Migrations', "{$migrationsRun} executed");
+        }
+
+        // Add mode indicator
+        $rows[] = $this->formatRow('Mode', 'Sync-Only (no new release)');
+
+        // Add warnings section if any
+        if (! empty($warnings)) {
+            $rows[] = '__separator__';
+            $rows = array_merge($rows, $this->formatWarningsSection($warnings));
+        }
+
+        $this->drawBox('SYNC-ONLY COMPLETE', 'yellow', $rows);
+        $this->output->writeln('');
+
+        // Show step timings if available and verbose
+        if (! empty($stepTimings) && $this->output->isVerbose()) {
+            $this->showStepTimings($stepTimings);
+        }
+    }
+
+    /**
      * Display step timings breakdown
      *
      * @param  array<string, float>  $timings

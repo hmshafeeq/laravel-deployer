@@ -49,3 +49,22 @@ test('deploy command can be instantiated', function () {
 
     expect($result->run())->toBe(0);
 });
+
+test('deploy command has sync-only option', function () {
+    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer'];
+
+    $definition = $command->getDefinition();
+
+    expect($definition->hasOption('sync-only'))->toBeTrue();
+    expect($definition->getOption('sync-only')->getDescription())
+        ->toBe('Sync files to current release without creating a new release');
+});
+
+test('sync-only option is a flag without value', function () {
+    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer'];
+
+    $option = $command->getDefinition()->getOption('sync-only');
+
+    expect($option->acceptValue())->toBeFalse();
+    expect($option->isValueRequired())->toBeFalse();
+});

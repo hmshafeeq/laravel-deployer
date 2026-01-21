@@ -10,6 +10,7 @@ A Laravel package for deployment automation with rsync-based zero-downtime deplo
 
 - **Zero-downtime deployments** - Atomic symlink switching ensures no downtime
 - **Rsync-based file sync** - Fast, incremental file transfers with diff preview
+- **Sync-only mode** - Quick file sync to existing release without creating a new release
 - **Gitignore integration** - Automatically excludes files from `.gitignore`
 - **Multi-environment support** - Deploy to local, staging, and production environments
 - **Environment inheritance** - Environments can extend other environments
@@ -695,7 +696,35 @@ php artisan deployer staging --skip-preview     # Skip diff preview
 php artisan deployer staging --skip-health-check
 php artisan deployer staging --dry-run          # Show plan only
 php artisan deployer staging --interactive      # Interactive mode
+php artisan deployer staging --sync-only        # Sync to existing release
 ```
+
+### Sync-Only Mode
+
+Sync files to the current release without creating a new release. Useful for quick hotfixes or config changes.
+
+```bash
+php artisan deployer production --sync-only
+```
+
+**What sync-only does:**
+- Syncs files directly to the existing/current release
+- Runs composer install with `--no-scripts --no-plugins` (safe for live code)
+- Runs migrations if needed
+- Clears and rebuilds caches
+
+**What sync-only skips:**
+- Creating a new release directory
+- Copying previous release
+- Symlink switching
+- Health checks
+- Release cleanup
+
+**When to use sync-only:**
+- Quick hotfixes to production
+- Config file updates
+- Small code changes that don't need a full release
+- When you want to avoid creating another release
 
 ### Rollback
 

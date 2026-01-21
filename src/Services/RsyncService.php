@@ -67,8 +67,6 @@ class RsyncService
 
     public function sync(string $destination): void
     {
-        $this->cmdService?->info('Syncing files to release...');
-
         // Reset counters
         $this->totalBytesTransferred = 0;
         $this->filesSynced = 0;

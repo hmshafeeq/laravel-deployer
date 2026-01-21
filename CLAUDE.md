@@ -119,6 +119,7 @@ This script uses rsync to copy the package to:
 # Main deployment
 php artisan deployer staging              # Deploy to staging
 php artisan deployer production           # Deploy to production
+php artisan deployer production --sync-only  # Sync to existing release (no new release)
 
 # Release management
 php artisan deployer:release rollback staging   # Rollback to previous release
@@ -343,6 +344,47 @@ The `postDeploy` array should ONLY contain commands that are NOT handled by Opti
 4. Clears and rebuilds event cache
 
 Adding these commands to `postDeploy` doubles the work and wastes ~10-15 seconds per deployment.
+
+---
+
+## Sync-Only Mode
+
+The `--sync-only` flag syncs files to the **existing/current release** without creating a new release.
+
+### Usage
+```bash
+php artisan deployer production --sync-only
+```
+
+### Sync-Only vs Full Deploy
+
+| Aspect | Full Deploy | Sync-Only |
+|--------|-------------|-----------|
+| Creates new release | ✅ | ❌ |
+| Copies previous release | ✅ | ❌ |
+| Syncs files | ✅ | ✅ (directly to current) |
+| Composer install | `--prefer-dist` | `--no-scripts --no-plugins` |
+| Runs migrations | ✅ | ✅ |
+| Symlink switch | ✅ | ❌ |
+| Health check | ✅ | ❌ |
+| Service restart | ✅ | ❌ |
+| Release cleanup | ✅ | ❌ |
+
+### When to Use
+
+| Use Sync-Only | Use Full Deploy |
+|---------------|-----------------|
+| Quick hotfixes | New features |
+| Config changes | Breaking changes |
+| Small code tweaks | Vendor updates |
+| View updates | Schema migrations |
+
+### Important Notes
+
+- Composer runs with `--no-scripts --no-plugins` to avoid running artisan commands on live code
+- Caches are cleared before composer install to prevent stale autoloader issues
+- No rollback available (changes are made to current release directly)
+- Summary shows "SYNC-ONLY COMPLETE" in yellow box
 
 ---
 
