@@ -9,26 +9,15 @@ use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 
-class ReleaseCommand extends Command
+class RollbackCommand extends Command
 {
-    protected $signature = 'deployer:release
-                            {action : Action to perform (rollback)}
+    protected $signature = 'deployer:rollback
                             {environment : The deployment environment}
                             {--no-confirm : Skip confirmation prompt}';
 
-    protected $description = 'Release management: rollback to previous release';
+    protected $description = 'Rollback to the previous release';
 
     public function handle(): int
-    {
-        $action = $this->argument('action');
-
-        return match ($action) {
-            'rollback' => $this->handleRollback(),
-            default => $this->showUsage(),
-        };
-    }
-
-    protected function handleRollback(): int
     {
         $environment = $this->argument('environment');
         $noConfirm = $this->option('no-confirm');
@@ -55,13 +44,13 @@ class ReleaseCommand extends Command
             $previous = $deployService->getPreviousRelease();
 
             if (! $current) {
-                $this->error('❌ No current release found');
+                $this->error('No current release found');
 
                 return self::FAILURE;
             }
 
             if (! $previous) {
-                $this->error('❌ No previous release available for rollback');
+                $this->error('No previous release available for rollback');
 
                 return self::FAILURE;
             }
@@ -86,7 +75,7 @@ class ReleaseCommand extends Command
 
             // Show migration warning
             $this->newLine();
-            $this->warn('⚠️  IMPORTANT: Database migrations are NOT automatically rolled back.');
+            $this->warn('IMPORTANT: Database migrations are NOT automatically rolled back.');
             $this->info('If you need to rollback database changes, you must do so manually:');
             $this->line('  php artisan migrate:rollback --step=N');
             $this->newLine();
@@ -95,7 +84,7 @@ class ReleaseCommand extends Command
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->error('❌ Rollback failed!');
+            $this->error('Rollback failed!');
             $this->error($e->getMessage());
 
             if ($this->getOutput()->isVerbose()) {
@@ -106,9 +95,6 @@ class ReleaseCommand extends Command
         }
     }
 
-    /**
-     * Show rollback confirmation prompt
-     */
     private function confirmRollback(string $environment, string $current, string $previous): bool
     {
         $this->newLine();
@@ -124,18 +110,5 @@ class ReleaseCommand extends Command
         $this->newLine();
 
         return $this->confirm('Do you want to rollback to this release?', false);
-    }
-
-    protected function showUsage(): int
-    {
-        $this->error('Invalid action. Available actions:');
-        $this->line('');
-        $this->line('  php artisan deployer:release rollback {env}   Rollback to previous release');
-        $this->line('');
-        $this->line('Examples:');
-        $this->line('  php artisan deployer:release rollback staging');
-        $this->line('  php artisan deployer:release rollback production --no-confirm');
-
-        return self::FAILURE;
     }
 }

@@ -12,7 +12,7 @@ This package is used by multiple projects. **Any changes to configuration, stubs
 |---------|------|------------------|
 | TimeBox | `/Users/mshaf/Developer/Sites/timebox/web` | TimeBox |
 | ThePayrollApp | `/Users/mshaf/Developer/Sites/thepayrollapp` | ThePayrollApp |
-| WestWindSupplies | `/Users/mshaf/Developer/Sites/westwindsupplies-latest` | WestwindSupplies |
+| WestWindSupplies | `/Users/mshaf/Developer/Sites/westwindsupplies-dev` | WestwindSupplies |
 
 ### Distribution Setup
 
@@ -53,7 +53,7 @@ If you modify any stub files (e.g., `deploy.json.stub`, `.env.*.example`):
 **Projects to update:**
 - `/Users/mshaf/Developer/Sites/timebox/web/.deploy/deploy.json`
 - `/Users/mshaf/Developer/Sites/thepayrollapp/.deploy/deploy.json`
-- `/Users/mshaf/Developer/Sites/westwindsupplies-latest/deploy.json`
+- `/Users/mshaf/Developer/Sites/westwindsupplies-dev/deploy.json`
 
 ### 2. Config Changes (`config/`)
 
@@ -106,7 +106,7 @@ cd /Users/mshaf/Developer/Sites/timebox/web/packages/laravel-deployer
 
 This script uses rsync to copy the package to:
 - `/Users/mshaf/Developer/Sites/thepayrollapp/vendor/shaf/laravel-deployer`
-- `/Users/mshaf/Developer/Sites/westwindsupplies-latest/vendor/shaf/laravel-deployer`
+- `/Users/mshaf/Developer/Sites/westwindsupplies-dev/vendor/shaf/laravel-deployer`
 
 **Note:** Changes are temporary. Teammates and CI will get updates via `composer update` from GitHub.
 
@@ -116,13 +116,22 @@ This script uses rsync to copy the package to:
 
 ### Commands
 ```bash
-# Main deployment
-php artisan deployer staging              # Deploy to staging
-php artisan deployer production           # Deploy to production
-php artisan deployer production --sync-only  # Sync to existing release (no new release)
+# New release (full deployment)
+php artisan deployer:release staging              # Deploy to staging
+php artisan deployer:release production           # Deploy to production
 
-# Release management
-php artisan deployer:release rollback staging   # Rollback to previous release
+# Sync files to existing release (no new release)
+php artisan deployer:sync staging                # Full rsync checksum scan
+php artisan deployer:sync staging --dirty        # Sync uncommitted changes only
+php artisan deployer:sync staging --since=abc123 # Sync files since commit
+php artisan deployer:sync staging --branch       # Sync files vs main branch
+php artisan deployer:sync staging --branch=dev   # Sync files vs specific branch
+
+# Rollback
+php artisan deployer:rollback staging            # Rollback to previous release
+
+# List all commands
+php artisan deployer
 
 # Server management
 php artisan deployer:server clear staging       # Clear caches on server
@@ -347,14 +356,32 @@ Adding these commands to `postDeploy` doubles the work and wastes ~10-15 seconds
 
 ---
 
-## Sync-Only Mode
+## Sync Mode (`deployer:sync`)
 
-The `--sync-only` flag syncs files to the **existing/current release** without creating a new release.
+The `deployer:sync` command syncs files to the **existing/current release** without creating a new release. It supports multiple git-based strategies for faster syncs.
 
 ### Usage
 ```bash
-php artisan deployer production --sync-only
+# Full rsync checksum scan (default, ~60s)
+php artisan deployer:sync production
+
+# Git-based strategies (faster, ~15s)
+php artisan deployer:sync production --dirty           # Uncommitted changes
+php artisan deployer:sync production --since=abc123    # Since a commit
+php artisan deployer:sync production --branch          # vs main branch
+php artisan deployer:sync production --branch=develop  # vs specific branch
 ```
+
+### Smart Step Skipping (git-based only)
+
+When using `--dirty`, `--since`, or `--branch`, the sync command analyzes changed files and skips unnecessary steps:
+
+| Step | Skipped when... | Saves |
+|------|-----------------|-------|
+| `assets:build` | No JS/CSS/Blade in diff | ~3s |
+| `composer:install` | No `composer.lock` in diff | ~12s |
+| `permissions:fix` | No new files (only modifications) | ~3s |
+| `artisan:migrate` | No `database/migrations/` files | ~1.5s |
 
 ### Sync-Only vs Full Deploy
 

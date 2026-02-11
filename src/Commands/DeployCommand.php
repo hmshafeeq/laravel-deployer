@@ -19,15 +19,14 @@ use Symfony\Component\Process\Process;
 
 class DeployCommand extends Command
 {
-    protected $signature = 'deployer {environment=staging : The deployment environment (local, staging, production)}
+    protected $signature = 'deployer:release {environment=staging : The deployment environment (local, staging, production)}
                             {--no-confirm : Skip deployment confirmation}
                             {--skip-health-check : Skip health check before deployment}
                             {--skip-preview : Skip early diff preview}
                             {--dry-run : Show deployment plan without executing}
-                            {--interactive : Interactive mode - prompt for each deployment option}
-                            {--sync-only : Sync files to current release without creating a new release}';
+                            {--interactive : Interactive mode - prompt for each deployment option}';
 
-    protected $description = 'Deploy the application using simplified action-based deployment';
+    protected $description = 'Create a new release and deploy the application';
 
     public function handle(): int
     {
@@ -37,7 +36,6 @@ class DeployCommand extends Command
         $skipPreview = $this->option('skip-preview');
         $dryRun = $this->option('dry-run');
         $interactive = $this->option('interactive');
-        $syncOnly = $this->option('sync-only');
 
         // Validate environment
         $validEnvironments = ['local', 'staging', 'production'];
@@ -69,11 +67,6 @@ class DeployCommand extends Command
             // Handle dry-run mode
             if ($dryRun) {
                 return $this->showDryRunPlan($config);
-            }
-
-            // Handle sync-only mode
-            if ($syncOnly) {
-                return $this->executeSyncOnly($config, $noConfirm, $skipPreview, $skipBuildFolder);
             }
 
             // Interactive mode options
@@ -339,116 +332,6 @@ class DeployCommand extends Command
         }
 
         return false;
-    }
-
-    /**
-     * Execute sync-only deployment (update files on current release without creating new release)
-     */
-    private function executeSyncOnly(
-        DeploymentConfig $config,
-        bool $noConfirm,
-        bool $skipPreview,
-        bool $skipBuildFolder
-    ): int {
-        // Initialize services
-        $cmdService = new CommandService($config, $this->output);
-        $deployService = new DeploymentService($config, $cmdService, base_path());
-        $rsyncService = new RsyncService($config, base_path(), $cmdService);
-        $diffAction = new DiffAction($cmdService, $config, base_path());
-
-        // Get current release
-        $currentRelease = $deployService->getCurrentRelease();
-        if (! $currentRelease) {
-            $this->error('No current release found. Cannot use --sync-only on first deployment.');
-            $this->info('Run a normal deployment first: php artisan deployer '.$config->environment->value);
-
-            return self::FAILURE;
-        }
-
-        $releasePath = $deployService->getReleasePath($currentRelease);
-
-        // Show sync-only warning banner
-        $this->newLine();
-        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
-        $this->line('<fg=yellow>                    SYNC-ONLY MODE</>');
-        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
-        $this->newLine();
-        $this->line('  <fg=cyan>Environment:</> '.$config->environment->value);
-        $this->line('  <fg=cyan>Current Release:</> <fg=white>'.$currentRelease.'</>');
-        $this->line('  <fg=cyan>Release Path:</> '.$releasePath);
-        $this->newLine();
-        $this->line('<fg=yellow>  ⚠️  This will sync files directly to the existing release.</>');
-        $this->line('<fg=yellow>     No new release will be created.</>');
-        $this->newLine();
-        $this->line('<fg=yellow>═══════════════════════════════════════════════════════════</>');
-        $this->newLine();
-
-        // Show diff preview
-        if (! $skipPreview && $config->showPreview) {
-            $currentPath = "{$config->deployPath}/current";
-            $diffAction->showRemoteDiff($currentPath);
-        }
-
-        // Confirm sync
-        if (! $noConfirm) {
-            if (! $this->confirm("Sync files to existing release {$currentRelease}?", false)) {
-                $this->newLine();
-                $this->comment('🛑 Sync-only deployment cancelled');
-                $this->newLine();
-
-                return self::FAILURE;
-            }
-        }
-
-        try {
-            // Initialize services for actual deployment
-            $receiptService = new ReceiptService($cmdService, $config);
-
-            // Create DeployAction and execute sync-only mode
-            $deploy = new DeployAction(
-                $deployService,
-                $cmdService,
-                $rsyncService,
-                $diffAction,
-                $config,
-                null, // No health check for sync-only
-                $receiptService
-            );
-
-            $deploy->executeSyncOnly($currentRelease, $releasePath, $skipBuildFolder);
-
-            // Post-deployment optimization
-            $this->newLine();
-            $optimize = new OptimizeAction($cmdService, $config);
-
-            // Pass postDeploy commands to run AFTER service restart
-            if (! empty($config->postDeployCommands)) {
-                $optimize->setPostDeployCommands($config->postDeployCommands);
-            }
-
-            $optimize->execute();
-
-            // Send success notification
-            $notify = new NotificationAction($config);
-            $notify->success([
-                'environment' => $config->environment->value,
-                'release' => $currentRelease,
-                'sync_only' => true,
-            ]);
-
-            // Show summary
-            $deploy->showSyncOnlySummary($currentRelease);
-
-            return self::SUCCESS;
-
-        } catch (\Exception $e) {
-            $this->newLine();
-            $this->error('Sync-only deployment failed!');
-            $this->error($e->getMessage());
-            $this->newLine();
-
-            return self::FAILURE;
-        }
     }
 
     /**

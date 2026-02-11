@@ -128,8 +128,18 @@ class DatabaseCommand extends Command
             // Use rsync with streaming output for progress display
             // -h = human readable, -P = progress + partial (allows resume)
             // Disable SSH compression since .sql.gz is already compressed
+            $sshOptions = '-o Compression=no';
+            if ($config->identityFile) {
+                $identityFile = $config->identityFile;
+                if (str_starts_with($identityFile, '~')) {
+                    $identityFile = str_replace('~', getenv('HOME'), $identityFile);
+                }
+                $sshOptions .= " -i {$identityFile}";
+            }
+
             $rsyncCommand = sprintf(
-                "rsync -hP -e 'ssh -o Compression=no' %s@%s:%s %s",
+                "rsync -hP -e 'ssh %s' %s@%s:%s %s",
+                $sshOptions,
                 $config->remoteUser,
                 $config->hostname,
                 escapeshellarg($remoteFile),

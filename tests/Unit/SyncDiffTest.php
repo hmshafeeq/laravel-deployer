@@ -62,3 +62,19 @@ test('totalCount() sums all categories correctly', function () {
     $emptyDiff = new SyncDiff;
     expect($emptyDiff->totalCount())->toBe(0);
 });
+
+test('allFiles() returns all files across all categories', function () {
+    $diff = new SyncDiff(
+        ['new.txt'],
+        ['modified.txt'],
+        ['deleted.txt']
+    );
+
+    expect($diff->allFiles())->toBe(['new.txt', 'modified.txt', 'deleted.txt']);
+});
+
+test('allFiles() returns empty array when no files', function () {
+    $diff = new SyncDiff;
+
+    expect($diff->allFiles())->toBe([]);
+});

@@ -65,7 +65,7 @@ class RsyncService
         return $this;
     }
 
-    public function sync(string $destination): void
+    public function sync(string $destination, ?string $filesFromPath = null): void
     {
         // Reset counters
         $this->totalBytesTransferred = 0;
@@ -85,7 +85,7 @@ class RsyncService
         $showProgress = $this->config->showUploadProgress && $totalFiles > 0 && $this->output !== null;
 
         // Build command - include -v flag if we need progress output, --stats for size info
-        $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress);
+        $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress, $filesFromPath);
 
         $this->cmdService?->debug("Rsync command: {$command}");
 
@@ -215,7 +215,7 @@ class RsyncService
         return $this;
     }
 
-    private function buildRsyncCommand(string $source, string $destination, bool $forProgress = false): string
+    private function buildRsyncCommand(string $source, string $destination, bool $forProgress = false, ?string $filesFromPath = null): string
     {
         $parts = ['rsync'];
 
@@ -244,9 +244,14 @@ class RsyncService
             $parts[] = "-e '{$sshOptions}'";
         }
 
-        // Add rsync options
-        foreach (Commands::RSYNC_OPTIONS as $option) {
-            $parts[] = "--{$option}";
+        // When using --files-from, skip --delete options (only push changed files)
+        if ($filesFromPath !== null) {
+            $parts[] = "--files-from='{$filesFromPath}'";
+        } else {
+            // Add rsync options (includes --delete, --delete-after)
+            foreach (Commands::RSYNC_OPTIONS as $option) {
+                $parts[] = "--{$option}";
+            }
         }
 
         // Add includes first (they need to come before excludes)

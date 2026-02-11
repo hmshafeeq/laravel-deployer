@@ -38,33 +38,52 @@ beforeEach(function () {
     );
 });
 
-test('deploy command is registered', function () {
+test('deployer:release command is registered', function () {
+    $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
+
+    expect($commands)->toHaveKey('deployer:release');
+});
+
+test('deployer:release command can be instantiated', function () {
+    $result = $this->artisan('deployer:release --help');
+
+    expect($result->run())->toBe(0);
+});
+
+test('deployer list command is registered', function () {
     $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
     expect($commands)->toHaveKey('deployer');
 });
 
-test('deploy command can be instantiated', function () {
-    $result = $this->artisan('deployer --help');
+test('deployer:sync command is registered', function () {
+    $commands = $this->app->make('Illuminate\Contracts\Console\Kernel')->all();
 
-    expect($result->run())->toBe(0);
+    expect($commands)->toHaveKey('deployer:sync');
 });
 
-test('deploy command has sync-only option', function () {
-    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer'];
+test('deployer:sync has --dirty option', function () {
+    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer:sync'];
 
     $definition = $command->getDefinition();
 
-    expect($definition->hasOption('sync-only'))->toBeTrue();
-    expect($definition->getOption('sync-only')->getDescription())
-        ->toBe('Sync files to current release without creating a new release');
+    expect($definition->hasOption('dirty'))->toBeTrue();
+    expect($definition->getOption('dirty')->acceptValue())->toBeFalse();
 });
 
-test('sync-only option is a flag without value', function () {
-    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer'];
+test('deployer:sync has --since option', function () {
+    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer:sync'];
 
-    $option = $command->getDefinition()->getOption('sync-only');
+    $definition = $command->getDefinition();
 
-    expect($option->acceptValue())->toBeFalse();
-    expect($option->isValueRequired())->toBeFalse();
+    expect($definition->hasOption('since'))->toBeTrue();
+    expect($definition->getOption('since')->acceptValue())->toBeTrue();
+});
+
+test('deployer:sync has --branch option', function () {
+    $command = $this->app->make('Illuminate\Contracts\Console\Kernel')->all()['deployer:sync'];
+
+    $definition = $command->getDefinition();
+
+    expect($definition->hasOption('branch'))->toBeTrue();
 });

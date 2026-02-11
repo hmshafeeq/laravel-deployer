@@ -4,3 +4,4 @@
 composer.lock
 sync-to-projects.sh
 deploy-package-to-server.sh
+.worktrees

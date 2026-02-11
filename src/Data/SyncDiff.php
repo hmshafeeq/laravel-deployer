@@ -49,4 +49,14 @@ readonly class SyncDiff
     {
         return $this->newCount() + $this->modifiedCount() + $this->deletedCount();
     }
+
+    /**
+     * Get all files across all categories (new, modified, deleted)
+     *
+     * @return array<string>
+     */
+    public function allFiles(): array
+    {
+        return array_merge($this->newFiles, $this->modifiedFiles, $this->deletedFiles);
+    }
 }
