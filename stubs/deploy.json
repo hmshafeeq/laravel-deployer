@@ -1,0 +1,107 @@
+{
+  "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+  "keepReleases": 3,
+  "phpBinary": "php",
+  "copyVendor": true,
+
+  "display": {
+    "showDiff": true,
+    "confirmChanges": true,
+    "showUploadProgress": true,
+    "diffDisplayLimit": 20
+  },
+
+  "rsync": {
+    "exclude": [
+      ".git/",
+      ".github/",
+      "node_modules/",
+      "/vendor/",
+      "storage/",
+      "bootstrap/cache/",
+      "tests/",
+      ".env",
+      ".env.*",
+      ".deploy/",
+      "deploy.php",
+      "phpunit.xml",
+      ".phpunit.result.cache",
+      "README.md",
+      ".editorconfig",
+      ".gitignore",
+      ".styleci.yml",
+      "docker-compose*.yml",
+      "Dockerfile",
+      "package.json",
+      "package-lock.json",
+      "yarn.lock",
+      "webpack.mix.js",
+      "vite.config.js",
+      "*.log",
+      ".DS_Store",
+      "Thumbs.db",
+      "backups/",
+      "sql/",
+      ".idea/",
+      ".vscode/",
+      ".ai/",
+      ".claude/",
+      ".gemini/",
+      ".junie/",
+      ".zed/"
+    ],
+    "include": [
+      "composer.json",
+      "composer.lock"
+    ],
+    "flags": "rzc",
+    "options": ["delete", "delete-after", "compress"]
+  },
+
+  "composer": {
+    "options": "--prefer-dist --no-interaction --optimize-autoloader"
+  },
+
+  "assets": {
+    "failOnError": true
+  },
+
+  "permissions": {
+    "webGroup": "www-data",
+    "enforceSetgid": true,
+    "directoryMode": "2775",
+    "fileMode": "664"
+  },
+
+  "environments": {
+    "local": {
+      "local": true,
+      "deployPath": "/tmp/app"
+    },
+    "staging": {
+      "deployPath": "/var/www/staging"
+    },
+    "production": {
+      "deployPath": "/var/www/production",
+      "composer": {
+        "options": "--prefer-dist --no-interaction --no-dev --optimize-autoloader"
+      }
+    }
+  },
+
+  "beforeSymlink": [
+    "php artisan optimize:clear"
+  ],
+  "afterSymlink": [],
+  "postDeploy": [],
+
+  "comments": {
+    "copyVendor": "Copy vendor/ from previous release. Saves ~40s on composer install by reusing packages.",
+    "beforeSymlink": "Clear all caches before symlink switch. Optimization (cache rebuilding) happens automatically after symlink with fresh OPcache.",
+    "afterSymlink": "Custom commands to run after symlink switch (optional)",
+    "postDeploy": "Custom commands to run after deployment completes (optional)",
+    "assets.verify": "Optional array of paths to verify exist on server after sync (e.g., ['public/build/', 'public/css/app.css']). Warns but doesn't fail if missing.",
+    "rsync.exclude": "Files in .gitignore are automatically excluded. Add additional patterns here."
+  }
+}

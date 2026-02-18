@@ -1,0 +1,298 @@
+<?php
+
+namespace Shaf\LaravelDeployer\Services;
+
+use Shaf\LaravelDeployer\Data\DeploymentConfig;
+use Shaf\LaravelDeployer\Exceptions\ConfigurationException;
+use Symfony\Component\Console\Output\OutputInterface;
+
+/**
+ * Service for loading and managing deployment configuration.
+ * Uses JSON config (.deploy/deploy.json) + .env secrets.
+ */
+class ConfigService
+{
+    public function __construct(
+        private string $basePath,
+        private ?OutputInterface $output = null
+    ) {}
+
+    /**
+     * Static helper for easy configuration loading
+     */
+    public static function load(string $environment, string $basePath, ?OutputInterface $output = null): DeploymentConfig
+    {
+        $service = new self($basePath, $output);
+
+        return $service->loadConfig($environment);
+    }
+
+    /**
+     * Load deployment configuration for an environment
+     */
+    public function loadConfig(string $environment): DeploymentConfig
+    {
+        $configPath = $this->findConfigFile();
+        $this->verbose("Loading config from: {$configPath}");
+
+        $config = $this->parseJson($configPath);
+        $this->verbose("Loading environment: {$environment}");
+
+        $this->validateEnvironment($environment, $config);
+
+        // Resolve environment inheritance chain
+        $envConfig = $this->resolveEnvironmentInheritance($environment, $config);
+
+        // Deep merge global config with resolved environment config
+        $mergedConfig = $this->deepMerge($config, $envConfig);
+
+        // Load secrets from .env file
+        $this->loadEnvFile($environment);
+        $mergedConfig = $this->applyEnvSecrets($mergedConfig);
+
+        // Merge .gitignore patterns into rsync excludes (enabled by default)
+        $useGitignore = $mergedConfig['rsync']['useGitignore'] ?? true;
+        if ($useGitignore) {
+            $gitignorePatterns = $this->loadGitignorePatterns();
+            if (! empty($gitignorePatterns)) {
+                $existingExcludes = $mergedConfig['rsync']['exclude'] ?? [];
+                $mergedConfig['rsync']['exclude'] = array_values(array_unique(
+                    array_merge($existingExcludes, $gitignorePatterns)
+                ));
+            }
+        }
+
+        $this->verbose('Configuration loaded successfully');
+
+        return DeploymentConfig::fromArray($environment, $mergedConfig);
+    }
+
+    /**
+     * Resolve environment inheritance chain
+     *
+     * @param  array<string>  $visited  Track visited environments to detect circular dependencies
+     */
+    private function resolveEnvironmentInheritance(string $environment, array $config, array $visited = []): array
+    {
+        // Detect circular dependency
+        throw_if(
+            in_array($environment, $visited),
+            fn () => ConfigurationException::circularInheritance(
+                implode(' → ', [...$visited, $environment])
+            )
+        );
+
+        $envConfig = $config['environments'][$environment] ?? [];
+
+        // Check if this environment extends another
+        if (! isset($envConfig['extends'])) {
+            return $envConfig;
+        }
+
+        $parentEnv = $envConfig['extends'];
+        $this->verbose("Environment '{$environment}' extends '{$parentEnv}'");
+
+        // Validate parent environment exists
+        throw_unless(
+            isset($config['environments'][$parentEnv]),
+            fn () => ConfigurationException::parentEnvironmentNotFound($parentEnv, $environment)
+        );
+
+        // Resolve parent's inheritance chain first
+        $parentConfig = $this->resolveEnvironmentInheritance(
+            $parentEnv,
+            $config,
+            [...$visited, $environment]
+        );
+
+        // Remove 'extends' key from current config before merging
+        unset($envConfig['extends']);
+
+        // Merge: parent config first, then current env overrides
+        return $this->deepMerge($parentConfig, $envConfig);
+    }
+
+    /**
+     * Get list of available environments
+     */
+    public function getAvailableEnvironments(): array
+    {
+        try {
+            $configPath = $this->findConfigFile();
+            $config = $this->parseJson($configPath);
+
+            return array_keys($config['environments'] ?? []);
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Find the configuration file
+     */
+    private function findConfigFile(): string
+    {
+        $path = $this->basePath.'/.deploy/deploy.json';
+
+        if (file_exists($path)) {
+            return $path;
+        }
+
+        throw ConfigurationException::fileNotFound('deploy.json (expected at .deploy/deploy.json)');
+    }
+
+    /**
+     * Parse JSON config file
+     */
+    private function parseJson(string $path): array
+    {
+        $contents = file_get_contents($path);
+        $config = json_decode($contents, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw ConfigurationException::invalidJson($path, json_last_error_msg());
+        }
+
+        return $config;
+    }
+
+    /**
+     * Validate environment exists in configuration
+     */
+    private function validateEnvironment(string $environment, array $config): void
+    {
+        if (! isset($config['environments'][$environment])) {
+            $available = array_keys($config['environments'] ?? []);
+            throw ConfigurationException::environmentNotFound($environment, $available);
+        }
+    }
+
+    /**
+     * Deep merge two arrays (environment config extends global config)
+     */
+    private function deepMerge(array $base, array $override): array
+    {
+        $result = $base;
+
+        foreach ($override as $key => $value) {
+            // Skip 'environments' key - we don't want to nest it
+            if ($key === 'environments') {
+                continue;
+            }
+
+            if (is_array($value) && isset($result[$key]) && is_array($result[$key])) {
+                // If both are indexed arrays, replace entirely
+                if ($this->isIndexedArray($value) && $this->isIndexedArray($result[$key])) {
+                    $result[$key] = $value;
+                } else {
+                    // Associative arrays: deep merge
+                    $result[$key] = $this->deepMerge($result[$key], $value);
+                }
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Check if array is indexed (sequential numeric keys)
+     */
+    private function isIndexedArray(array $array): bool
+    {
+        if (empty($array)) {
+            return true;
+        }
+
+        return array_keys($array) === range(0, count($array) - 1);
+    }
+
+    /**
+     * Load environment-specific .env file for secrets
+     */
+    private function loadEnvFile(string $environment): void
+    {
+        $envFile = "{$this->basePath}/.deploy/.env.{$environment}";
+
+        if (file_exists($envFile)) {
+            $this->verbose("Loading secrets from: .deploy/.env.{$environment}");
+            $dotenv = \Dotenv\Dotenv::createImmutable(
+                "{$this->basePath}/.deploy",
+                ".env.{$environment}"
+            );
+            $dotenv->load();
+        } else {
+            $this->verbose("No secrets file found: .deploy/.env.{$environment}");
+        }
+    }
+
+    /**
+     * Apply secrets from environment variables
+     */
+    private function applyEnvSecrets(array $config): array
+    {
+        if ($host = $this->getEnv('DEPLOY_HOST')) {
+            $config['hostname'] = $host;
+        }
+
+        if ($user = $this->getEnv('DEPLOY_USER')) {
+            $config['remoteUser'] = $user;
+        }
+
+        if ($path = $this->getEnv('DEPLOY_PATH')) {
+            $config['deployPath'] = $path;
+        }
+
+        if ($identityFile = $this->getEnv('DEPLOY_IDENTITY_FILE')) {
+            $config['identityFile'] = $identityFile;
+        }
+
+        if ($port = $this->getEnv('DEPLOY_PORT')) {
+            $config['port'] = (int) $port;
+        }
+
+        if ($githubToken = $this->getEnv('GITHUB_TOKEN')) {
+            $config['githubToken'] = $githubToken;
+        }
+
+        return $config;
+    }
+
+    /**
+     * Get environment variable
+     */
+    private function getEnv(string $key): ?string
+    {
+        return $_ENV[$key] ?? getenv($key) ?: null;
+    }
+
+    /**
+     * Load patterns from project's .gitignore file
+     *
+     * @return array<string>
+     */
+    private function loadGitignorePatterns(): array
+    {
+        $gitignorePath = $this->basePath.'/.gitignore';
+
+        $parser = new GitignoreParser;
+        $patterns = $parser->parse($gitignorePath);
+
+        if (! empty($patterns)) {
+            $this->verbose('Loaded '.count($patterns).' patterns from .gitignore');
+        }
+
+        return $patterns;
+    }
+
+    /**
+     * Output verbose message (only when verbose mode is enabled)
+     */
+    private function verbose(string $message): void
+    {
+        if ($this->output?->isVerbose()) {
+            $this->output->writeln("<comment>  [config] {$message}</comment>");
+        }
+    }
+}

@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          # Fetch all tags
+          git fetch --tags
+
+          # Get the latest 1.x tag, default to 1.0 if none exist
+          LATEST_TAG=$(git tag -l '1.*' | sort -V | tail -n 1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="1.0"
+          fi
+
+          echo "latest=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Calculate next version
+        id: next_version
+        run: |
+          LATEST="${{ steps.latest_tag.outputs.latest }}"
+
+          # Extract major and minor version
+          MAJOR=$(echo $LATEST | cut -d. -f1)
+          MINOR=$(echo $LATEST | cut -d. -f2)
+
+          # Increment minor version
+          NEXT_MINOR=$((MINOR + 1))
+          NEXT_VERSION="${MAJOR}.${NEXT_MINOR}"
+
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Next version: $NEXT_VERSION"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.next_version.outputs.version }}
+          name: Release ${{ steps.next_version.outputs.version }}
+          generate_release_notes: true
+          target_commitish: main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

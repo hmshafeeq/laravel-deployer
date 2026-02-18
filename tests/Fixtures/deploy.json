@@ -1,0 +1,50 @@
+{
+    "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+    "keepReleases": 3,
+    "phpBinary": "php",
+
+    "display": {
+        "showDiff": true,
+        "confirmChanges": false,
+        "showUploadProgress": true,
+        "diffDisplayLimit": 20
+    },
+
+    "rsync": {
+        "exclude": [
+            ".git/",
+            "node_modules/",
+            "/vendor/",
+            "storage/",
+            "tests/"
+        ],
+        "include": [
+            "composer.json",
+            "composer.lock"
+        ],
+        "flags": "rzc",
+        "options": ["delete", "delete-after", "compress"]
+    },
+
+    "composer": {
+        "options": "--prefer-dist --no-interaction --optimize-autoloader"
+    },
+
+    "environments": {
+        "test": {
+            "local": true,
+            "deployPath": ".deploy/builds"
+        },
+        "local": {
+            "local": true,
+            "deployPath": ".deploy/builds/local"
+        }
+    },
+
+    "postDeploy": [
+        "php artisan config:cache",
+        "php artisan route:cache",
+        "php artisan view:cache"
+    ]
+}
