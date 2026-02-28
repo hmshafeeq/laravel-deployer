@@ -64,13 +64,51 @@ package_installed() {
 # Install package if not already installed
 install_package() {
     local package=$1
+    local attempts=3
+    local timeout_seconds="${APT_INSTALL_TIMEOUT_SECONDS:-300}"
+    local attempt
+
     if package_installed "$package"; then
         print_info "$package is already installed"
-    else
-        print_info "Installing $package..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y "$package" >/dev/null 2>&1
-        print_success "$package installed"
+        return 0
     fi
+
+    wait_for_apt
+
+    for attempt in $(seq 1 "$attempts"); do
+        print_info "Installing $package... (attempt $attempt/$attempts)"
+
+        if command_exists timeout; then
+            if DEBIAN_FRONTEND=noninteractive timeout "$timeout_seconds" \
+                apt-get install -y \
+                -o Acquire::Retries=3 \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                "$package" >/dev/null 2>&1; then
+                print_success "$package installed"
+                return 0
+            fi
+        else
+            if DEBIAN_FRONTEND=noninteractive \
+                apt-get install -y \
+                -o Acquire::Retries=3 \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                "$package" >/dev/null 2>&1; then
+                print_success "$package installed"
+                return 0
+            fi
+        fi
+
+        if [ "$attempt" -lt "$attempts" ]; then
+            print_warning "Install failed for $package, retrying..."
+            sleep 2
+            wait_for_apt
+        fi
+    done
+
+    print_error "Failed to install $package after $attempts attempts"
+    return 1
 }
 
 # Check if running as root

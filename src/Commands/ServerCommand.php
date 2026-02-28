@@ -31,6 +31,9 @@ class ServerCommand extends Command
                             {--with-mysql : Install MySQL}
                             {--with-postgresql : Install PostgreSQL}
                             {--with-redis : Install Redis}
+                            {--no-firewall : Skip UFW firewall setup}
+                            {--no-swap : Skip swap space setup}
+                            {--no-supervisor : Skip Supervisor installation}
                             {--non-interactive : Run in non-interactive mode}';
 
     protected $description = 'Server management: clear caches, provision servers, diagnose permissions';
@@ -502,9 +505,9 @@ class ServerCommand extends Command
             'install_redis' => $this->option('with-redis'),
             'mysql_root_password' => null,
             'postgres_password' => null,
-            'install_supervisor' => true,
-            'setup_firewall' => true,
-            'setup_swap' => true,
+            'install_supervisor' => ! $this->option('no-supervisor'),
+            'setup_firewall' => ! $this->option('no-firewall'),
+            'setup_swap' => ! $this->option('no-swap'),
             'swap_size' => '2G',
         ];
     }
