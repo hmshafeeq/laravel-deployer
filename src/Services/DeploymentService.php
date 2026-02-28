@@ -45,16 +45,15 @@ class DeploymentService
         $counterFile = "{$counterDir}/{$yearMonth}.txt";
         $releasesDir = "{$this->config->deployPath}/".Paths::RELEASES_DIR;
 
-        // Batch all operations into a single SSH call:
-        // 1. Create counter directory if needed
-        // 2. Read current counter (or default to 0)
-        // 3. Increment and save new counter
-        // 4. Create release directory
-        // 5. Output the new counter value
+        // Batch release name generation into a single SSH call and guard against
+        // collisions when counter files are missing/stale on migrated servers.
         $count = (int) trim($this->cmd->remote(
-            "mkdir -p {$counterDir} && ".
-            "count=\$(cat {$counterFile} 2>/dev/null || echo 0) && ".
-            'count=$((count + 1)) && '.
+            "mkdir -p {$counterDir} {$releasesDir} && ".
+            "counter=\$(cat {$counterFile} 2>/dev/null || echo 0) && ".
+            "max_existing=\$(ls -1 {$releasesDir} 2>/dev/null | awk -F'.' '\$1 == \"{$yearMonth}\" && \$2 ~ /^[0-9]+$/ { if (\$2 > max) max = \$2 } END { print max + 0 }') && ".
+            '[ "$counter" -lt "$max_existing" ] && counter=$max_existing || true && '.
+            'count=$((counter + 1)) && '.
+            "while [ -e {$releasesDir}/{$yearMonth}.\$count ]; do count=\$((count + 1)); done && ".
             "echo \$count > {$counterFile} && ".
             "mkdir -p {$releasesDir}/{$yearMonth}.\$count && ".
             'echo $count'
@@ -230,7 +229,8 @@ class DeploymentService
         $this->cmd->debug('Creating deployment lock...');
 
         $user = $this->getUser();
-        $this->cmd->remote("echo '{$user}' > {$this->lockFile}");
+        $lockDir = dirname($this->lockFile);
+        $this->cmd->remote("mkdir -p {$lockDir} && echo '{$user}' > {$this->lockFile}");
 
         $this->cmd->debug("Deployment locked by {$user}");
     }
