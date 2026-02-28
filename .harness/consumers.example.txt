@@ -1,0 +1,3 @@
+# One absolute path per line
+# /Users/you/Developer/Code/project-one
+# /Users/you/Developer/Code/project-two

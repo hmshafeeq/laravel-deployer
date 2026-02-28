@@ -5,3 +5,9 @@ composer.lock
 sync-to-projects.sh
 deploy-package-to-server.sh
 .worktrees
+/.harness/laravel-app
+/.harness/ssh
+/.harness/artifacts/orbstack
+/.harness/consumers.txt
+/.agents/PRDS
+/.agents/TASKS

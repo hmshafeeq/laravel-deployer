@@ -1,0 +1,59 @@
+{
+    "$schema": "./vendor/shaf/laravel-deployer/stubs/deploy.schema.json",
+
+    "keepReleases": 3,
+    "phpBinary": "php",
+    "copyVendor": true,
+
+    "display": {
+        "showDiff": false,
+        "confirmChanges": false,
+        "showUploadProgress": false,
+        "diffDisplayLimit": 20
+    },
+
+    "ssh": {
+        "strictHostKeyChecking": false
+    },
+
+    "rsync": {
+        "exclude": [
+            ".git/",
+            "node_modules/",
+            "/vendor/",
+            "storage/",
+            "bootstrap/cache/",
+            "tests/",
+            ".env",
+            ".env.*",
+            ".deploy/"
+        ],
+        "include": [
+            "composer.json",
+            "composer.lock"
+        ],
+        "flags": "rzc",
+        "options": ["delete", "delete-after", "compress"]
+    },
+
+    "composer": {
+        "options": "--prefer-dist --no-interaction --optimize-autoloader"
+    },
+
+    "permissions": {
+        "webGroup": "www-data",
+        "enforceSetgid": true,
+        "directoryMode": "2775",
+        "fileMode": "664"
+    },
+
+    "environments": {
+        "staging": {
+            "deployPath": "/var/www/staging"
+        }
+    },
+
+    "beforeSymlink": [],
+    "afterSymlink": [],
+    "postDeploy": []
+}

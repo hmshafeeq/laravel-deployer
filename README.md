@@ -405,8 +405,14 @@ Installs: Nginx, PHP-FPM, Node.js, Composer, MySQL/PostgreSQL/Redis (optional), 
 ## Testing
 
 ```bash
+# Package tests
 vendor/bin/pest
+
+# Real-world integration harness (OrbStack VM scenarios)
+.harness/run-tests.sh --scenario all --clean
 ```
+
+Artifacts: `.harness/artifacts/orbstack/latest/`
 
 ## License
 
