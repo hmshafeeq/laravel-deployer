@@ -628,6 +628,10 @@ class CommandService implements CommandExecutor
     {
         $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
 
+        if ($this->config->port !== null) {
+            $this->ssh->usePort($this->config->port);
+        }
+
         // Enable SSH connection multiplexing for performance
         // Reuses a single connection for all commands instead of reconnecting each time
         // Control socket stored in /tmp with user@host:port format for uniqueness

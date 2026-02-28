@@ -233,6 +233,12 @@ class RsyncService
         // Add SSH options only for remote deployments
         if (! $this->config->isLocal) {
             $sshOptions = Commands::RSYNC_SSH_OPTIONS;
+            if ($this->config->port !== null) {
+                $sshOptions .= " -p {$this->config->port}";
+            }
+            if (! $this->config->strictHostKeyChecking) {
+                $sshOptions .= ' -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
+            }
             if ($this->config->identityFile) {
                 $identityFile = $this->config->identityFile;
                 if (str_starts_with($identityFile, '~')) {
