@@ -502,7 +502,12 @@ trait ManagesDeploymentSteps
         $host = $this->config->hostname;
         $user = $this->config->remoteUser;
         $port = $this->config->port ?? 22;
-        shell_exec("ssh -O exit -o ControlPath=/tmp/deployer-{$user}@{$host}:{$port} {$user}@{$host} 2>/dev/null || true");
+        if (PHP_OS_FAMILY === 'Windows') {
+            return;
+        }
+
+        $tempDir = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/');
+        shell_exec("ssh -O exit -o ControlPath={$tempDir}/deployer-{$user}@{$host}:{$port} {$user}@{$host} 2>/dev/null || true");
     }
 
     /**

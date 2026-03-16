@@ -84,12 +84,18 @@ class RsyncService
         $totalFiles = $this->syncDiff?->totalCount() ?? 0;
         $showProgress = $this->config->showUploadProgress && $totalFiles > 0 && $this->output !== null;
 
-        // Build command - include -v flag if we need progress output, --stats for size info
-        $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress, $filesFromPath);
+        // On Windows: build as a Process array to avoid cmd.exe shell quoting issues.
+        // On Unix: build as a shell command string (existing behaviour).
+        if (PHP_OS_FAMILY === 'Windows') {
+            $args = $this->buildRsyncArgs($source, $destinationPath, $showProgress, $filesFromPath);
+            $this->cmdService?->debug('Rsync command: '.implode(' ', $args));
+            $process = new Process($args, $this->sourcePath);
+        } else {
+            $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress, $filesFromPath);
+            $this->cmdService?->debug("Rsync command: {$command}");
+            $process = Process::fromShellCommandline($command, $this->sourcePath);
+        }
 
-        $this->cmdService?->debug("Rsync command: {$command}");
-
-        $process = Process::fromShellCommandline($command, $this->sourcePath);
         $process->setTimeout(Timeouts::RSYNC);
 
         $progressBar = null;
@@ -213,6 +219,98 @@ class RsyncService
         $this->includes[] = $pattern;
 
         return $this;
+    }
+
+    /**
+     * Build rsync arguments as an array for Windows using WSL.
+     * Avoids cmd.exe shell quoting issues and uses WSL's rsync binary.
+     *
+     * @return array<string>
+     */
+    private function buildRsyncArgs(string $source, string $destination, bool $forProgress = false, ?string $filesFromPath = null): array
+    {
+        // Use WSL rsync — convert Windows source path to WSL mount path
+        $args = ['wsl', 'rsync'];
+
+        $flags = $this->config->rsyncFlags;
+        if ($this->verbose || $forProgress) {
+            $flags .= 'v';
+        }
+        $args[] = '-'.$flags;
+        $args[] = '--stats';
+
+        if (! $this->config->isLocal) {
+            $args[] = '-e';
+            $args[] = $this->buildWindowsSshOptions();
+        }
+
+        if ($filesFromPath !== null) {
+            $args[] = '--files-from='.$this->windowsPathToWsl($filesFromPath);
+        } else {
+            foreach ($this->config->rsyncOptions as $option) {
+                $args[] = "--{$option}";
+            }
+        }
+
+        foreach ($this->includes as $include) {
+            $args[] = "--include={$include}";
+        }
+
+        foreach ($this->excludes as $exclude) {
+            $args[] = "--exclude={$exclude}";
+        }
+
+        // Source must be a WSL path; destination is remote (user@host:path) — no conversion needed
+        $args[] = $this->windowsPathToWsl($source);
+        $args[] = $destination;
+
+        return $args;
+    }
+
+    /**
+     * Convert a Windows path to its WSL mount equivalent.
+     * e.g. C:\Users\foo\bar  →  /mnt/c/Users/foo/bar
+     */
+    private function windowsPathToWsl(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+        if (preg_match('/^([A-Za-z]):\/(.*)$/', $path, $m)) {
+            return '/mnt/'.strtolower($m[1]).'/'.$m[2];
+        }
+
+        return $path;
+    }
+
+    /**
+     * Build SSH options string for rsync running inside WSL.
+     * Uses ssh.exe (Windows OpenSSH) as the transport so rsync can access the Windows ssh-agent.
+     * Keeps the identity file as a Windows path since ssh.exe understands it natively.
+     * Omits ControlMaster/ControlPath which Windows OpenSSH does not support.
+     */
+    private function buildWindowsSshOptions(): string
+    {
+        // ssh.exe = Windows OpenSSH, callable from WSL — uses the Windows ssh-agent
+        $options = 'ssh.exe -o PasswordAuthentication=no -o BatchMode=yes';
+
+        if ($this->config->port !== null) {
+            $options .= " -p {$this->config->port}";
+        }
+
+        if (! $this->config->strictHostKeyChecking) {
+            $options .= ' -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
+        }
+
+        if ($this->config->identityFile) {
+            $identityFile = $this->config->identityFile;
+            if (str_starts_with($identityFile, '~')) {
+                $home = $_SERVER['HOME'] ?? getenv('HOME') ?? getenv('USERPROFILE') ?? '';
+                $identityFile = str_replace('~', $home, $identityFile);
+            }
+            // Keep Windows path (backslashes) — ssh.exe handles it natively
+            $options .= " -i \"{$identityFile}\"";
+        }
+
+        return $options;
     }
 
     private function buildRsyncCommand(string $source, string $destination, bool $forProgress = false, ?string $filesFromPath = null): string

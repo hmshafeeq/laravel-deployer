@@ -72,7 +72,12 @@ class CommandService implements CommandExecutor
         $this->logCommand($command);
 
         try {
-            $process = $this->ssh->execute($command);
+            // On Windows, spatie/ssh uses bash heredoc syntax which cmd.exe cannot handle.
+            // Use a direct Process array instead, which bypasses shell interpretation entirely.
+            $process = PHP_OS_FAMILY === 'Windows'
+                ? $this->executeWindowsSsh($command)
+                : $this->ssh->execute($command);
+
             $output = trim($process->getOutput());
             $errorOutput = trim($process->getErrorOutput());
 
@@ -95,6 +100,52 @@ class CommandService implements CommandExecutor
     }
 
     /**
+     * Execute an SSH command on Windows using a direct Process array.
+     * Avoids spatie/ssh's bash heredoc syntax which is incompatible with cmd.exe.
+     * Uses Windows OpenSSH explicitly so it can access the Windows ssh-agent.
+     */
+    private function executeWindowsSsh(string $command): Process
+    {
+        // Prefer Windows OpenSSH over Git's ssh — only Windows OpenSSH uses the Windows agent
+        $sshBinary = file_exists('C:\\Windows\\System32\\OpenSSH\\ssh.exe')
+            ? 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'
+            : 'ssh';
+
+        $args = [$sshBinary];
+
+        if ($this->config->identityFile) {
+            $args[] = '-i';
+            $args[] = $this->config->identityFile;
+        }
+
+        if ($this->config->port !== null) {
+            $args[] = '-p';
+            $args[] = (string) $this->config->port;
+        }
+
+        $args[] = '-o';
+        $args[] = 'PasswordAuthentication=no';
+        $args[] = '-o';
+        $args[] = 'BatchMode=yes';
+
+        if (! $this->config->strictHostKeyChecking) {
+            $args[] = '-o';
+            $args[] = 'StrictHostKeyChecking=no';
+            $args[] = '-o';
+            $args[] = 'UserKnownHostsFile=/dev/null';
+        }
+
+        $args[] = "{$this->config->remoteUser}@{$this->config->hostname}";
+        $args[] = $command;
+
+        $process = new Process($args);
+        $process->setTimeout($this->timeout);
+        $process->run();
+
+        return $process;
+    }
+
+    /**
      * Execute a remote command with output streamed at verbose level (-v).
      * Use this for long-running commands like composer install where
      * seeing progress is important for debugging.
@@ -108,7 +159,10 @@ class CommandService implements CommandExecutor
         $this->logCommand($command);
 
         try {
-            $process = $this->ssh->execute($command);
+            $process = PHP_OS_FAMILY === 'Windows'
+                ? $this->executeWindowsSsh($command)
+                : $this->ssh->execute($command);
+
             $output = trim($process->getOutput());
             $errorOutput = trim($process->getErrorOutput());
 
@@ -634,9 +688,13 @@ class CommandService implements CommandExecutor
 
         // Enable SSH connection multiplexing for performance
         // Reuses a single connection for all commands instead of reconnecting each time
-        // Control socket stored in /tmp with user@host:port format for uniqueness
-        $controlPath = '/tmp/deployer-ssh-%r@%h:%p';
-        $this->ssh->useMultiplexing($controlPath, '60');
+        // Use sys_get_temp_dir() for cross-platform compatibility (Windows doesn't have /tmp)
+        // Windows OpenSSH does not support ControlMaster, so skip multiplexing on Windows
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $tempDir = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/');
+            $controlPath = "{$tempDir}/deployer-ssh-%r@%h:%p";
+            $this->ssh->useMultiplexing($controlPath, '60');
+        }
 
         // Only disable strict host key checking if explicitly configured to do so
         // Default is true (enabled) for security - disabling allows MITM attacks
