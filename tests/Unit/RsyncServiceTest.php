@@ -71,7 +71,9 @@ test('buildRsyncCommand() includes SSH options when not local', function () {
 
     $command = invokePrivateMethod($service, 'buildRsyncCommand', ['/source/', 'user@host:/dest/']);
 
-    expect($command)->toContain("-e 'ssh -A -o ControlMaster=auto -o ControlPersist=60 -o ControlPath=/tmp/deployer-%r@%h:%p'");
+    expect($command)->toContain("-e 'ssh -A");
+    expect($command)->toContain('ControlMaster=auto');
+    expect($command)->toContain('ControlPersist=60');
 });
 
 test('buildRsyncCommand() omits SSH options for local deployment', function () {

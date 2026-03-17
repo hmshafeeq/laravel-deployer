@@ -7,7 +7,6 @@ use Shaf\LaravelDeployer\Contracts\CommandExecutor;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
 use Shaf\LaravelDeployer\Exceptions\TaskExecutionException;
-use Spatie\Ssh\Ssh;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Process;
 
@@ -17,7 +16,7 @@ use Symfony\Component\Process\Process;
  */
 class CommandService implements CommandExecutor
 {
-    private ?Ssh $ssh = null;
+    private ?SshService $sshService = null;
 
     private int $timeout = Timeouts::DEFAULT_COMMAND;
 
@@ -33,7 +32,8 @@ class CommandService implements CommandExecutor
         private string $workingDirectory = ''
     ) {
         if (! $config->isLocal) {
-            $this->initializeSsh();
+            $this->sshService = SshService::fromConfig($config);
+            $this->sshService->setTimeout($this->timeout);
         }
 
         $this->prefix = "[{$config->environment->value}] ";
@@ -72,20 +72,16 @@ class CommandService implements CommandExecutor
         $this->logCommand($command);
 
         try {
-            $process = $this->ssh->execute($command);
-            $output = trim($process->getOutput());
-            $errorOutput = trim($process->getErrorOutput());
+            $result = $this->sshService->ssh($command);
 
-            if (! $process->isSuccessful()) {
-                // Include both stdout and stderr for better error context
-                // Artisan commands often output errors to stdout, not stderr
-                $errorContext = $errorOutput ?: $output;
+            if (! $result->successful) {
+                $errorContext = $result->errorOutput ?: $result->output;
                 throw SSHConnectionException::commandFailed($command, $errorContext);
             }
 
-            $this->logCommandOutput($output);
+            $this->logCommandOutput($result->output);
 
-            return $output;
+            return $result->output;
         } catch (\Exception $e) {
             if ($e instanceof SSHConnectionException) {
                 throw $e;
@@ -108,26 +104,23 @@ class CommandService implements CommandExecutor
         $this->logCommand($command);
 
         try {
-            $process = $this->ssh->execute($command);
-            $output = trim($process->getOutput());
-            $errorOutput = trim($process->getErrorOutput());
+            $result = $this->sshService->ssh($command);
 
-            // Show output at verbose level (not just very verbose)
             if ($this->output->isVerbose()) {
-                $this->streamOutput($output);
-                if (! empty($errorOutput)) {
-                    $this->streamOutput($errorOutput, isError: true);
+                $this->streamOutput($result->output);
+                if (! empty($result->errorOutput)) {
+                    $this->streamOutput($result->errorOutput, isError: true);
                 }
             }
 
-            if (! $process->isSuccessful()) {
+            if (! $result->successful) {
                 throw SSHConnectionException::commandFailed(
                     $command,
-                    $errorOutput ?: $output
+                    $result->errorOutput ?: $result->output
                 );
             }
 
-            return $output;
+            return $result->output;
         } catch (\Exception $e) {
             if ($e instanceof SSHConnectionException) {
                 throw $e;
@@ -255,19 +248,13 @@ class CommandService implements CommandExecutor
                 return $process->isSuccessful();
             }
 
-            $process = $this->ssh->execute($condition.' && echo "true" || echo "false"');
+            $result = $this->sshService->ssh($condition.' && echo "true" || echo "false"');
 
-            // Capture any error output
-            $errorOutput = trim($process->getErrorOutput());
-            $stdout = trim($process->getOutput());
-
-            if (! $process->isSuccessful() || $errorOutput) {
-                $this->lastError = $errorOutput ?: "Exit code: {$process->getExitCode()}, stdout: {$stdout}";
+            if (! $result->successful || $result->errorOutput) {
+                $this->lastError = $result->errorOutput ?: "Exit code: {$result->exitCode}, stdout: {$result->output}";
             }
 
-            // Check for exact "true" match or "true" on its own line
-            // Avoid false positives like "truthful" or "untruthful"
-            $trimmed = trim($stdout);
+            $trimmed = trim($result->output);
 
             return $trimmed === 'true' || str_ends_with($trimmed, "\ntrue");
         } catch (\Exception $e) {
@@ -564,9 +551,7 @@ class CommandService implements CommandExecutor
     public function setTimeout(int $timeout): self
     {
         $this->timeout = $timeout;
-        if ($this->ssh) {
-            $this->ssh->setTimeout($timeout);
-        }
+        $this->sshService?->setTimeout($timeout);
 
         return $this;
     }
@@ -624,43 +609,12 @@ class CommandService implements CommandExecutor
     // Private Helper Methods
     // ============================================================
 
-    private function initializeSsh(): void
+    /**
+     * Get the SSH service instance (for callers that need direct access)
+     */
+    public function getSshService(): ?SshService
     {
-        $this->ssh = Ssh::create($this->config->remoteUser, $this->config->hostname);
-
-        if ($this->config->port !== null) {
-            $this->ssh->usePort($this->config->port);
-        }
-
-        // Enable SSH connection multiplexing for performance
-        // Reuses a single connection for all commands instead of reconnecting each time
-        // Control socket stored in /tmp with user@host:port format for uniqueness
-        $controlPath = '/tmp/deployer-ssh-%r@%h:%p';
-        $this->ssh->useMultiplexing($controlPath, '60');
-
-        // Only disable strict host key checking if explicitly configured to do so
-        // Default is true (enabled) for security - disabling allows MITM attacks
-        if (! $this->config->strictHostKeyChecking) {
-            $this->ssh->disableStrictHostKeyChecking();
-        }
-
-        // Use identity file if configured
-        if ($this->config->identityFile) {
-            $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
-            $identityPath = str_starts_with($this->config->identityFile, '~')
-                ? str_replace('~', $home, $this->config->identityFile)
-                : $this->config->identityFile;
-
-            // Verify file exists
-            if (! file_exists($identityPath)) {
-                throw new \RuntimeException("SSH identity file not found: {$identityPath}");
-            }
-
-            $this->ssh->usePrivateKey($identityPath);
-        }
-
-        $this->ssh->disablePasswordAuthentication();
-        $this->ssh->setTimeout($this->timeout);
+        return $this->sshService;
     }
 
     /**

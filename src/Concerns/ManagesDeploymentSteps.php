@@ -499,10 +499,7 @@ trait ManagesDeploymentSteps
 
         $this->cmd->debug('Cleaning up SSH control sockets...');
 
-        $host = $this->config->hostname;
-        $user = $this->config->remoteUser;
-        $port = $this->config->port ?? 22;
-        shell_exec("ssh -O exit -o ControlPath=/tmp/deployer-{$user}@{$host}:{$port} {$user}@{$host} 2>/dev/null || true");
+        $this->cmd->getSshService()?->cleanupSockets();
     }
 
     /**

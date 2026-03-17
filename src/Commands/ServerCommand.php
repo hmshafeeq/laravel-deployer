@@ -10,6 +10,7 @@ use Shaf\LaravelDeployer\Data\DiagnoseResult;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
+use Shaf\LaravelDeployer\Services\SshService;
 
 class ServerCommand extends Command
 {
@@ -43,6 +44,8 @@ class ServerCommand extends Command
     protected string $scriptsDir;
 
     protected string $remoteScriptsDir = '/tmp/laravel-deployer-provision';
+
+    private ?SshService $sshService = null;
 
     public function handle(): int
     {
@@ -562,17 +565,15 @@ class ServerCommand extends Command
 
     protected function testConnection(): bool
     {
-        $sshCommand = $this->buildSSHCommand('echo "Connection test"');
-
-        exec($sshCommand.' 2>&1', $output, $returnCode);
-
-        return $returnCode === 0;
+        return $this->getProvisionSshService()->testConnection();
     }
 
     protected function uploadScripts(): bool
     {
+        $ssh = $this->getProvisionSshService();
+
         // Create remote directory
-        $this->executeRemoteCommand("mkdir -p {$this->remoteScriptsDir}");
+        $ssh->ssh("mkdir -p {$this->remoteScriptsDir}");
 
         // Upload all scripts
         $scriptsToUpload = [
@@ -602,20 +603,19 @@ class ServerCommand extends Command
 
             // Create remote directory if needed
             $remoteDir = dirname($remotePath);
-            $this->executeRemoteCommand("mkdir -p {$remoteDir}");
+            $ssh->ssh("mkdir -p {$remoteDir}");
 
             // Upload file
-            $scpCommand = $this->buildSCPCommand($localPath, $remotePath);
-            exec($scpCommand.' 2>&1', $output, $returnCode);
+            $result = $ssh->upload($localPath, $remotePath);
 
-            if ($returnCode !== 0) {
+            if (! $result->successful) {
                 $this->error("Failed to upload {$script}");
 
                 return false;
             }
 
             // Make executable
-            $this->executeRemoteCommand("chmod +x {$remotePath}");
+            $ssh->ssh("chmod +x {$remotePath}");
         }
 
         return true;
@@ -623,6 +623,8 @@ class ServerCommand extends Command
 
     protected function executeProvisioning(): bool
     {
+        $ssh = $this->getProvisionSshService();
+
         // Generate config file content
         $configContent = $this->generateConfigFile();
 
@@ -631,29 +633,32 @@ class ServerCommand extends Command
         $tmpConfigFile = tempnam(sys_get_temp_dir(), 'provision-config');
         file_put_contents($tmpConfigFile, $configContent);
 
-        $scpCommand = $this->buildSCPCommand($tmpConfigFile, $configPath);
-        exec($scpCommand.' 2>&1', $output, $returnCode);
+        $result = $ssh->upload($tmpConfigFile, $configPath);
         unlink($tmpConfigFile);
 
-        if ($returnCode !== 0) {
+        if (! $result->successful) {
             $this->error('Failed to upload configuration file.');
 
             return false;
         }
 
-        // Execute main provision script
+        // Execute main provision script with streaming output
         $provisionCommand = "sudo bash {$this->remoteScriptsDir}/provision.sh {$configPath}";
 
-        $result = $this->executeRemoteCommandWithOutput($provisionCommand);
+        $result = $ssh->sshWithOutput($provisionCommand, function ($type, $buffer) {
+            $this->output->write($buffer);
+        });
 
         // Cleanup
-        $this->executeRemoteCommand("rm -rf {$this->remoteScriptsDir} {$configPath}");
+        $ssh->ssh("rm -rf {$this->remoteScriptsDir} {$configPath}");
 
-        return $result;
+        return $result->successful;
     }
 
     protected function generateConfigFile(): string
     {
+        $esc = fn (string $v): string => str_replace("'", "'\\''", $v);
+
         $lines = [
             '#!/bin/bash',
             '',
@@ -662,106 +667,45 @@ class ServerCommand extends Command
             '',
             '# User Configuration',
             'CREATE_USER='.(int) $this->config['create_user'],
-            'DEPLOY_USER="'.$this->config['deploy_user'].'"',
-            'DEPLOY_PASSWORD="'.($this->config['deploy_password'] ?? '').'"',
+            "DEPLOY_USER='".$esc($this->config['deploy_user'])."'",
+            "DEPLOY_PASSWORD='".$esc($this->config['deploy_password'] ?? '')."'",
             '',
             '# Software Versions',
-            'PHP_VERSION="'.$this->config['php_version'].'"',
-            'NODEJS_VERSION="'.$this->config['nodejs_version'].'"',
+            "PHP_VERSION='".$esc($this->config['php_version'])."'",
+            "NODEJS_VERSION='".$esc($this->config['nodejs_version'])."'",
             '',
             '# Database Configuration',
             'INSTALL_MYSQL='.(int) $this->config['install_mysql'],
             'INSTALL_POSTGRESQL='.(int) $this->config['install_postgresql'],
             'INSTALL_REDIS='.(int) $this->config['install_redis'],
-            'MYSQL_ROOT_PASSWORD="'.($this->config['mysql_root_password'] ?? '').'"',
-            'POSTGRES_PASSWORD="'.($this->config['postgres_password'] ?? '').'"',
+            "MYSQL_ROOT_PASSWORD='".$esc($this->config['mysql_root_password'] ?? '')."'",
+            "POSTGRES_PASSWORD='".$esc($this->config['postgres_password'] ?? '')."'",
             '',
             '# Additional Features',
             'INSTALL_SUPERVISOR='.(int) $this->config['install_supervisor'],
             'SETUP_FIREWALL='.(int) $this->config['setup_firewall'],
             'SETUP_SWAP='.(int) $this->config['setup_swap'],
-            'SWAP_SIZE="'.($this->config['swap_size'] ?? '2G').'"',
+            "SWAP_SIZE='".$esc($this->config['swap_size'] ?? '2G')."'",
         ];
 
         return implode("\n", $lines);
     }
 
-    protected function buildSSHCommand(string $command): string
+    private function getProvisionSshService(): SshService
     {
-        $sshCmd = 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR';
-        $sshCmd .= ' -p '.$this->config['port'];
-
-        if ($this->config['key']) {
-            $sshCmd .= ' -i '.$this->config['key'];
+        if ($this->sshService) {
+            return $this->sshService;
         }
 
-        $sshCmd .= ' '.$this->config['user'].'@'.$this->config['host'];
-        $sshCmd .= ' "'.$command.'"';
+        $this->sshService = SshService::fromArray([
+            'host' => $this->config['host'],
+            'user' => $this->config['user'],
+            'port' => (int) ($this->config['port'] ?? 22),
+            'identityFile' => $this->config['key'] ?? null,
+            'strictHostKeyChecking' => false,
+        ]);
 
-        return $sshCmd;
-    }
-
-    protected function buildSCPCommand(string $localPath, string $remotePath): string
-    {
-        $scpCmd = 'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR';
-        $scpCmd .= ' -P '.$this->config['port'];
-
-        if ($this->config['key']) {
-            $scpCmd .= ' -i '.$this->config['key'];
-        }
-
-        $scpCmd .= ' '.$localPath;
-        $scpCmd .= ' '.$this->config['user'].'@'.$this->config['host'].':'.$remotePath;
-
-        return $scpCmd;
-    }
-
-    protected function executeRemoteCommand(string $command): bool
-    {
-        $sshCommand = $this->buildSSHCommand($command);
-        exec($sshCommand.' 2>&1', $output, $returnCode);
-
-        return $returnCode === 0;
-    }
-
-    protected function executeRemoteCommandWithOutput(string $command): bool
-    {
-        $sshCommand = $this->buildSSHCommand($command);
-
-        $descriptorSpec = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        $process = proc_open($sshCommand, $descriptorSpec, $pipes);
-
-        if (! is_resource($process)) {
-            return false;
-        }
-
-        fclose($pipes[0]);
-
-        // Read output in real-time
-        while (! feof($pipes[1])) {
-            $line = fgets($pipes[1]);
-            if ($line !== false) {
-                $this->line(rtrim($line));
-            }
-        }
-
-        // Read errors
-        $errors = stream_get_contents($pipes[2]);
-        if (! empty($errors)) {
-            $this->error($errors);
-        }
-
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
-        $returnCode = proc_close($process);
-
-        return $returnCode === 0;
+        return $this->sshService;
     }
 
     protected function displayPostProvisionInfo(): void

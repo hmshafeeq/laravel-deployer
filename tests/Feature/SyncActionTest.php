@@ -31,6 +31,7 @@ beforeEach(function () {
     $this->cmd->shouldReceive('warning')->byDefault();
     $this->cmd->shouldReceive('getOutput')->byDefault();
     $this->cmd->shouldReceive('newLine')->byDefault();
+    $this->cmd->shouldReceive('getSshService')->byDefault()->andReturnNull();
 
     $this->action = new SyncAction(
         $this->deployment,
