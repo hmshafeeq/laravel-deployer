@@ -293,7 +293,10 @@ class SshService
         }
 
         if ($this->identityFile) {
-            $parts[] = '-i '.escapeshellarg($this->identityFile);
+            $identityPath = static::isWindows()
+                ? static::windowsPathToWsl($this->identityFile)
+                : $this->identityFile;
+            $parts[] = '-i '.escapeshellarg($identityPath);
         }
 
         if (! $this->strictHostKeyChecking) {
@@ -301,7 +304,10 @@ class SshService
         }
 
         if ($this->multiplexingEnabled && $this->controlPath) {
-            $parts[] = '-o ControlMaster=auto -o ControlPersist=60 -o ControlPath='.escapeshellarg($this->controlPath);
+            $controlPath = static::isWindows()
+                ? static::windowsPathToWsl($this->controlPath)
+                : $this->controlPath;
+            $parts[] = '-o ControlMaster=auto -o ControlPersist=60 -o ControlPath='.escapeshellarg($controlPath);
         }
 
         return implode(' ', $parts);
