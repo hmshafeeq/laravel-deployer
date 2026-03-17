@@ -1,7 +1,7 @@
 ---
 title: "refactor: Replace spatie/ssh with in-house SshService"
 type: refactor
-status: active
+status: completed
 date: 2026-03-17
 origin: docs/brainstorms/2026-03-17-INHOUSE-SSH-BRAINSTORM.md
 ---
