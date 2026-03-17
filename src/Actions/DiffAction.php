@@ -223,7 +223,6 @@ class DiffAction
         // Add SSH options for remote
         if (! $this->config->isLocal) {
             $sshService = SshService::fromConfig($this->config);
-            $sshService->disableMultiplexing(); // Dry-run doesn't need multiplexing
             $sshOptions = $sshService->buildRsyncSshOptions();
             // Add batch mode and connect timeout for non-interactive diff
             $sshOptions .= ' -o BatchMode=yes -o ConnectTimeout=10';

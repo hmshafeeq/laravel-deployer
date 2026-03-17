@@ -657,6 +657,8 @@ class ServerCommand extends Command
 
     protected function generateConfigFile(): string
     {
+        $esc = fn (string $v): string => str_replace("'", "'\\''", $v);
+
         $lines = [
             '#!/bin/bash',
             '',
@@ -665,25 +667,25 @@ class ServerCommand extends Command
             '',
             '# User Configuration',
             'CREATE_USER='.(int) $this->config['create_user'],
-            'DEPLOY_USER="'.$this->config['deploy_user'].'"',
-            'DEPLOY_PASSWORD="'.($this->config['deploy_password'] ?? '').'"',
+            "DEPLOY_USER='".$esc($this->config['deploy_user'])."'",
+            "DEPLOY_PASSWORD='".$esc($this->config['deploy_password'] ?? '')."'",
             '',
             '# Software Versions',
-            'PHP_VERSION="'.$this->config['php_version'].'"',
-            'NODEJS_VERSION="'.$this->config['nodejs_version'].'"',
+            "PHP_VERSION='".$esc($this->config['php_version'])."'",
+            "NODEJS_VERSION='".$esc($this->config['nodejs_version'])."'",
             '',
             '# Database Configuration',
             'INSTALL_MYSQL='.(int) $this->config['install_mysql'],
             'INSTALL_POSTGRESQL='.(int) $this->config['install_postgresql'],
             'INSTALL_REDIS='.(int) $this->config['install_redis'],
-            'MYSQL_ROOT_PASSWORD="'.($this->config['mysql_root_password'] ?? '').'"',
-            'POSTGRES_PASSWORD="'.($this->config['postgres_password'] ?? '').'"',
+            "MYSQL_ROOT_PASSWORD='".$esc($this->config['mysql_root_password'] ?? '')."'",
+            "POSTGRES_PASSWORD='".$esc($this->config['postgres_password'] ?? '')."'",
             '',
             '# Additional Features',
             'INSTALL_SUPERVISOR='.(int) $this->config['install_supervisor'],
             'SETUP_FIREWALL='.(int) $this->config['setup_firewall'],
             'SETUP_SWAP='.(int) $this->config['setup_swap'],
-            'SWAP_SIZE="'.($this->config['swap_size'] ?? '2G').'"',
+            "SWAP_SIZE='".$esc($this->config['swap_size'] ?? '2G')."'",
         ];
 
         return implode("\n", $lines);

@@ -5,6 +5,7 @@ namespace Shaf\LaravelDeployer\Services;
 use Closure;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SshResult;
+use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
 use Symfony\Component\Process\Process;
 
 class SshService
@@ -62,10 +63,10 @@ class SshService
     public static function fromArray(array $config): static
     {
         return new static(
-            host: $config['host'] ?? $config['hostname'] ?? 'localhost',
-            user: $config['user'] ?? $config['remoteUser'] ?? 'root',
+            host: $config['host'] ?? 'localhost',
+            user: $config['user'] ?? 'root',
             port: $config['port'] ?? null,
-            identityFile: $config['identityFile'] ?? $config['key'] ?? null,
+            identityFile: $config['identityFile'] ?? null,
             strictHostKeyChecking: $config['strictHostKeyChecking'] ?? false,
             timeout: $config['timeout'] ?? 900,
         );
@@ -85,7 +86,7 @@ class SshService
 
         $sshCommand = $this->buildSshCommandString($commandString);
 
-        return $this->runProcess($sshCommand);
+        return $this->runShellCommand($sshCommand);
     }
 
     public function sshWithOutput(string|array $commands, Closure $onOutput): SshResult
@@ -98,15 +99,7 @@ class SshService
 
         $sshCommand = $this->buildSshCommandString($commandString);
 
-        return $this->runProcess($sshCommand, onOutput: $onOutput);
-    }
-
-    public function test(string $condition): bool
-    {
-        $result = $this->ssh($condition.' && echo "true" || echo "false"');
-        $output = trim($result->output);
-
-        return $output === 'true' || str_ends_with($output, "\ntrue");
+        return $this->runShellCommand($sshCommand, onOutput: $onOutput);
     }
 
     public function testConnection(): bool
@@ -127,48 +120,19 @@ class SshService
     public function upload(string $localPath, string $remotePath): SshResult
     {
         if (static::isWindows()) {
-            return $this->runProcessArray($this->buildWindowsScpArgs($localPath, "{$this->getTarget()}:{$remotePath}"));
+            return $this->executeProcess(new Process($this->buildWindowsScpArgs($localPath, "{$this->getTarget()}:{$remotePath}")));
         }
 
-        return $this->runProcess($this->buildScpCommandString($localPath, "{$this->getTarget()}:{$remotePath}"));
+        return $this->runShellCommand($this->buildScpCommandString($localPath, "{$this->getTarget()}:{$remotePath}"));
     }
 
     public function download(string $remotePath, string $localPath): SshResult
     {
         if (static::isWindows()) {
-            return $this->runProcessArray($this->buildWindowsScpArgs("{$this->getTarget()}:{$remotePath}", $localPath));
+            return $this->executeProcess(new Process($this->buildWindowsScpArgs("{$this->getTarget()}:{$remotePath}", $localPath)));
         }
 
-        return $this->runProcess($this->buildScpCommandString("{$this->getTarget()}:{$remotePath}", $localPath));
-    }
-
-    // ============================================================
-    // Rsync
-    // ============================================================
-
-    public function rsync(string $source, string $dest, array $excludes = [], array $includes = [], array $extraFlags = [], ?Closure $onOutput = null, ?int $timeout = null, ?string $filesFromPath = null): SshResult
-    {
-        $command = $this->buildRsyncCommandString($source, $dest, $excludes, $includes, $extraFlags, $filesFromPath);
-
-        if (static::isWindows()) {
-            return $this->runWslRsync($command, $timeout, $onOutput);
-        }
-
-        return $this->runProcess($command, timeout: $timeout, onOutput: $onOutput);
-    }
-
-    public function rsyncDryRun(string $source, string $dest, array $excludes = [], array $includes = [], array $extraFlags = []): SshResult
-    {
-        $extraFlags[] = 'dry-run';
-        $extraFlags[] = 'itemize-changes';
-
-        $command = $this->buildRsyncCommandString($source, $dest, $excludes, $includes, $extraFlags);
-
-        if (static::isWindows()) {
-            return $this->runWslRsync($command);
-        }
-
-        return $this->runProcess($command);
+        return $this->runShellCommand($this->buildScpCommandString("{$this->getTarget()}:{$remotePath}", $localPath));
     }
 
     // ============================================================
@@ -204,7 +168,13 @@ class SshService
             $this->controlPath
         );
 
-        @shell_exec("ssh -O exit -o ControlPath={$socketPath} {$this->getTarget()} 2>/dev/null || true");
+        $process = new Process([
+            'ssh', '-O', 'exit',
+            '-o', 'ControlPath='.escapeshellarg($socketPath),
+            $this->getTarget(),
+        ]);
+        $process->setTimeout(10);
+        $process->run();
     }
 
     // ============================================================
@@ -253,7 +223,11 @@ class SshService
 
         if ($this->identityFile) {
             if (! file_exists($this->identityFile)) {
-                throw new \RuntimeException("SSH identity file not found: {$this->identityFile}");
+                throw SSHConnectionException::connectionFailed(
+                    $this->host,
+                    $this->user,
+                    "Identity file not found: {$this->identityFile}"
+                );
             }
             $options[] = '-i';
             $options[] = $this->identityFile;
@@ -290,7 +264,7 @@ class SshService
         }
 
         if ($this->identityFile) {
-            $options[] = "-i {$this->identityFile}";
+            $options[] = '-i '.escapeshellarg($this->identityFile);
         }
 
         if (! $this->strictHostKeyChecking) {
@@ -300,7 +274,7 @@ class SshService
         $options[] = '-o PasswordAuthentication=no';
 
         if ($this->multiplexingEnabled && $this->controlPath) {
-            $options[] = "-o ControlMaster=auto -o ControlPath={$this->controlPath} -o ControlPersist=60";
+            $options[] = '-o ControlMaster=auto -o ControlPath='.escapeshellarg($this->controlPath).' -o ControlPersist=60';
         }
 
         return implode(' ', $options);
@@ -319,7 +293,7 @@ class SshService
         }
 
         if ($this->identityFile) {
-            $parts[] = "-i {$this->identityFile}";
+            $parts[] = '-i '.escapeshellarg($this->identityFile);
         }
 
         if (! $this->strictHostKeyChecking) {
@@ -327,7 +301,7 @@ class SshService
         }
 
         if ($this->multiplexingEnabled && $this->controlPath) {
-            $parts[] = "-o ControlMaster=auto -o ControlPersist=60 -o ControlPath={$this->controlPath}";
+            $parts[] = '-o ControlMaster=auto -o ControlPersist=60 -o ControlPath='.escapeshellarg($this->controlPath);
         }
 
         return implode(' ', $parts);
@@ -379,7 +353,7 @@ class SshService
     {
         $options = $this->buildSshOptionsString();
         $target = $this->getTarget();
-        $delimiter = 'EOF-DEPLOYER-SSH';
+        $delimiter = 'EOF_DEPLOYER_'.bin2hex(random_bytes(4));
 
         return "ssh {$options} {$target} 'bash -se' << \\{$delimiter}".PHP_EOL
             .$commandString.PHP_EOL
@@ -390,7 +364,7 @@ class SshService
     {
         $options = $this->buildScpOptionsString();
 
-        return "scp {$options} {$source} {$destination}";
+        return "scp {$options} ".escapeshellarg($source).' '.escapeshellarg($destination);
     }
 
     private function buildScpOptionsString(): string
@@ -402,7 +376,7 @@ class SshService
         }
 
         if ($this->identityFile) {
-            $options[] = "-i {$this->identityFile}";
+            $options[] = '-i '.escapeshellarg($this->identityFile);
         }
 
         if (! $this->strictHostKeyChecking) {
@@ -414,49 +388,6 @@ class SshService
         return implode(' ', $options);
     }
 
-    private function buildRsyncCommandString(string $source, string $dest, array $excludes = [], array $includes = [], array $extraFlags = [], ?string $filesFromPath = null): string
-    {
-        $parts = ['rsync'];
-
-        // Base flags
-        $flags = 'rzc';
-        if (in_array('verbose', $extraFlags)) {
-            $flags .= 'v';
-            $extraFlags = array_diff($extraFlags, ['verbose']);
-        }
-        $parts[] = '-'.$flags;
-
-        // SSH transport options (remote only — detect by checking if dest contains @)
-        if (str_contains($dest, '@') || str_contains($source, '@')) {
-            $sshOptions = $this->buildRsyncSshOptions();
-            $parts[] = "-e '{$sshOptions}'";
-        }
-
-        // Extra flags like --stats, --dry-run, --itemize-changes
-        foreach ($extraFlags as $flag) {
-            $parts[] = "--{$flag}";
-        }
-
-        // Files-from mode skips delete options
-        if ($filesFromPath !== null) {
-            $parts[] = "--files-from='{$filesFromPath}'";
-        }
-
-        // Includes before excludes
-        foreach ($includes as $include) {
-            $parts[] = "--include='{$include}'";
-        }
-
-        foreach ($excludes as $exclude) {
-            $parts[] = "--exclude='{$exclude}'";
-        }
-
-        $parts[] = "'{$source}'";
-        $parts[] = "'{$dest}'";
-
-        return implode(' ', $parts);
-    }
-
     // ============================================================
     // Private: Windows Execution
     // ============================================================
@@ -466,7 +397,7 @@ class SshService
         $sshBinary = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
         $args = array_merge([$sshBinary], $this->buildSshOptions(), [$this->getTarget(), $commandString]);
 
-        return $this->runProcessArray($args, onOutput: $onOutput);
+        return $this->executeProcess(new Process($args), onOutput: $onOutput);
     }
 
     private function buildWindowsScpArgs(string $source, string $destination): array
@@ -499,47 +430,23 @@ class SshService
         return $args;
     }
 
-    private function runWslRsync(string $rsyncCommand, ?int $timeout = null, ?Closure $onOutput = null): SshResult
-    {
-        // Wrap the rsync command in WSL
-        $wslCommand = 'wsl '.$rsyncCommand;
-
-        return $this->runProcess($wslCommand, timeout: $timeout, onOutput: $onOutput);
-    }
-
     // ============================================================
     // Private: Process Execution
     // ============================================================
 
-    private function runProcess(string $command, ?int $timeout = null, ?Closure $onOutput = null): SshResult
+    private function runShellCommand(string $command, ?int $timeout = null, ?Closure $onOutput = null): SshResult
     {
-        $process = Process::fromShellCommandline($command);
-        $process->setTimeout($timeout ?? $this->timeout);
-
-        if ($onOutput) {
-            $process->run($onOutput);
-        } else {
-            $process->run();
-        }
-
-        return new SshResult(
-            successful: $process->isSuccessful(),
-            exitCode: $process->getExitCode() ?? -1,
-            output: trim($process->getOutput()),
-            errorOutput: trim($process->getErrorOutput()),
+        return $this->executeProcess(
+            Process::fromShellCommandline($command),
+            timeout: $timeout,
+            onOutput: $onOutput,
         );
     }
 
-    private function runProcessArray(array $args, ?int $timeout = null, ?Closure $onOutput = null): SshResult
+    private function executeProcess(Process $process, ?int $timeout = null, ?Closure $onOutput = null): SshResult
     {
-        $process = new Process($args);
         $process->setTimeout($timeout ?? $this->timeout);
-
-        if ($onOutput) {
-            $process->run($onOutput);
-        } else {
-            $process->run();
-        }
+        $process->run($onOutput);
 
         return new SshResult(
             successful: $process->isSuccessful(),

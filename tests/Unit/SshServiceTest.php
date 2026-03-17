@@ -2,6 +2,7 @@
 
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Enums\Environment;
+use Shaf\LaravelDeployer\Exceptions\SSHConnectionException;
 use Shaf\LaravelDeployer\Services\SshService;
 
 // ============================================================
@@ -46,7 +47,7 @@ test('fromArray() creates service from raw config', function () {
         'host' => '10.0.0.1',
         'user' => 'root',
         'port' => 22,
-        'key' => '/tmp/test_key',
+        'identityFile' => '/tmp/test_key',
     ]);
 
     expect($service->getHost())->toBe('10.0.0.1');
@@ -138,7 +139,7 @@ test('buildSshOptionsString() includes identity file', function () {
         $service = new SshService('host', 'user', identityFile: $tmpKey);
         $options = $service->buildSshOptionsString();
 
-        expect($options)->toContain("-i {$tmpKey}");
+        expect($options)->toContain('-i '.escapeshellarg($tmpKey));
     } finally {
         @unlink($tmpKey);
     }
@@ -254,7 +255,7 @@ test('buildSshOptions() throws when identity file does not exist', function () {
     $service = new SshService('host', 'user', identityFile: '/nonexistent/key');
 
     $service->buildSshOptions();
-})->throws(RuntimeException::class, 'SSH identity file not found');
+})->throws(SSHConnectionException::class, 'Identity file not found');
 
 test('constructor expands tilde in identity file path', function () {
     $service = new SshService('host', 'user', identityFile: '~/.ssh/id_rsa');
