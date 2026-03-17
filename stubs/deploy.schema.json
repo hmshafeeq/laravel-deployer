@@ -140,8 +140,8 @@
         },
         "flags": {
           "type": "string",
-          "default": "rzc",
-          "description": "Rsync flags (r=recursive, z=compress, c=checksum)"
+          "default": "rz",
+          "description": "Rsync flags (r=recursive, z=compress)"
         },
         "options": {
           "type": "array",

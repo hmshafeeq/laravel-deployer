@@ -32,7 +32,7 @@
             "composer.json",
             "composer.lock"
         ],
-        "flags": "rzc",
+        "flags": "rz",
         "options": ["delete", "delete-after", "compress"]
     },
 
