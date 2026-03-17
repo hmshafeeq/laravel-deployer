@@ -3,7 +3,6 @@
 namespace Shaf\LaravelDeployer\Services;
 
 use Illuminate\Support\Number;
-use Shaf\LaravelDeployer\Constants\Commands;
 use Shaf\LaravelDeployer\Constants\Timeouts;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SyncDiff;
@@ -232,21 +231,8 @@ class RsyncService
 
         // Add SSH options only for remote deployments
         if (! $this->config->isLocal) {
-            $sshOptions = Commands::RSYNC_SSH_OPTIONS;
-            if ($this->config->port !== null) {
-                $sshOptions .= " -p {$this->config->port}";
-            }
-            if (! $this->config->strictHostKeyChecking) {
-                $sshOptions .= ' -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
-            }
-            if ($this->config->identityFile) {
-                $identityFile = $this->config->identityFile;
-                if (str_starts_with($identityFile, '~')) {
-                    $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
-                    $identityFile = str_replace('~', $home, $identityFile);
-                }
-                $sshOptions .= " -i {$identityFile}";
-            }
+            $sshService = SshService::fromConfig($this->config);
+            $sshOptions = $sshService->buildRsyncSshOptions();
             $parts[] = "-e '{$sshOptions}'";
         }
 

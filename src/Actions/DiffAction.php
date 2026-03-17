@@ -5,6 +5,7 @@ namespace Shaf\LaravelDeployer\Actions;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\SshService;
 use Symfony\Component\Process\Process;
 
 /**
@@ -100,7 +101,8 @@ class DiffAction
         $this->cmd->debug('Calculating sync differences...');
 
         $source = rtrim($this->sourcePath, '/').'/';
-        $tempDir = trim($this->cmd->local('mktemp -d'));
+        $tempDir = sys_get_temp_dir().'/deployer-diff-'.uniqid();
+        mkdir($tempDir, 0700, true);
 
         try {
             $command = $this->buildDryRunCommand($source, $tempDir);
@@ -115,7 +117,7 @@ class DiffAction
 
             return $this->parseDryRunOutput($output);
         } finally {
-            $this->cmd->local("rm -rf {$tempDir}");
+            @rmdir($tempDir);
         }
     }
 
@@ -220,18 +222,12 @@ class DiffAction
 
         // Add SSH options for remote
         if (! $this->config->isLocal) {
-            $strictCheck = $this->config->strictHostKeyChecking ? 'yes' : 'no';
-            $sshOptions = "-o StrictHostKeyChecking={$strictCheck} -o BatchMode=yes -o ConnectTimeout=10";
-            if ($this->config->identityFile) {
-                // Expand ~ to home directory for identity file
-                $identityFile = $this->config->identityFile;
-                if (str_starts_with($identityFile, '~')) {
-                    $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
-                    $identityFile = str_replace('~', $home, $identityFile);
-                }
-                $sshOptions .= " -i {$identityFile}";
-            }
-            $parts[] = "-e 'ssh {$sshOptions}'";
+            $sshService = SshService::fromConfig($this->config);
+            $sshService->disableMultiplexing(); // Dry-run doesn't need multiplexing
+            $sshOptions = $sshService->buildRsyncSshOptions();
+            // Add batch mode and connect timeout for non-interactive diff
+            $sshOptions .= ' -o BatchMode=yes -o ConnectTimeout=10';
+            $parts[] = "-e '{$sshOptions}'";
         }
 
         foreach ($this->config->rsyncIncludes as $include) {

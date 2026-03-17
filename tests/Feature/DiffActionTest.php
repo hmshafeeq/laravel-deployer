@@ -56,18 +56,14 @@ test('calculate() returns SyncDiff object', function () {
     $this->cmd->shouldReceive('debug')
         ->with('Calculating sync differences...')
         ->once();
-    $this->cmd->shouldReceive('local')
-        ->with('mktemp -d')
-        ->andReturn('/tmp/temp-dir-123');
+    // temp dir now created via PHP mkdir() — no local() call needed
     $this->cmd->shouldReceive('debug')
         ->with(Mockery::pattern('/Dry-run command:/'))
         ->once();
     $this->cmd->shouldReceive('debug')
         ->with('Parsing rsync output...')
         ->once();
-    $this->cmd->shouldReceive('local')
-        ->with('rm -rf /tmp/temp-dir-123')
-        ->once();
+    // cleanup now via PHP rmdir() — no local() call needed
 
     $result = $this->action->calculate();
 
@@ -88,9 +84,9 @@ test('calculate() populates newFiles from rsync dry-run', function () {
         ->andReturn("<f+++++++++ app.php\n<f+++++++++ config.php");
 
     $this->cmd->shouldReceive('debug')->once();
-    $this->cmd->shouldReceive('local')->with('mktemp -d')->andReturn('/tmp/temp-dir-123');
+    // temp dir now created via PHP mkdir()
     $this->cmd->shouldReceive('debug')->twice(); // command and parsing debug
-    $this->cmd->shouldReceive('local')->with('rm -rf /tmp/temp-dir-123')->once();
+    // cleanup now via PHP rmdir()
 
     $result = $this->action->calculate();
 
@@ -109,9 +105,9 @@ test('calculate() populates modifiedFiles from rsync dry-run', function () {
         ->andReturn("<f.st..... routes.php\n<f..t..... controller.php");
 
     $this->cmd->shouldReceive('debug')->once();
-    $this->cmd->shouldReceive('local')->with('mktemp -d')->andReturn('/tmp/temp-dir-123');
+    // temp dir now created via PHP mkdir()
     $this->cmd->shouldReceive('debug')->twice();
-    $this->cmd->shouldReceive('local')->with('rm -rf /tmp/temp-dir-123')->once();
+    // cleanup now via PHP rmdir()
 
     $result = $this->action->calculate();
 
@@ -130,9 +126,9 @@ test('calculate() populates deletedFiles from rsync dry-run', function () {
         ->andReturn("deleting old-cache.txt\ndeleting temp.log");
 
     $this->cmd->shouldReceive('debug')->once();
-    $this->cmd->shouldReceive('local')->with('mktemp -d')->andReturn('/tmp/temp-dir-123');
+    // temp dir now created via PHP mkdir()
     $this->cmd->shouldReceive('debug')->twice();
-    $this->cmd->shouldReceive('local')->with('rm -rf /tmp/temp-dir-123')->once();
+    // cleanup now via PHP rmdir()
 
     $result = $this->action->calculate();
 
@@ -151,9 +147,9 @@ test('show() displays diff summary to output', function () {
         ->andReturn("<f+++++++++ new.php\n<f.st..... modified.php\ndeleting deleted.php");
 
     $this->cmd->shouldReceive('debug')->once();
-    $this->cmd->shouldReceive('local')->with('mktemp -d')->andReturn('/tmp/temp-dir-123');
+    // temp dir now created via PHP mkdir()
     $this->cmd->shouldReceive('debug')->twice();
-    $this->cmd->shouldReceive('local')->with('rm -rf /tmp/temp-dir-123')->once();
+    // cleanup now via PHP rmdir()
 
     $this->cmd->shouldReceive('section')
         ->with('SYNC DIFFERENCE - FILES TO DEPLOY')

@@ -11,6 +11,7 @@ use Shaf\LaravelDeployer\Concerns\ManagesLocalBackups;
 use Shaf\LaravelDeployer\Concerns\SelectsServer;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\SshService;
 
 class DatabaseCommand extends Command
 {
@@ -125,26 +126,16 @@ class DatabaseCommand extends Command
             $this->info('Downloading backup...');
             $localFile = $backupsDir.'/'.basename($remoteFile);
 
-            // Use rsync with streaming output for progress display
-            // -h = human readable, -P = progress + partial (allows resume)
-            // Disable SSH compression since .sql.gz is already compressed
-            $sshOptions = '-o Compression=no';
-            if ($config->identityFile) {
-                $identityFile = $config->identityFile;
-                if (str_starts_with($identityFile, '~')) {
-                    $identityFile = str_replace('~', getenv('HOME'), $identityFile);
-                }
-                $sshOptions .= " -i {$identityFile}";
-            }
+            // Use SshService for consistent SSH options (port, identity file, etc.)
+            $sshService = SshService::fromConfig($config);
+            $sshService->disableMultiplexing();
 
-            $rsyncCommand = sprintf(
-                "rsync -hP -e 'ssh %s' %s@%s:%s %s",
-                $sshOptions,
-                $config->remoteUser,
-                $config->hostname,
-                escapeshellarg($remoteFile),
-                escapeshellarg($localFile)
-            );
+            // Build rsync with progress display
+            // -h = human readable, -P = progress + partial (allows resume)
+            $sshOptions = $sshService->buildRsyncSshOptions().' -o Compression=no';
+            $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
+            $dest = escapeshellarg($localFile);
+            $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
 
             $result = Process::timeout(3600)
                 ->path(base_path())
@@ -317,24 +308,20 @@ class DatabaseCommand extends Command
         $this->info("Backup size: {$backupSizeMb}MB");
         $this->line('');
 
-        $scpCommand = sprintf(
-            'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i %s %s %s:%s',
-            escapeshellarg($uploadConfig['key']),
-            escapeshellarg($selectedBackup),
-            escapeshellarg($uploadConfig['target']),
-            escapeshellarg($remotePath)
-        );
+        // Use SshService for consistent SCP options
+        $sshService = SshService::fromArray([
+            'host' => $this->parseHost($uploadConfig['target']),
+            'user' => $this->parseUser($uploadConfig['target']),
+            'identityFile' => $uploadConfig['key'],
+            'strictHostKeyChecking' => false,
+        ]);
 
         $startTime = microtime(true);
 
-        $result = Process::timeout(3600)
-            ->path(base_path())
-            ->run($scpCommand, function ($type, $buffer) {
-                echo $buffer;
-            });
+        $result = $sshService->upload($selectedBackup, $remotePath);
 
-        if (! $result->successful()) {
-            $this->error('Upload failed: '.$result->errorOutput());
+        if (! $result->successful) {
+            $this->error('Upload failed: '.$result->errorOutput);
 
             return self::FAILURE;
         }
@@ -596,6 +583,16 @@ class DatabaseCommand extends Command
     // =========================================================================
     // USAGE
     // =========================================================================
+
+    private function parseUser(string $target): string
+    {
+        return str_contains($target, '@') ? explode('@', $target, 2)[0] : 'root';
+    }
+
+    private function parseHost(string $target): string
+    {
+        return str_contains($target, '@') ? explode('@', $target, 2)[1] : $target;
+    }
 
     protected function showUsage(): int
     {
