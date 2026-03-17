@@ -85,6 +85,7 @@ class RsyncService
 
         // Build command - include -v flag if we need progress output, --stats for size info
         $command = $this->buildRsyncCommand($source, $destinationPath, $showProgress, $filesFromPath);
+        $command = SshService::wrapForWsl($command, [$source]);
 
         $this->cmdService?->debug("Rsync command: {$command}");
 

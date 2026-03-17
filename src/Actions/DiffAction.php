@@ -106,6 +106,7 @@ class DiffAction
 
         try {
             $command = $this->buildDryRunCommand($source, $tempDir);
+            $command = SshService::wrapForWsl($command, [$source, $tempDir]);
             $this->cmd->debug("Dry-run command: {$command}");
 
             $process = Process::fromShellCommandline($command, $this->sourcePath);
@@ -138,6 +139,7 @@ class DiffAction
         }
 
         $command = $this->buildRemoteDryRunCommand($source, $destination);
+        $command = SshService::wrapForWsl($command, [$source]);
         $this->cmd->debug("Remote dry-run command: {$command}");
 
         $process = Process::fromShellCommandline($command, $this->sourcePath);

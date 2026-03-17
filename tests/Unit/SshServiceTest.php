@@ -217,6 +217,18 @@ test('windowsPathToWsl() lowercases drive letter', function () {
 });
 
 // ============================================================
+// WSL Wrapping
+// ============================================================
+
+test('wrapForWsl() returns command unchanged on non-Windows', function () {
+    // This test runs on Unix/macOS, so isWindows() returns false
+    $command = 'rsync -az /src/ user@host:/dest/';
+
+    expect(SshService::wrapForWsl($command))->toBe($command);
+    expect(SshService::wrapForWsl($command, ['/src/']))->toBe($command);
+});
+
+// ============================================================
 // Configuration
 // ============================================================
 

@@ -136,6 +136,7 @@ class DatabaseCommand extends Command
             $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
             $dest = escapeshellarg($localFile);
             $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
+            $rsyncCommand = SshService::wrapForWsl($rsyncCommand, [$localFile]);
 
             $result = Process::timeout(3600)
                 ->path(base_path())

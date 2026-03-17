@@ -4,6 +4,7 @@ namespace Shaf\LaravelDeployer\Actions;
 
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Services\CommandService;
+use Shaf\LaravelDeployer\Services\SshService;
 
 /**
  * Database operations action.
@@ -67,6 +68,7 @@ class DatabaseAction extends Action
         // -h = human readable, -P = progress + partial (allows resume)
         // Disable SSH compression since .sql.gz is already compressed
         $rsyncCommand = "rsync -hP -e 'ssh -o Compression=no' {$this->config->remoteUser}@{$this->config->hostname}:{$remoteFile} {$localPath}";
+        $rsyncCommand = SshService::wrapForWsl($rsyncCommand, [$localPath]);
         $this->cmd->local($rsyncCommand);
 
         $this->cmd->success("Database backup downloaded to: {$localPath}");
