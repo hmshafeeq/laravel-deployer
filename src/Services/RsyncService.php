@@ -70,6 +70,13 @@ class RsyncService
         $this->totalBytesTransferred = 0;
         $this->filesSynced = 0;
 
+        // On Windows, use native tar+ssh instead of wsl rsync
+        if (SshService::isWindows() && ! $this->config->isLocal) {
+            $this->syncViaTar($destination, $filesFromPath);
+
+            return;
+        }
+
         $source = rtrim($this->sourcePath, '/').'/';
 
         // For local deployments, use direct path; for remote, use SSH
@@ -213,6 +220,80 @@ class RsyncService
         $this->includes[] = $pattern;
 
         return $this;
+    }
+
+    /**
+     * Sync files to remote server using native tar+ssh on Windows.
+     * Avoids WSL/9P filesystem bridge for dramatically better performance.
+     */
+    private function syncViaTar(string $destination, ?string $filesFromPath = null): void
+    {
+        $sshService = SshService::fromConfig($this->config);
+
+        // When not using files-from (full deploy), clean non-vendor files on server first
+        // This mimics rsync --delete behavior while preserving the vendor directory
+        if ($filesFromPath === null) {
+            $this->cmdService?->debug('Cleaning release directory (preserving vendor)...');
+            $sshService->ssh(
+                "find ".escapeshellarg($destination)." -maxdepth 1 -not -name vendor -not -name '.' -exec rm -rf {} +"
+            );
+        }
+
+        // Build tar command with excludes
+        $command = $sshService->buildTarSshCommand(
+            $this->sourcePath,
+            $destination,
+            $this->excludes
+        );
+
+        $this->cmdService?->debug("Tar+SSH command: {$command}");
+
+        // Setup progress bar
+        $totalFiles = $this->syncDiff?->totalCount() ?? 0;
+        $showProgress = $this->config->showUploadProgress && $totalFiles > 0 && $this->output !== null;
+
+        $progressBar = null;
+        if ($showProgress) {
+            $prefix = "[{$this->config->environment->value}] ";
+            $progressBar = ProgressBar::forFiles($this->output, $totalFiles, $prefix);
+            $progressBar->start();
+        }
+
+        $process = Process::fromShellCommandline($command, $this->sourcePath);
+        $process->setTimeout(Timeouts::RSYNC);
+
+        $fileCount = 0;
+        $process->run(function ($type, $buffer) use (&$fileCount, $progressBar, $showProgress, $totalFiles) {
+            if ($type === Process::ERR) {
+                $this->cmdService?->error($buffer);
+            } elseif ($showProgress && $progressBar) {
+                // tar doesn't output per-file progress, so advance based on buffer chunks
+                $lines = substr_count($buffer, "\n");
+                for ($i = 0; $i < $lines && $fileCount < $totalFiles; $i++) {
+                    $progressBar->advance();
+                    $fileCount++;
+                }
+            }
+        });
+
+        if ($showProgress && $progressBar) {
+            // Ensure progress bar reaches 100%
+            while ($fileCount < $totalFiles) {
+                $progressBar->advance();
+                $fileCount++;
+            }
+            $progressBar->finish();
+        }
+
+        if (! $process->isSuccessful()) {
+            throw RsyncException::failed($process->getErrorOutput());
+        }
+
+        // Estimate transferred bytes from the total diff
+        $this->filesSynced = $totalFiles;
+
+        $sizeFormatted = 'N/A';
+        $this->cmdService?->success("Files synced successfully ({$this->filesSynced} files, {$sizeFormatted})");
     }
 
     private function buildRsyncCommand(string $source, string $destination, bool $forProgress = false, ?string $filesFromPath = null): string

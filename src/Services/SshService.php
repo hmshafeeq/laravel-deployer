@@ -365,6 +365,48 @@ class SshService
     }
 
     // ============================================================
+    // Tar+SSH (Windows native file sync)
+    // ============================================================
+
+    /**
+     * Build a tar+ssh pipe command for Windows native file sync.
+     * Streams a local tar archive through ssh to extract on the remote server.
+     */
+    public function buildTarSshCommand(string $localSource, string $remoteDest, array $excludes = []): string
+    {
+        $tarBinary = 'tar.exe';
+        $sshBinary = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
+
+        // Build tar exclude flags
+        $tarExcludes = '';
+        foreach ($excludes as $exclude) {
+            $tarExcludes .= ' --exclude='.escapeshellarg($exclude);
+        }
+
+        // Build SSH options for the pipe
+        $sshArgs = [];
+        if ($this->port !== null) {
+            $sshArgs[] = '-p';
+            $sshArgs[] = (string) $this->port;
+        }
+        if ($this->identityFile) {
+            $sshArgs[] = '-i';
+            $sshArgs[] = escapeshellarg($this->identityFile);
+        }
+        if (! $this->strictHostKeyChecking) {
+            $sshArgs[] = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL';
+        }
+        $sshArgs[] = '-o PasswordAuthentication=no';
+
+        $sshOptsString = implode(' ', $sshArgs);
+        $target = $this->getTarget();
+        $escapedRemoteDest = escapeshellarg($remoteDest);
+
+        return "{$tarBinary} -czf -{$tarExcludes} -C ".escapeshellarg($localSource)
+            ." . | {$sshBinary} {$sshOptsString} {$target} \"tar xzf - -C {$escapedRemoteDest}\"";
+    }
+
+    // ============================================================
     // Private: Command Building
     // ============================================================
 
