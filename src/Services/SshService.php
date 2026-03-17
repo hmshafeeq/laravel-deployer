@@ -345,6 +345,19 @@ class SshService
         return $path;
     }
 
+    public static function wrapForWsl(string $command, array $windowsPaths = []): string
+    {
+        if (! static::isWindows()) {
+            return $command;
+        }
+
+        foreach ($windowsPaths as $winPath) {
+            $command = str_replace($winPath, static::windowsPathToWsl($winPath), $command);
+        }
+
+        return 'wsl '.$command;
+    }
+
     // ============================================================
     // Private: Command Building
     // ============================================================
