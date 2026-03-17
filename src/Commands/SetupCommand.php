@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
+use Shaf\LaravelDeployer\Services\SshService;
 
 class SetupCommand extends Command
 {
@@ -1072,16 +1073,26 @@ GITIGNORE;
 
         $this->info("🔄 Copying SSH key to {$username}@{$hostname}...");
 
-        $command = sprintf(
-            'ssh-copy-id -i %s %s@%s',
-            escapeshellarg($publicKeyPath),
-            escapeshellarg($username),
-            escapeshellarg($hostname)
+        $publicKey = trim(File::get($publicKeyPath));
+
+        // Use SSH to append key directly (cross-platform, no ssh-copy-id dependency)
+        $sshService = new SshService(
+            host: $hostname,
+            user: $username,
+            strictHostKeyChecking: false,
+            timeout: 60,
         );
 
-        $result = Process::timeout(60)->run($command);
+        $appendCommand = implode(' && ', [
+            'mkdir -p ~/.ssh',
+            'chmod 700 ~/.ssh',
+            'echo '.escapeshellarg($publicKey).' >> ~/.ssh/authorized_keys',
+            'chmod 600 ~/.ssh/authorized_keys',
+        ]);
 
-        if ($result->successful()) {
+        $result = $sshService->ssh($appendCommand);
+
+        if ($result->successful) {
             $this->line('');
             $this->info("✅ SSH key successfully copied to {$username}@{$hostname}!");
             $this->line('');
@@ -1095,8 +1106,6 @@ GITIGNORE;
         $this->line('');
         $this->warn('⚠️  Automatic copy failed. You can copy manually:');
         $this->line('');
-
-        $publicKey = trim(File::get($publicKeyPath));
 
         $this->line('1. Connect to your server:');
         $this->line("   ssh {$username}@{$hostname}");
