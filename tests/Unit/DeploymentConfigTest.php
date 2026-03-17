@@ -24,7 +24,7 @@ test('fromArray() creates config with all default values', function () {
     expect($config->isLocal)->toBeFalse();
     expect($config->rsyncExcludes)->toBe([]);
     expect($config->rsyncIncludes)->toBe([]);
-    expect($config->rsyncFlags)->toBe('rzc');
+    expect($config->rsyncFlags)->toBe('rz');
     expect($config->phpBinary)->toBe('php');
 });
 

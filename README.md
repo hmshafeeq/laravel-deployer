@@ -164,7 +164,7 @@ All settings below are optional. Only `environments` with at least one `deployPa
   "rsync": {
     "exclude": [".git/", "node_modules/", "/vendor/", "storage/", ".env", "tests/"],
     "include": ["composer.json", "composer.lock"],
-    "flags": "rzc",
+    "flags": "rz",
     "options": ["delete", "delete-after", "compress"]
   }
 }
@@ -175,7 +175,7 @@ All settings below are optional. Only `environments` with at least one `deployPa
 | `useGitignore` | bool | `true` | Auto-exclude files from `.gitignore` |
 | `exclude` | array | `[]` | Additional exclude patterns |
 | `include` | array | `[]` | Include patterns (processed before excludes) |
-| `flags` | string | `"rzc"` | Rsync flags (r=recursive, z=compress, c=checksum) |
+| `flags` | string | `"rz"` | Rsync flags (r=recursive, z=compress) |
 | `options` | array | `["delete", "delete-after", "compress"]` | Rsync options |
 
 **Patterns:** `/vendor/` = root only, `vendor/` = anywhere, `*.log` = all log files.

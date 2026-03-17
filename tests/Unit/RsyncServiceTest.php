@@ -17,7 +17,7 @@ test('buildRsyncCommand() includes correct base flags from config', function () 
 
     $command = invokePrivateMethod($service, 'buildRsyncCommand', ['/source/', '/dest/']);
 
-    expect($command)->toContain('rsync -rzc');
+    expect($command)->toContain('rsync -rz');
 });
 
 test('buildRsyncCommand() adds --exclude for each exclude pattern', function () {
