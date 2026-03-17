@@ -64,12 +64,18 @@ class DatabaseAction extends Action
 
         $this->cmd->info('Downloading database backup...');
 
-        // Use rsync for faster transfers with progress display
-        // -h = human readable, -P = progress + partial (allows resume)
-        // Disable SSH compression since .sql.gz is already compressed
-        $rsyncCommand = "rsync -hP -e 'ssh -o Compression=no' {$this->config->remoteUser}@{$this->config->hostname}:{$remoteFile} {$localPath}";
-        $rsyncCommand = SshService::wrapForWsl($rsyncCommand, [$localPath]);
-        $this->cmd->local($rsyncCommand);
+        if (SshService::isWindows()) {
+            $sshService = SshService::fromConfig($this->config);
+            $sshService->disableMultiplexing();
+            $result = $sshService->download($remoteFile, $localPath);
+
+            if (! $result->successful) {
+                throw new \RuntimeException('Download failed: '.$result->errorOutput);
+            }
+        } else {
+            $rsyncCommand = "rsync -hP -e 'ssh -o Compression=no' {$this->config->remoteUser}@{$this->config->hostname}:{$remoteFile} {$localPath}";
+            $this->cmd->local($rsyncCommand);
+        }
 
         $this->cmd->success("Database backup downloaded to: {$localPath}");
     }

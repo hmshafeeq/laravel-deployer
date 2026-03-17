@@ -2,6 +2,8 @@
 
 namespace Shaf\LaravelDeployer\Actions;
 
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Services\CommandService;
@@ -98,6 +100,10 @@ class DiffAction
      */
     private function calculateDiff(): SyncDiff
     {
+        if (SshService::isWindows()) {
+            return $this->calculateDiffViaSsh();
+        }
+
         $this->cmd->debug('Calculating sync differences...');
 
         $source = rtrim($this->sourcePath, '/').'/';
@@ -127,6 +133,10 @@ class DiffAction
      */
     public function calculateRemoteDiff(string $remotePath): SyncDiff
     {
+        if (SshService::isWindows() && ! $this->config->isLocal) {
+            return $this->calculateRemoteDiffViaSsh($remotePath);
+        }
+
         $this->cmd->debug('Calculating remote sync differences...');
 
         $source = rtrim($this->sourcePath, '/').'/';
@@ -187,6 +197,132 @@ class DiffAction
         $this->displayChanges($diff);
 
         return $diff;
+    }
+
+    /**
+     * Calculate diff by comparing local files against an empty baseline (Windows).
+     * Since there's no previous release to compare against locally, all local files are "new".
+     */
+    private function calculateDiffViaSsh(): SyncDiff
+    {
+        $this->cmd->debug('Calculating sync differences via local file scan (Windows)...');
+
+        $localFiles = $this->scanLocalFiles();
+
+        // Without a remote comparison target, treat all local files as new
+        return new SyncDiff(newFiles: $localFiles);
+    }
+
+    /**
+     * Calculate remote diff using SSH file listing (Windows).
+     * Compares local files against remote server without rsync.
+     */
+    private function calculateRemoteDiffViaSsh(string $remotePath): SyncDiff
+    {
+        $this->cmd->debug('Calculating remote sync differences via SSH (Windows)...');
+
+        $sshService = SshService::fromConfig($this->config);
+
+        // Get remote file list via SSH
+        $excludeArgs = "-not -path '*/vendor/*' -not -path '*/node_modules/*' -not -path '*/.git/*'";
+        foreach ($this->config->rsyncExcludes as $exclude) {
+            $pattern = str_replace(['*', '.'], ['*', '\\.'], $exclude);
+            $excludeArgs .= " -not -path '*/{$pattern}'";
+        }
+
+        $remotePath = rtrim($remotePath, '/');
+        $findCommand = "find ".escapeshellarg($remotePath)." -type f {$excludeArgs} -printf '%P\\n' | sort";
+
+        $this->cmd->debug("Remote file list command: {$findCommand}");
+        $result = $sshService->ssh($findCommand);
+
+        $remoteFiles = [];
+        if ($result->successful && ! empty(trim($result->output))) {
+            $remoteFiles = array_filter(explode("\n", trim($result->output)));
+        }
+
+        $this->cmd->debug('Remote files: '.count($remoteFiles));
+
+        // Get local file list
+        $localFiles = $this->scanLocalFiles();
+        $this->cmd->debug('Local files: '.count($localFiles));
+
+        // Compare: files in local but not remote = new, in remote but not local = deleted
+        $remoteSet = array_flip($remoteFiles);
+        $localSet = array_flip($localFiles);
+
+        $newFiles = [];
+        $modifiedFiles = [];
+        $deletedFiles = [];
+
+        foreach ($localFiles as $file) {
+            if (! isset($remoteSet[$file])) {
+                $newFiles[] = $file;
+            } else {
+                // File exists on both sides — mark as modified (no checksum comparison)
+                $modifiedFiles[] = $file;
+            }
+        }
+
+        foreach ($remoteFiles as $file) {
+            if (! isset($localSet[$file])) {
+                $deletedFiles[] = $file;
+            }
+        }
+
+        return new SyncDiff($newFiles, $modifiedFiles, $deletedFiles);
+    }
+
+    /**
+     * Scan local project files, applying rsync exclude patterns.
+     *
+     * @return array<string> Relative file paths
+     */
+    private function scanLocalFiles(): array
+    {
+        $source = rtrim($this->sourcePath, DIRECTORY_SEPARATOR);
+        $files = [];
+
+        $excludePatterns = array_merge(
+            $this->config->rsyncExcludes,
+            ['vendor', 'node_modules', '.git']
+        );
+        $excludePatterns = array_unique($excludePatterns);
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($source, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if (! $file->isFile()) {
+                continue;
+            }
+
+            $relativePath = str_replace('\\', '/', substr($file->getPathname(), strlen($source) + 1));
+
+            $excluded = false;
+            foreach ($excludePatterns as $pattern) {
+                $pattern = rtrim($pattern, '/');
+                if (str_starts_with($relativePath, $pattern.'/') || $relativePath === $pattern) {
+                    $excluded = true;
+                    break;
+                }
+                // Handle glob-style patterns like *.log
+                if (str_contains($pattern, '*') && fnmatch($pattern, basename($relativePath))) {
+                    $excluded = true;
+                    break;
+                }
+            }
+
+            if (! $excluded) {
+                $files[] = $relativePath;
+            }
+        }
+
+        sort($files);
+
+        return $files;
     }
 
     /**

@@ -130,24 +130,34 @@ class DatabaseCommand extends Command
             $sshService = SshService::fromConfig($config);
             $sshService->disableMultiplexing();
 
-            // Build rsync with progress display
-            // -h = human readable, -P = progress + partial (allows resume)
-            $sshOptions = $sshService->buildRsyncSshOptions().' -o Compression=no';
-            $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
-            $dest = escapeshellarg($localFile);
-            $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
-            $rsyncCommand = SshService::wrapForWsl($rsyncCommand, [$localFile]);
+            if (SshService::isWindows()) {
+                // Use native SCP on Windows (no WSL dependency)
+                $result = $sshService->download($remoteFile, $localFile);
 
-            $result = Process::timeout(3600)
-                ->path(base_path())
-                ->run($rsyncCommand, function ($type, $buffer) {
-                    echo $buffer;
-                });
+                if (! $result->successful) {
+                    $this->error('Download failed: '.$result->errorOutput);
 
-            if (! $result->successful()) {
-                $this->error('Download failed: '.$result->errorOutput());
+                    return self::FAILURE;
+                }
+            } else {
+                // Build rsync with progress display
+                // -h = human readable, -P = progress + partial (allows resume)
+                $sshOptions = $sshService->buildRsyncSshOptions().' -o Compression=no';
+                $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
+                $dest = escapeshellarg($localFile);
+                $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
 
-                return self::FAILURE;
+                $result = Process::timeout(3600)
+                    ->path(base_path())
+                    ->run($rsyncCommand, function ($type, $buffer) {
+                        echo $buffer;
+                    });
+
+                if (! $result->successful()) {
+                    $this->error('Download failed: '.$result->errorOutput());
+
+                    return self::FAILURE;
+                }
             }
 
             $this->line('');

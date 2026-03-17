@@ -507,9 +507,9 @@ trait ManagesDeploymentSteps
      */
     protected function captureGitInfo(): void
     {
-        $this->gitCommitHash = trim((string) shell_exec('git rev-parse --short HEAD 2>/dev/null'));
-        $this->gitCommitMessage = trim((string) shell_exec('git log -1 --format=%s 2>/dev/null'));
-        $this->gitAuthor = trim((string) shell_exec('git log -1 --format=%an 2>/dev/null'));
+        $this->gitCommitHash = $this->runGitCommand('git rev-parse --short HEAD');
+        $this->gitCommitMessage = $this->runGitCommand('git log -1 --format=%s');
+        $this->gitAuthor = $this->runGitCommand('git log -1 --format=%an');
 
         $this->validateGitState();
     }
@@ -519,17 +519,30 @@ trait ManagesDeploymentSteps
      */
     protected function validateGitState(): void
     {
-        $status = trim((string) shell_exec('git status --porcelain 2>/dev/null'));
+        $status = $this->runGitCommand('git status --porcelain');
         if (! empty($status)) {
             $this->cmd->warning('Warning: Deploying with uncommitted changes');
             $this->addWarning('git', 'Uncommitted changes detected');
         }
 
-        $currentBranch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD 2>/dev/null'));
+        $currentBranch = $this->runGitCommand('git rev-parse --abbrev-ref HEAD');
         if ($currentBranch && $currentBranch !== $this->config->branch) {
             $this->cmd->warning("Warning: On branch '{$currentBranch}' but config expects '{$this->config->branch}'");
             $this->addWarning('git', "Branch mismatch: on {$currentBranch}, config expects {$this->config->branch}");
         }
+    }
+
+    /**
+     * Run a git command cross-platform.
+     * Uses 2>NUL on Windows instead of 2>/dev/null to avoid
+     * "The system cannot find the path specified." errors.
+     */
+    private function runGitCommand(string $command): ?string
+    {
+        $stderr = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
+        $result = trim((string) shell_exec("{$command} {$stderr}"));
+
+        return $result !== '' ? $result : null;
     }
 
     /**
