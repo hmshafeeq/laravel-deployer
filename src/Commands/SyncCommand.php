@@ -14,6 +14,7 @@ use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 use Shaf\LaravelDeployer\Services\GitDiffService;
 use Shaf\LaravelDeployer\Services\RsyncService;
+use Shaf\LaravelDeployer\Services\SshService;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Process\Process;
 
@@ -252,7 +253,7 @@ class SyncCommand extends Command
 
             // --branch (no value) → detect current branch
             if (! $branch) {
-                $branch = trim((string) shell_exec('git -C '.escapeshellarg(base_path()).' rev-parse --abbrev-ref HEAD 2>/dev/null'));
+                $branch = trim((string) shell_exec('git -C '.escapeshellarg(base_path()).' rev-parse --abbrev-ref HEAD '.SshService::suppressStderr()));
             }
 
             return $branch ?: null;

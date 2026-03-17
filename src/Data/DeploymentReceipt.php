@@ -3,6 +3,7 @@
 namespace Shaf\LaravelDeployer\Data;
 
 use DateTimeImmutable;
+use Shaf\LaravelDeployer\Services\SshService;
 
 readonly class DeploymentReceipt
 {
@@ -72,9 +73,10 @@ readonly class DeploymentReceipt
         ?string $errorMessage = null
     ): self {
         // Get git info
-        $gitCommit = trim((string) shell_exec('git rev-parse HEAD 2>/dev/null'));
-        $gitBranch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD 2>/dev/null'));
-        $gitMessage = trim((string) shell_exec('git log -1 --pretty=%s 2>/dev/null'));
+        $suppress = SshService::suppressStderr();
+        $gitCommit = trim((string) shell_exec("git rev-parse HEAD {$suppress}"));
+        $gitBranch = trim((string) shell_exec("git rev-parse --abbrev-ref HEAD {$suppress}"));
+        $gitMessage = trim((string) shell_exec("git log -1 --pretty=%s {$suppress}"));
 
         return new self(
             release: $release,

@@ -3,6 +3,7 @@
 namespace Shaf\LaravelDeployer\Data;
 
 use Shaf\LaravelDeployer\Enums\Environment;
+use Shaf\LaravelDeployer\Services\SshService;
 
 readonly class DeploymentConfig
 {
@@ -204,7 +205,7 @@ readonly class DeploymentConfig
      */
     private static function detectCurrentBranch(): string
     {
-        $branch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD 2>/dev/null'));
+        $branch = trim((string) shell_exec('git rev-parse --abbrev-ref HEAD '.SshService::suppressStderr()));
 
         return $branch ?: 'main';
     }
