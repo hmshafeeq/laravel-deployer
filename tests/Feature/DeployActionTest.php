@@ -35,7 +35,8 @@ beforeEach(function () {
     $this->cmd->shouldReceive('debug')->byDefault();
     $this->cmd->shouldReceive('warning')->byDefault();
     $this->cmd->shouldReceive('getOutput')->byDefault();
-    $this->cmd->shouldReceive('newLine')->byDefault(); // Used by summary
+    $this->cmd->shouldReceive('newLine')->byDefault();
+    $this->cmd->shouldReceive('getSshService')->byDefault()->andReturnNull();
 
     // DeployAction instance
     $this->action = new DeployAction(
