@@ -6,6 +6,7 @@ use Shaf\LaravelDeployer\Data\SyncDiff;
 use Shaf\LaravelDeployer\Data\SyncStats;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\HooksService;
+use Shaf\LaravelDeployer\Services\SshService;
 
 /**
  * Shared deployment step methods used by both DeployAction and SyncAction.
@@ -539,8 +540,7 @@ trait ManagesDeploymentSteps
      */
     private function runGitCommand(string $command): ?string
     {
-        $stderr = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
-        $result = trim((string) shell_exec("{$command} {$stderr}"));
+        $result = trim((string) shell_exec("{$command} ".SshService::suppressStderr()));
 
         return $result !== '' ? $result : null;
     }

@@ -327,6 +327,11 @@ class SshService
         return PHP_OS_FAMILY === 'Windows';
     }
 
+    public static function suppressStderr(): string
+    {
+        return static::isWindows() ? '2>NUL' : '2>/dev/null';
+    }
+
     public function expandTilde(string $path): string
     {
         if (! str_starts_with($path, '~')) {

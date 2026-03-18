@@ -277,3 +277,13 @@ test('constructor expands tilde in identity file path', function () {
     expect($identityFile)->not->toStartWith('~');
     expect($identityFile)->toEndWith('.ssh/id_rsa');
 });
+
+test('suppressStderr returns correct value for current platform', function () {
+    $result = SshService::suppressStderr();
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        expect($result)->toBe('2>NUL');
+    } else {
+        expect($result)->toBe('2>/dev/null');
+    }
+});
