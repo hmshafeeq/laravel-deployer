@@ -234,8 +234,9 @@ class RsyncService
         // This mimics rsync --delete behavior while preserving the vendor directory
         if ($filesFromPath === null) {
             $this->cmdService?->debug('Cleaning release directory (preserving vendor)...');
+            $dest = rtrim($destination, '/');
             $sshService->ssh(
-                "find ".escapeshellarg($destination)." -maxdepth 1 -not -name vendor -not -name '.' -exec rm -rf {} +"
+                "find '{$dest}' -mindepth 1 -maxdepth 1 -not -name vendor -exec rm -rf {} +"
             );
         }
 

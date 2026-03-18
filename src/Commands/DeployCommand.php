@@ -14,6 +14,7 @@ use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\DeploymentService;
 use Shaf\LaravelDeployer\Services\ReceiptService;
 use Shaf\LaravelDeployer\Services\RsyncService;
+use Shaf\LaravelDeployer\Services\SshService;
 use Shaf\LaravelDeployer\Support\InteractiveMode;
 use Symfony\Component\Process\Process;
 
@@ -312,6 +313,10 @@ class DeployCommand extends Command
      */
     protected function isViteRunning(): bool
     {
+        if (SshService::isWindows()) {
+            return false;
+        }
+
         $process = new Process(['ps', 'aux']);
         $process->run();
 

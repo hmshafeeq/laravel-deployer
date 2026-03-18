@@ -231,7 +231,7 @@ class DiffAction
         }
 
         $remotePath = rtrim($remotePath, '/');
-        $findCommand = "find ".escapeshellarg($remotePath)." -type f {$excludeArgs} -printf '%P\\n' | sort";
+        $findCommand = "find -L '{$remotePath}' -type f {$excludeArgs} -printf '%P\\n' | sort";
 
         $this->cmd->debug("Remote file list command: {$findCommand}");
         $result = $sshService->ssh($findCommand);
