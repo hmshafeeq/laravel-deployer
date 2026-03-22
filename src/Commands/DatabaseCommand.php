@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Process;
 use Shaf\LaravelDeployer\Actions\DatabaseAction;
 use Shaf\LaravelDeployer\Concerns\ManagesLocalBackups;
 use Shaf\LaravelDeployer\Concerns\SelectsServer;
+use Shaf\LaravelDeployer\Data\DeploymentConfig;
 use Shaf\LaravelDeployer\Services\CommandService;
 use Shaf\LaravelDeployer\Services\ConfigService;
 use Shaf\LaravelDeployer\Services\SshService;
@@ -18,17 +19,20 @@ class DatabaseCommand extends Command
     use ManagesLocalBackups, SelectsServer;
 
     protected $signature = 'deployer:db
-                            {action : Action to perform (backup, download, upload, restore, list)}
-                            {target? : Server name for backup/download, or backup file for restore}
+                            {action : Action to perform (backup, download, upload, install, list)}
+                            {target? : Server name for backup/download, or backup file for install}
                             {--select : Show available servers and select interactively}
                             {--latest : Use the latest backup}
                             {--backup : Create a new backup before downloading (for download action)}
+                            {--download : Download the backup after creating it (for backup action)}
+                            {--install : Download and install the backup locally (for backup action)}
+                            {--force : Skip confirmation prompts}
                             {--target-server= : Remote server for upload (user@host)}
                             {--key= : SSH key path for upload}
                             {--path= : Remote destination path for upload}
-                            {--no-migrate : Skip running migrations after restore}';
+                            {--no-migrate : Skip running migrations after install}';
 
-    protected $description = 'Database operations: backup, download, upload, restore';
+    protected $description = 'Database operations: backup, download, upload, install';
 
     public function handle(): int
     {
@@ -38,7 +42,7 @@ class DatabaseCommand extends Command
             'backup' => $this->handleBackup(),
             'download' => $this->handleDownload(),
             'upload' => $this->handleUpload(),
-            'restore' => $this->handleRestore(),
+            'install', 'restore' => $this->handleInstall(),
             'list' => $this->handleList(),
             default => $this->showUsage(),
         };
@@ -50,6 +54,9 @@ class DatabaseCommand extends Command
 
     protected function handleBackup(): int
     {
+        $shouldDownload = $this->option('download') || $this->option('install');
+        $shouldInstall = $this->option('install');
+
         $this->info('Database Backup');
         $this->line('');
 
@@ -71,10 +78,29 @@ class DatabaseCommand extends Command
             $this->line('');
             $this->info('Database backup completed successfully!');
             $this->info("Backup file: {$backupFile}");
-            $this->line('');
-            $this->info('To download: php artisan db download '.$serverName);
 
-            return self::SUCCESS;
+            if (! $shouldDownload) {
+                $this->line('');
+                $this->info('To download: php artisan db download '.$serverName);
+
+                return self::SUCCESS;
+            }
+
+            // Download the backup
+            $localFile = $this->downloadRemoteBackup($backupFile, $config);
+            if (! $localFile) {
+                return self::FAILURE;
+            }
+
+            if (! $shouldInstall) {
+                $this->line('');
+                $this->info('To install: php artisan db install --latest');
+
+                return self::SUCCESS;
+            }
+
+            // Install locally
+            return $this->installLocalBackup($localFile);
         } catch (\Exception $e) {
             $this->error('Database backup failed: '.$e->getMessage());
 
@@ -122,49 +148,13 @@ class DatabaseCommand extends Command
                 }
             }
 
-            $this->line('');
-            $this->info('Downloading backup...');
-            $localFile = $backupsDir.'/'.basename($remoteFile);
-
-            // Use SshService for consistent SSH options (port, identity file, etc.)
-            $sshService = SshService::fromConfig($config);
-            $sshService->disableMultiplexing();
-
-            if (SshService::isWindows()) {
-                // Use native SCP on Windows (no WSL dependency)
-                $result = $sshService->download($remoteFile, $localFile);
-
-                if (! $result->successful) {
-                    $this->error('Download failed: '.$result->errorOutput);
-
-                    return self::FAILURE;
-                }
-            } else {
-                // Build rsync with progress display
-                // -h = human readable, -P = progress + partial (allows resume)
-                $sshOptions = $sshService->buildRsyncSshOptions().' -o Compression=no';
-                $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
-                $dest = escapeshellarg($localFile);
-                $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
-
-                $result = Process::timeout(3600)
-                    ->path(base_path())
-                    ->run($rsyncCommand, function ($type, $buffer) {
-                        echo $buffer;
-                    });
-
-                if (! $result->successful()) {
-                    $this->error('Download failed: '.$result->errorOutput());
-
-                    return self::FAILURE;
-                }
+            $localFile = $this->downloadRemoteBackup($remoteFile, $config);
+            if (! $localFile) {
+                return self::FAILURE;
             }
 
             $this->line('');
-            $this->info('Database download completed successfully!');
-            $this->info("Downloaded to: {$localFile}");
-            $this->line('');
-            $this->info('To restore: php artisan db restore');
+            $this->info('To install: php artisan db install --latest');
 
             return self::SUCCESS;
         } catch (\Exception $e) {
@@ -348,12 +338,12 @@ class DatabaseCommand extends Command
     }
 
     // =========================================================================
-    // RESTORE - Restore backup locally
+    // INSTALL - Install backup to local database
     // =========================================================================
 
-    protected function handleRestore(): int
+    protected function handleInstall(): int
     {
-        $this->info('Database Restore');
+        $this->info('Database Install');
         $this->line('');
 
         if (! File::exists(base_path('.env'))) {
@@ -374,12 +364,72 @@ class DatabaseCommand extends Command
             return self::SUCCESS;
         }
 
+        return $this->installLocalBackup($selectedBackup);
+    }
+
+    /**
+     * Download a remote backup file to the local backups directory.
+     */
+    protected function downloadRemoteBackup(string $remoteFile, DeploymentConfig $config): ?string
+    {
+        $backupsDir = $this->getBackupsDirectory();
+        if (! File::exists($backupsDir)) {
+            File::makeDirectory($backupsDir, 0755, true);
+        }
+
+        $this->line('');
+        $this->info('Downloading backup...');
+        $localFile = $backupsDir.'/'.basename($remoteFile);
+
+        $sshService = SshService::fromConfig($config);
+        $sshService->disableMultiplexing();
+
+        if (SshService::isWindows()) {
+            $result = $sshService->download($remoteFile, $localFile);
+
+            if (! $result->successful) {
+                $this->error('Download failed: '.$result->errorOutput);
+
+                return null;
+            }
+        } else {
+            $sshOptions = $sshService->buildRsyncSshOptions().' -o Compression=no';
+            $source = escapeshellarg("{$config->remoteUser}@{$config->hostname}:{$remoteFile}");
+            $dest = escapeshellarg($localFile);
+            $rsyncCommand = "rsync -hP -e '{$sshOptions}' {$source} {$dest}";
+
+            $result = Process::timeout(3600)
+                ->path(base_path())
+                ->run($rsyncCommand, function ($type, $buffer) {
+                    echo $buffer;
+                });
+
+            if (! $result->successful()) {
+                $this->error('Download failed: '.$result->errorOutput());
+
+                return null;
+            }
+        }
+
+        $this->line('');
+        $this->info('Database download completed successfully!');
+        $this->info("Downloaded to: {$localFile}");
+
+        return $localFile;
+    }
+
+    /**
+     * Install a local backup file into the local database.
+     */
+    protected function installLocalBackup(string $backupFile): int
+    {
         $dbConfig = $this->getDatabaseConfig();
         if (! $dbConfig) {
             return self::FAILURE;
         }
 
-        $backupInfo = $this->getBackupInfo($selectedBackup);
+        $backupInfo = $this->getBackupInfo($backupFile);
+        $this->line('');
         $this->info("Selected backup: {$backupInfo['name']}");
         $this->line('');
         $this->info('Database configuration:');
@@ -390,13 +440,13 @@ class DatabaseCommand extends Command
 
         $this->warn("This will COMPLETELY REPLACE all data in database '{$dbConfig['database']}'!");
 
-        if (! $this->confirm('Are you sure you want to continue?', false)) {
-            $this->info('Restoration cancelled.');
+        if (! $this->option('force') && ! $this->confirm('Are you sure you want to continue?', false)) {
+            $this->info('Installation cancelled.');
 
             return self::SUCCESS;
         }
 
-        if (! $this->executeRestore($selectedBackup, $dbConfig)) {
+        if (! $this->executeRestore($backupFile, $dbConfig)) {
             return self::FAILURE;
         }
 
@@ -407,7 +457,7 @@ class DatabaseCommand extends Command
         $this->offerPasswordReset();
 
         $this->line('');
-        $this->info('Database restore completed!');
+        $this->info('Database install completed!');
 
         return self::SUCCESS;
     }
@@ -612,16 +662,19 @@ class DatabaseCommand extends Command
         $this->line('  php artisan db backup {server}     Create backup on remote server');
         $this->line('  php artisan db download {server}   Download existing backup from server');
         $this->line('  php artisan db upload              Upload backup to remote server');
-        $this->line('  php artisan db restore             Restore backup locally');
+        $this->line('  php artisan db install             Install backup to local database');
         $this->line('  php artisan db list                List available local backups');
         $this->line('');
         $this->line('Examples:');
         $this->line('  php artisan db backup staging');
-        $this->line('  php artisan db download production              # Select from existing backups');
-        $this->line('  php artisan db download production --latest     # Download latest backup');
-        $this->line('  php artisan db download production --backup     # Create new backup & download');
+        $this->line('  php artisan db backup production --download           # Backup + download');
+        $this->line('  php artisan db backup production --install            # Backup + download + install');
+        $this->line('  php artisan db backup production --install --force    # Same, skip confirmation');
+        $this->line('  php artisan db download production                    # Select from existing backups');
+        $this->line('  php artisan db download production --latest           # Download latest backup');
+        $this->line('  php artisan db download production --backup           # Create new backup & download');
         $this->line('  php artisan db upload --latest --target-server=user@host');
-        $this->line('  php artisan db restore --latest');
+        $this->line('  php artisan db install --latest');
 
         return self::FAILURE;
     }
