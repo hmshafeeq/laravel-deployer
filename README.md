@@ -84,9 +84,12 @@ php artisan deployer:setup keygen                  # Generate SSH keys
 
 # Database
 php artisan deployer:db backup staging             # Backup on server
+php artisan deployer:db backup staging --download  # Backup + download
+php artisan deployer:db backup staging --install   # Backup + download + install locally
 php artisan deployer:db download staging           # Download backup
 php artisan deployer:db download staging --latest  # Download latest
-php artisan deployer:db restore                    # Restore locally
+php artisan deployer:db install                    # Install backup to local database
+php artisan deployer:db install --latest           # Install latest backup
 php artisan deployer:db list                       # List local backups
 ```
 

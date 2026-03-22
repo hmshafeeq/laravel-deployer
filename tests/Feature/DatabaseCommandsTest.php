@@ -75,22 +75,22 @@ test('db list requires backups directory', function () {
         ->assertFailed();
 });
 
-test('db restore requires backup directory', function () {
+test('db install requires backup directory', function () {
     // Remove any existing backups directory
     if (File::exists($this->backupsDir)) {
         File::deleteDirectory($this->backupsDir);
     }
 
-    $this->artisan('deployer:db', ['action' => 'restore'])
+    $this->artisan('deployer:db', ['action' => 'install'])
         ->assertFailed();
 });
 
-test('db restore validates backup file exists', function () {
+test('db install validates backup file exists', function () {
     // Create backups directory with a valid backup
     File::ensureDirectoryExists($this->backupsDir);
     file_put_contents($this->backupsDir.'/db_backup_test.sql.gz', 'dummy');
 
-    // Try to restore non-existent backup by name - should fail
-    $this->artisan('deployer:db', ['action' => 'restore', 'target' => 'nonexistent.sql.gz'])
+    // Try to install non-existent backup by name - should fail
+    $this->artisan('deployer:db', ['action' => 'install', 'target' => 'nonexistent.sql.gz'])
         ->assertFailed();
 });

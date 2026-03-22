@@ -104,7 +104,9 @@ class SetupCommand extends Command
         $this->line('  php artisan deployer <env> - Deploy to specified environment');
         $this->line('  php artisan deployer:release rollback <env> - Rollback to previous release');
         $this->line('  php artisan deployer:db backup <env> - Backup database');
+        $this->line('  php artisan deployer:db backup <env> --install - Backup + download + install locally');
         $this->line('  php artisan deployer:db download <env> - Download database backup');
+        $this->line('  php artisan deployer:db install - Install backup to local database');
         $this->line('  php artisan deployer:server clear <env> - Clear caches on server');
         $this->newLine();
 

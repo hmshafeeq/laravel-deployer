@@ -18,8 +18,9 @@ php artisan deployer:setup install            # Install/regenerate config
 php artisan deployer:setup init staging       # Migrate existing site
 php artisan deployer:setup keygen             # Generate SSH keys
 php artisan deployer:db backup staging        # Backup database
+php artisan deployer:db backup staging --install  # Backup + download + install locally
 php artisan deployer:db download staging      # Download backup
-php artisan deployer:db restore               # Restore backup locally
+php artisan deployer:db install               # Install backup to local database
 ```
 
 ## Deployment Flow
