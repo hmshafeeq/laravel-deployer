@@ -24,6 +24,7 @@ class DeployCommand extends Command
                             {--no-confirm : Skip deployment confirmation}
                             {--skip-health-check : Skip health check before deployment}
                             {--skip-preview : Skip early diff preview}
+                            {--skip-migrations : Skip database migrations}
                             {--dry-run : Show deployment plan without executing}
                             {--interactive : Interactive mode - prompt for each deployment option}';
 
@@ -35,6 +36,7 @@ class DeployCommand extends Command
         $noConfirm = $this->option('no-confirm');
         $skipHealthCheck = $this->option('skip-health-check');
         $skipPreview = $this->option('skip-preview');
+        $skipMigrations = $this->option('skip-migrations');
         $dryRun = $this->option('dry-run');
         $interactive = $this->option('interactive');
 
@@ -63,6 +65,11 @@ class DeployCommand extends Command
             // Add Vite dev files to excludes if skipping
             if ($skipBuildFolder) {
                 $config = $this->addViteDevExcludes($config);
+            }
+
+            // Apply --skip-migrations flag
+            if ($skipMigrations) {
+                $config = $config->with(['skipMigrations' => true]);
             }
 
             // Handle dry-run mode
