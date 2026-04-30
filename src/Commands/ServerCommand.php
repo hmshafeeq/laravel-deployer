@@ -750,7 +750,7 @@ class ServerCommand extends Command
         $this->info('Next Steps:');
         $this->line('1. Update your deploy.json with the server details');
         $this->line('2. Configure your .deploy/.env files');
-        $this->line('3. Run: php artisan deployer staging');
+        $this->line('3. Run: php artisan deployer:release staging');
     }
 
     protected function showUsage(): int

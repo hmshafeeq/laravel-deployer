@@ -26,7 +26,7 @@ trait ManagesLocalBackups
 
         if (! File::exists($backupsDir)) {
             $this->error('No backups directory found.');
-            $this->info('Run \'php artisan database:download\' first to download backups.');
+            $this->info('Run \'php artisan deployer:db download\' first to download backups.');
 
             return false;
         }
@@ -35,7 +35,7 @@ trait ManagesLocalBackups
 
         if (empty($this->backups)) {
             $this->error('No database backups found in .deploy/downloads/backups/ directory.');
-            $this->info('Run \'php artisan database:download\' to download backups from server.');
+            $this->info('Run \'php artisan deployer:db download\' to download backups from server.');
 
             return false;
         }

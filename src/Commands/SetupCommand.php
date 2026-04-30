@@ -98,11 +98,11 @@ class SetupCommand extends Command
         $this->line('   cp .deploy/.env.production.example .deploy/.env.production');
         $this->line('3. Edit the .env files with your server credentials');
         $this->line('4. Run your first deployment:');
-        $this->line('   php artisan deployer staging');
+        $this->line('   php artisan deployer:release staging');
         $this->newLine();
         $this->info('Available commands:');
-        $this->line('  php artisan deployer <env> - Deploy to specified environment');
-        $this->line('  php artisan deployer:release rollback <env> - Rollback to previous release');
+        $this->line('  php artisan deployer:release <env> - Deploy to specified environment');
+        $this->line('  php artisan deployer:rollback <env> - Rollback to previous release');
         $this->line('  php artisan deployer:db backup <env> - Backup database');
         $this->line('  php artisan deployer:db backup <env> --install - Backup + download + install locally');
         $this->line('  php artisan deployer:db download <env> - Download database backup');
@@ -852,7 +852,7 @@ GITIGNORE;
         $this->line('<fg=cyan>Next Steps:</>');
         $this->line('  1. Update nginx configuration (see above)');
         $this->line('  2. Test the site is working');
-        $this->line('  3. Deploy using: <fg=white>php artisan deployer '.$this->config->environment->value.'</>');
+        $this->line('  3. Deploy using: <fg=white>php artisan deployer:release '.$this->config->environment->value.'</>');
         $this->newLine();
     }
 

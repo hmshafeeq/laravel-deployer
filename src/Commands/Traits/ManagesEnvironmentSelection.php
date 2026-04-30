@@ -141,6 +141,6 @@ trait ManagesEnvironmentSelection
             $this->error('❌ No environment files found in .deploy/');
         }
 
-        $this->info('💡 Run: php artisan laravel-deployer:install');
+        $this->info('💡 Run: php artisan deployer:setup install');
     }
 }

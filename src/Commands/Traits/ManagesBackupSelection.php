@@ -136,6 +136,6 @@ trait ManagesBackupSelection
             $this->error('❌ No database backups found in .deploy/downloads/backups/ directory.');
         }
 
-        $this->info('💡 Run \'php artisan database:download\' to download backups from server.');
+        $this->info('💡 Run \'php artisan deployer:db download\' to download backups from server.');
     }
 }

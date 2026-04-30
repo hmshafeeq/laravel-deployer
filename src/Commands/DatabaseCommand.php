@@ -81,7 +81,7 @@ class DatabaseCommand extends Command
 
             if (! $shouldDownload) {
                 $this->line('');
-                $this->info('To download: php artisan db download '.$serverName);
+                $this->info('To download: php artisan deployer:db download '.$serverName);
 
                 return self::SUCCESS;
             }
@@ -94,7 +94,7 @@ class DatabaseCommand extends Command
 
             if (! $shouldInstall) {
                 $this->line('');
-                $this->info('To install: php artisan db install --latest');
+                $this->info('To install: php artisan deployer:db install --latest');
 
                 return self::SUCCESS;
             }
@@ -154,7 +154,7 @@ class DatabaseCommand extends Command
             }
 
             $this->line('');
-            $this->info('To install: php artisan db install --latest');
+            $this->info('To install: php artisan deployer:db install --latest');
 
             return self::SUCCESS;
         } catch (\Exception $e) {
@@ -175,8 +175,8 @@ class DatabaseCommand extends Command
             if (! $latest) {
                 $this->error('No backups found on server.');
                 $this->line('');
-                $this->info('Create one first: php artisan db backup '.$this->argument('target'));
-                $this->info('Or use --backup flag: php artisan db download '.$this->argument('target').' --backup');
+                $this->info('Create one first: php artisan deployer:db backup '.$this->argument('target'));
+                $this->info('Or use --backup flag: php artisan deployer:db download '.$this->argument('target').' --backup');
 
                 return null;
             }
@@ -192,8 +192,8 @@ class DatabaseCommand extends Command
         if (empty($backups)) {
             $this->error('No backups found on server.');
             $this->line('');
-            $this->info('Create one first: php artisan db backup '.$this->argument('target'));
-            $this->info('Or use --backup flag: php artisan db download '.$this->argument('target').' --backup');
+            $this->info('Create one first: php artisan deployer:db backup '.$this->argument('target'));
+            $this->info('Or use --backup flag: php artisan deployer:db download '.$this->argument('target').' --backup');
 
             return null;
         }
@@ -659,22 +659,22 @@ class DatabaseCommand extends Command
     {
         $this->error('Invalid action. Available actions:');
         $this->line('');
-        $this->line('  php artisan db backup {server}     Create backup on remote server');
-        $this->line('  php artisan db download {server}   Download existing backup from server');
-        $this->line('  php artisan db upload              Upload backup to remote server');
-        $this->line('  php artisan db install             Install backup to local database');
-        $this->line('  php artisan db list                List available local backups');
+        $this->line('  php artisan deployer:db backup {server}     Create backup on remote server');
+        $this->line('  php artisan deployer:db download {server}   Download existing backup from server');
+        $this->line('  php artisan deployer:db upload              Upload backup to remote server');
+        $this->line('  php artisan deployer:db install             Install backup to local database');
+        $this->line('  php artisan deployer:db list                List available local backups');
         $this->line('');
         $this->line('Examples:');
-        $this->line('  php artisan db backup staging');
-        $this->line('  php artisan db backup production --download           # Backup + download');
-        $this->line('  php artisan db backup production --install            # Backup + download + install');
-        $this->line('  php artisan db backup production --install --force    # Same, skip confirmation');
-        $this->line('  php artisan db download production                    # Select from existing backups');
-        $this->line('  php artisan db download production --latest           # Download latest backup');
-        $this->line('  php artisan db download production --backup           # Create new backup & download');
-        $this->line('  php artisan db upload --latest --target-server=user@host');
-        $this->line('  php artisan db install --latest');
+        $this->line('  php artisan deployer:db backup staging');
+        $this->line('  php artisan deployer:db backup production --download           # Backup + download');
+        $this->line('  php artisan deployer:db backup production --install            # Backup + download + install');
+        $this->line('  php artisan deployer:db backup production --install --force    # Same, skip confirmation');
+        $this->line('  php artisan deployer:db download production                    # Select from existing backups');
+        $this->line('  php artisan deployer:db download production --latest           # Download latest backup');
+        $this->line('  php artisan deployer:db download production --backup           # Create new backup & download');
+        $this->line('  php artisan deployer:db upload --latest --target-server=user@host');
+        $this->line('  php artisan deployer:db install --latest');
 
         return self::FAILURE;
     }
